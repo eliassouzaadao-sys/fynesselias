@@ -1,0 +1,41 @@
+
+model Pessoa {
+  id            Int      @id @default(autoincrement())
+  nome          String
+  contato       String?
+  chavePix      String?
+  banco         String?
+  agencia       String?
+  contaBancaria String?
+  tipoConta     String?
+  observacoes   String?
+  contas        Conta[]
+}
+
+// Relacionar Conta a Pessoa (adicionar campo pessoaId em Conta)
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+  model Conta {
+    id            Int      @id @default(autoincrement())
+    descricao     String
+    valor         Float
+    vencimento    DateTime
+    pago          Boolean  @default(false)
+    tipo          String   // 'pagar' ou 'receber'
+    beneficiario  String?  // nome do beneficiário (opcional)
+    banco         String?  // banco de pagamento (opcional)
+    criadoEm      DateTime @default(now())
+    atualizadoEm  DateTime @updatedAt
+    pessoaId      Int?
+    pessoa        Pessoa?  @relation(fields: [pessoaId], references: [id])
+  }
