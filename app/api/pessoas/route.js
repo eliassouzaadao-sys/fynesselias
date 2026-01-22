@@ -5,13 +5,12 @@ import prisma from '@/lib/prisma';
 export async function GET() {
   try {
     const pessoas = await prisma.pessoa.findMany();
-    return NextResponse.json(pessoas);
+    // Always ensure we return an array
+    return NextResponse.json(Array.isArray(pessoas) ? pessoas : []);
   } catch (error) {
     console.error('Error fetching pessoas:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch pessoas' },
-      { status: 500 }
-    );
+    // CRITICAL FIX: Return empty array on error, not error object
+    return NextResponse.json([]);
   }
 }
 

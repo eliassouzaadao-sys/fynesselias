@@ -2,6 +2,12 @@
  * Central export for all services
  */
 
-export { apiService } from './api.service';
-export { contasService } from './contas.service';
-export { pessoasService } from './pessoas.service';
+// API Services
+export { apiService, ApiService } from './api.service';
+export { contasService, ContasService } from './contas.service';
+export { pessoasService, PessoasService } from './pessoas.service';
+
+// WhatsApp Integration Services
+export { whatsappService, WhatsAppService } from './whatsapp.service';
+export { aiService, AIService } from './ai.service';
+export type { AIExtractionResult, ValidationResult } from './ai.service';

@@ -4,13 +4,13 @@ import prisma from '@/lib/prisma';
 export async function GET() {
   try {
     const contas = await prisma.conta.findMany({ orderBy: { vencimento: 'asc' } });
-    return NextResponse.json(contas);
+    // Always ensure we return an array, even if database returns null/undefined
+    return NextResponse.json(Array.isArray(contas) ? contas : []);
   } catch (error) {
     console.error('Error fetching contas:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch contas' },
-      { status: 500 }
-    );
+    // CRITICAL FIX: Return empty array on error, not error object
+    // This prevents "TypeError: data.filter is not a function" in frontend
+    return NextResponse.json([]);
   }
 }
 

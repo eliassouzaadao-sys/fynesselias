@@ -1,18 +1,3 @@
-
-model Pessoa {
-  id            Int      @id @default(autoincrement())
-  nome          String
-  contato       String?
-  chavePix      String?
-  banco         String?
-  agencia       String?
-  contaBancaria String?
-  tipoConta     String?
-  observacoes   String?
-  contas        Conta[]
-}
-
-// Relacionar Conta a Pessoa (adicionar campo pessoaId em Conta)
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
@@ -25,17 +10,121 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-  model Conta {
-    id            Int      @id @default(autoincrement())
-    descricao     String
-    valor         Float
-    vencimento    DateTime
-    pago          Boolean  @default(false)
-    tipo          String   // 'pagar' ou 'receber'
-    beneficiario  String?  // nome do beneficiário (opcional)
-    banco         String?  // banco de pagamento (opcional)
-    criadoEm      DateTime @default(now())
-    atualizadoEm  DateTime @updatedAt
-    pessoaId      Int?
-    pessoa        Pessoa?  @relation(fields: [pessoaId], references: [id])
-  }
+model Pessoa {
+  id            Int      @id @default(autoincrement())
+  nome          String
+  contato       String?
+  chavePix      String?
+  banco         String?
+  agencia       String?
+  contaBancaria String?
+  tipoConta     String?
+  observacoes   String?
+  contas        Conta[]
+  criadoEm      DateTime @default(now())
+  atualizadoEm  DateTime @updatedAt
+}
+
+model Conta {
+  id                  Int                 @id @default(autoincrement())
+  descricao           String
+  valor               Float
+  vencimento          DateTime
+  pago                Boolean             @default(false)
+  dataPagamento       DateTime?           // data efetiva do pagamento/recebimento
+  tipo                String              // 'pagar' ou 'receber'
+  beneficiario        String?             // nome do beneficiário (opcional)
+  banco               String?             // banco de pagamento (opcional)
+  categoria           String?             // categoria da despesa/receita
+  formaPagamento      String?             // forma de pagamento
+  numeroDocumento     String?             // número do documento (NF, boleto, etc)
+  observacoes         String?             // observações adicionais
+  comprovante         String?             // URL do arquivo de comprovante
+
+  // Status e fluxo de caixa
+  status              String              @default("pendente") // pendente, pago, vencido, cancelado
+  noFluxoCaixa        Boolean             @default(false) // se já está no fluxo de caixa
+
+  // WhatsApp AI Integration
+  createdViaWhatsApp  Boolean             @default(false)
+  aiConfidence        Float?              // 0-1 confidence score from AI
+
+  // Relationships
+  pessoaId            Int?
+  pessoa              Pessoa?             @relation(fields: [pessoaId], references: [id])
+  whatsappMessages    WhatsAppMessage[]
+
+  // Timestamps
+  criadoEm            DateTime            @default(now())
+  atualizadoEm        DateTime            @updatedAt
+
+  @@index([tipo])
+  @@index([status])
+  @@index([pago])
+  @@index([vencimento])
+}
+
+model Banco {
+  id        Int      @id @default(autoincrement())
+  nome      String   @unique
+  codigo    String?  // Código do banco (ex: 001, 237)
+  ativo     Boolean  @default(true)
+  criadoEm  DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+}
+
+model Categoria {
+  id            Int           @id @default(autoincrement())
+  nome          String
+  tipo          String        // 'pagar' ou 'receber'
+  ativo         Boolean       @default(true)
+  subcategorias Subcategoria[]
+  criadoEm      DateTime      @default(now())
+  atualizadoEm  DateTime      @updatedAt
+
+  @@unique([nome, tipo])
+  @@index([tipo])
+}
+
+model Subcategoria {
+  id          Int       @id @default(autoincrement())
+  nome        String
+  ativo       Boolean   @default(true)
+  categoriaId Int
+  categoria   Categoria @relation(fields: [categoriaId], references: [id], onDelete: Cascade)
+  criadoEm    DateTime  @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@unique([nome, categoriaId])
+  @@index([categoriaId])
+}
+
+model WhatsAppMessage {
+  id                String   @id @default(cuid())
+  phoneNumber       String
+  message           String
+  processedAt       DateTime @default(now())
+
+  // AI Processing Results
+  aiConfidence      Float?   // 0-1 confidence score
+  extractedData     String?  // JSON string of extracted data
+
+  // Status
+  status            String   // "pending", "processed", "failed", "needs_confirmation"
+  errorMessage      String?
+
+  // Link to created transaction
+  contaId           Int?
+  conta             Conta?   @relation(fields: [contaId], references: [id])
+
+  // User confirmation
+  confirmed         Boolean  @default(false)
+  confirmationDate  DateTime?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([phoneNumber])
+  @@index([status])
+  @@index([createdAt])
+}

@@ -88,8 +88,11 @@ export function ReceberContent() {
           try {
             const res = await fetch("/api/contas")
             const data = await res.json()
-            setInvoices(data)
+            // CRITICAL FIX: Always validate that data is an array before setting state
+            // This prevents "TypeError: invoices.map is not a function"
+            setInvoices(Array.isArray(data) ? data : [])
           } catch (e) {
+            console.error('Failed to load invoices:', e)
             setInvoices([])
           }
         }
@@ -115,10 +118,13 @@ export function ReceberContent() {
     dueDate: conta.vencimento,
     documentImage: conta.documentoUrl || null,
   })
-  const realInvoices = invoices.map(mapInvoice)
+
+  // CRITICAL FIX: Add safety check before map operation
+  // This prevents "TypeError: invoices.map is not a function" if invoices is not an array
+  const realInvoices = Array.isArray(invoices) ? invoices.map(mapInvoice) : []
 
   // Filtrar apenas contas a receber
-  const onlyReceber = realInvoices.filter(i => i.tipo === "receber")
+  const onlyReceber = Array.isArray(realInvoices) ? realInvoices.filter(i => i.tipo === "receber") : []
 
   // KPIs e filtros usando dados reais
   const totalPendente = onlyReceber.filter(i => i.status === "Pendente").reduce((sum, i) => sum + i.amount, 0)

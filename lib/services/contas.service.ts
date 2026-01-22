@@ -73,12 +73,12 @@ class ContasService extends ApiService {
   }
 
   /**
-   * Mark conta as paid
+   * Mark conta as paid/received
    */
-  async markAsPaid(id: string, dataPagamento?: Date): Promise<ApiResponse<Conta>> {
-    return this.patch<Conta>(`${API_ROUTES.contas}/${id}/pay`, {
+  async markAsPaid(id: string, dataPagamento?: Date, comprovante?: string): Promise<ApiResponse<Conta>> {
+    return this.post<Conta>(`${API_ROUTES.contas}/${id}/pagar`, {
       dataPagamento: dataPagamento || new Date(),
-      status: 'pago',
+      comprovante,
     });
   }
 
@@ -173,4 +173,5 @@ class ContasService extends ApiService {
   }
 }
 
+export { ContasService };
 export const contasService = new ContasService();

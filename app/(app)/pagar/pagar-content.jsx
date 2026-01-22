@@ -23,6 +23,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
+import { NovaContaModal } from "./components/NovaContaModal";
 
 // Mapeamento de subcentros de custo por centro de custo
 const SUBCENTROS_CUSTO = {
@@ -36,77 +37,48 @@ const SUBCENTROS_CUSTO = {
 const useBills = () => {
   const [bills, setBills] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
+
   useEffect(() => {
     async function fetchBills() {
-      setLoading(true);
-      const res = await fetch('/api/contas');
-      const data = await res.json();
-      setBills(data);
-      setLoading(false);
+      try {
+        setLoading(true);
+        const res = await fetch('/api/contas');
+        const data = await res.json();
+        // CRITICAL FIX: Always validate data is an array before setting state
+        setBills(Array.isArray(data) ? data : []);
+      } catch (error) {
+        console.error('Failed to fetch bills:', error);
+        setBills([]);
+      } finally {
+        setLoading(false);
+      }
     }
     fetchBills();
-  }, []);
-  return { bills: bills.filter(b => b.tipo === "pagar"), setBills, loading };
+  }, [refreshKey]);
+
+  // CRITICAL FIX: Add safety check before filter operation
+  return {
+    bills: Array.isArray(bills) ? bills.filter(b => b.tipo === "pagar") : [],
+    setBills,
+    loading,
+    refresh: () => setRefreshKey(prev => prev + 1)
+  };
 };
 
 export function PagarContent() {
-              const [showCheckAnimation, setShowCheckAnimation] = useState(false);
-              const audioRef = useRef(null);
-            const [newBanco, setNewBanco] = useState("");
-          // Estados para o modal completo
-          const [newBeneficiario, setNewBeneficiario] = useState("");
-          const [newDocumento, setNewDocumento] = useState("");
-          const [newFormaPagamento, setNewFormaPagamento] = useState("");
-          const [newCentroCusto, setNewCentroCusto] = useState("");
-          const [newSubCentroCusto, setNewSubCentroCusto] = useState("");
-        // Modal Nova Conta (simples, igual ao contas a receber)
-        const [showNewModal, setShowNewModal] = useState(false)
-        const [newDescricao, setNewDescricao] = useState("")
-        const [newValor, setNewValor] = useState("")
-        const [newVencimento, setNewVencimento] = useState("")
-        const [isSaving, setIsSaving] = useState(false)
+    // Estado para subcategoria relacionada à categoria
+    const [subCategoriaFilter, setSubCategoriaFilter] = useState("");
+  const [showCheckAnimation, setShowCheckAnimation] = useState(false);
+  const audioRef = useRef(null);
 
-        async function handleNovaConta(e) {
-          e.preventDefault()
-          setIsSaving(true)
-          try {
-            const res = await fetch("/api/contas", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                descricao: newDescricao,
-                valor: parseFloat(newValor),
-                vencimento: newVencimento,
-                pago: false,
-                tipo: "pagar",
-                beneficiario: newBeneficiario,
-                banco: newBanco
-              })
-            })
-            if (res.ok) {
-              setShowNewModal(false)
-              setNewDescricao("")
-              setNewValor("")
-              setNewVencimento("")
-              // Recarrega as contas
-              const data = await res.json()
-              setBills(prev => [...prev, data])
-            }
-          } finally {
-            setIsSaving(false)
-          }
-        }
-      // Certifique-se de que todos os campos usados em novaConta estão definidos
-      // (já existem, mas garantimos aqui)
-      // const [centroCusto, setCentroCusto] = useState("");
-      // const [subCentroCusto, setSubCentroCusto] = useState("");
-      // const [formaPagamento, setFormaPagamento] = useState("");
-      // const [chavePix, setChavePix] = useState("");
-      // const [numeroBoleto, setNumeroBoleto] = useState("");
-      // const [cartao, setCartao] = useState("");
-      // const [outraForma, setOutraForma] = useState("");
-      // const [contato, setContato] = useState("");
-      // const [novoCentroCusto, setNovoCentroCusto] = useState("");
+  // Modal Nova Conta
+  const [showNewModal, setShowNewModal] = useState(false);
+
+  // Função para recarregar a lista após criar conta
+  const handleNovaContaSuccess = () => {
+    refresh();
+  };
       // const [novoSubCentroCusto, setNovoSubCentroCusto] = useState("");
     // Pessoa selecionada
     const [pessoaId, setPessoaId] = useState("");
@@ -145,7 +117,7 @@ export function PagarContent() {
         setOutraForma("");
       }
     }, [pessoaId]);
-  const { bills, setBills, loading } = useBills();
+  const { bills, setBills, loading, refresh } = useBills();
   const [searchTerm, setSearchTerm] = useState("")
   const [categoriaFilter, setCategoriaFilter] = useState("Todas")
   const [selectedBill, setSelectedBill] = useState(null)
@@ -160,8 +132,9 @@ export function PagarContent() {
   const [currentPage, setCurrentPage] = useState(1)
   const [isTransitioning, setIsTransitioning] = useState(false)
   const itemsPerPage = 12
-  // Forma de pagamento
+  // Forma de pagamento (corrigido para suportar newFormaPagamento)
   const [formaPagamento, setFormaPagamento] = useState("");
+  const [newFormaPagamento, setNewFormaPagamento] = useState("");
   const [chavePix, setChavePix] = useState("");
   const [numeroBoleto, setNumeroBoleto] = useState("");
   const [cartao, setCartao] = useState("");
@@ -183,18 +156,20 @@ export function PagarContent() {
   const mesAtual = hoje.getMonth() + 1;
   const anoAtual = hoje.getFullYear();
 
+  // SAFETY FIX: Ensure bills is always an array before filtering
+  const safeBills = Array.isArray(bills) ? bills : [];
 
   // Pendente
-  const pendentes = bills.filter((c) => !c.pago && new Date(c.vencimento) >= hoje);
+  const pendentes = safeBills.filter((c) => !c.pago && new Date(c.vencimento) >= hoje);
   // Vencido
-  const vencidas = bills.filter((c) => !c.pago && new Date(c.vencimento) < hoje);
+  const vencidas = safeBills.filter((c) => !c.pago && new Date(c.vencimento) < hoje);
   // Próx. 7 dias
-  const proximos7 = bills.filter((c) => {
+  const proximos7 = safeBills.filter((c) => {
     const venc = new Date(c.vencimento);
     return !c.pago && venc >= hoje && venc <= prox7;
   });
   // Pago este mês
-  const pagosMes = bills.filter((c) => {
+  const pagosMes = safeBills.filter((c) => {
     if (!c.pago || !c.atualizadoEm) return false;
     const pag = new Date(c.atualizadoEm);
     return pag.getMonth() + 1 === mesAtual && pag.getFullYear() === anoAtual;
@@ -206,15 +181,16 @@ export function PagarContent() {
     return isNaN(v) ? 0 : v;
   };
 
-  const totalPendente = bills
+  // SAFETY FIX: Use safeBills for all calculations
+  const totalPendente = safeBills
     .filter(b => !b.pago && new Date(b.vencimento) >= hoje)
     .reduce((sum, b) => sum + getValor(b), 0)
 
-  const totalVencido = bills
+  const totalVencido = safeBills
     .filter(b => !b.pago && new Date(b.vencimento) < hoje)
     .reduce((sum, b) => sum + getValor(b), 0)
 
-  const proximos7Dias = bills
+  const proximos7Dias = safeBills
     .filter(b => {
       const dueDate = new Date(b.vencimento)
       const diff = Math.ceil((dueDate - hoje) / (1000 * 60 * 60 * 24))
@@ -330,7 +306,8 @@ export function PagarContent() {
 
 
   // Filtrar contas
-  const filteredBills = bills.filter(bill => {
+  // SAFETY FIX: Use safeBills instead of bills directly
+  const filteredBills = safeBills.filter(bill => {
     const matchSearch = (bill.descricao?.toLowerCase() || '').includes(searchTerm.toLowerCase())
     const matchCategoria = categoriaFilter === "Todas" || bill.categoria === categoriaFilter
     return matchSearch && matchCategoria
@@ -460,7 +437,8 @@ export function PagarContent() {
 
 
   // Definir pagas para uso nas Tabs
-  const pagas = bills.filter(b => b.pago);
+  // SAFETY FIX: Use safeBills instead of bills directly
+  const pagas = safeBills.filter(b => b.pago);
 
 
   // Funções para ações reais
@@ -523,13 +501,23 @@ export function PagarContent() {
               <Plus className="mr-2 h-4 w-4" />
               Nova Conta
             </Button>
-            {/* Modal Nova Conta (completo) */}
+
+            {/* Novo Modal Refatorado */}
             {showNewModal && (
+              <NovaContaModal
+                tipo="pagar"
+                onClose={() => setShowNewModal(false)}
+                onSuccess={handleNovaContaSuccess}
+              />
+            )}
+
+            {/* REMOVER MODAL ANTIGO ABAIXO */}
+            {false && showNewModal && (
               <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
                 <Card className="w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
                   <div className="flex items-center justify-between p-4 border-b border-fyn-border">
                     <div>
-                      <h2 className="text-lg font-semibold text-fyn-text">Nova Conta a Pagar</h2>
+                      <h2 className="text-lg font-semibold text-fyn-text">Nova Conta a Pagar - ANTIGO</h2>
                       <p className="text-xs text-fyn-muted mt-0.5">Preencha os dados da conta</p>
                     </div>
                     <Button
@@ -604,10 +592,6 @@ export function PagarContent() {
                       <div className="space-y-3">
                         <h3 className="text-sm font-semibold text-fyn-text">Informações Básicas</h3>
                         <div className="grid gap-3 md:grid-cols-2">
-                          <div className="space-y-1.5">
-                            <label className="text-sm font-medium text-fyn-text">Beneficiário</label>
-                            <Input placeholder="Nome do beneficiário" value={newBeneficiario} onChange={e => setNewBeneficiario(e.target.value)} />
-                          </div>
                           <div className="space-y-1.5">
                             <label className="text-sm font-medium text-fyn-text">Número do Documento</label>
                             <Input placeholder="NF-12345" value={newDocumento} onChange={e => setNewDocumento(e.target.value)} />
@@ -828,6 +812,42 @@ export function PagarContent() {
             </SelectContent>
           </Select>
 
+          {/* Subcategoria relacionada à Categoria */}
+          <Select value={subCategoriaFilter} onValueChange={setSubCategoriaFilter}>
+            <SelectTrigger>
+              <SelectValue placeholder="Selecione a subcategoria" />
+            </SelectTrigger>
+            <SelectContent>
+              {categoriaFilter === "Fornecedores" && (
+                <>
+                  <SelectItem value="Serviços">Serviços</SelectItem>
+                  <SelectItem value="Produtos">Produtos</SelectItem>
+                </>
+              )}
+              {categoriaFilter === "Folha de Pagamento" && (
+                <>
+                  <SelectItem value="Salários">Salários</SelectItem>
+                  <SelectItem value="Benefícios">Benefícios</SelectItem>
+                </>
+              )}
+              {categoriaFilter === "Impostos e Taxas" && (
+                <>
+                  <SelectItem value="Municipais">Municipais</SelectItem>
+                  <SelectItem value="Estaduais">Estaduais</SelectItem>
+                  <SelectItem value="Federais">Federais</SelectItem>
+                </>
+              )}
+              {categoriaFilter === "Despesas Administrativas" && (
+                <>
+                  <SelectItem value="Água">Água</SelectItem>
+                  <SelectItem value="Energia">Energia</SelectItem>
+                  <SelectItem value="Internet">Internet</SelectItem>
+                  <SelectItem value="Outros">Outros</SelectItem>
+                </>
+              )}
+            </SelectContent>
+          </Select>
+
           <Button variant="outline" className="w-full">
             <CalendarIcon className="mr-2 h-4 w-4" />
             Este Mês
@@ -964,10 +984,6 @@ export function PagarContent() {
                 <div className="space-y-1">
                   <p className="text-xs text-fyn-muted">Sub-Centro</p>
                   <p className="text-sm font-medium text-fyn-text">{selectedBill.subCostCenter || selectedBill.subCentroCusto || "-"}</p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-xs text-fyn-muted">Beneficiário</p>
-                  <p className="text-sm font-medium text-fyn-text">{selectedBill.fornecedor || selectedBill.beneficiario || selectedBill.empresa || "-"}</p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-xs text-fyn-muted">Tipo</p>
@@ -1246,35 +1262,6 @@ export function PagarContent() {
                 <div className="space-y-3">
                   <h3 className="text-sm font-semibold text-fyn-text">Informações Básicas</h3>
                   <div className="grid gap-3 md:grid-cols-2">
-                    <div className="space-y-1.5">
-                      {/* Seleção de Pessoa/Beneficiário */}
-                      <PessoaSelect
-                        value={pessoaId}
-                        onChange={setPessoaId}
-                        onAdd={() => setShowPessoaModal(true)}
-                      />
-                      {showPessoaModal && (
-                        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                          <Card className="w-full max-w-md">
-                            <div className="flex items-center justify-between p-4 border-b border-fyn-border">
-                              <h2 className="text-lg font-semibold text-fyn-text">Nova Pessoa</h2>
-                              <Button variant="ghost" size="sm" onClick={() => setShowPessoaModal(false)}>
-                                <X className="h-5 w-5" />
-                              </Button>
-                            </div>
-                            <div className="p-4">
-                              <PessoaForm
-                                onSave={pessoa => {
-                                  setShowPessoaModal(false);
-                                  setPessoaId(String(pessoa.id));
-                                }}
-                                onCancel={() => setShowPessoaModal(false)}
-                              />
-                            </div>
-                          </Card>
-                        </div>
-                      )}
-                    </div>
                     <div className="space-y-1.5">
                       <label className="text-sm font-medium text-fyn-text">Número do Documento</label>
                       <Input 

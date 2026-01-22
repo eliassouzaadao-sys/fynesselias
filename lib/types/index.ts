@@ -51,7 +51,9 @@ export interface Conta {
   tipo: TipoConta;
   descricao: string;
   valor: number;
+  vencimento: Date; // also mapped as dataVencimento
   dataVencimento: Date;
+  pago: boolean;
   dataPagamento?: Date;
   status: StatusConta;
   categoria?: string;
@@ -59,16 +61,23 @@ export interface Conta {
   centroCusto?: string;
   subCentroCusto?: string;
   formaPagamento?: FormaPagamento;
+  numeroDocumento?: string;
   banco?: string;
   beneficiario?: string;
   documento?: string;
   observacoes?: string;
+  comprovante?: string;
   anexos?: string[];
+  noFluxoCaixa: boolean;
   pessoaId?: string;
   pessoa?: Pessoa;
   recorrente?: boolean;
   parcela?: number;
   totalParcelas?: number;
+  createdViaWhatsApp?: boolean;
+  aiConfidence?: number;
+  criadoEm: Date; // also mapped as createdAt
+  atualizadoEm: Date; // also mapped as updatedAt
   createdAt: Date;
   updatedAt: Date;
 }

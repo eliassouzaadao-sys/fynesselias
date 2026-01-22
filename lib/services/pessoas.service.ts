@@ -97,3 +97,5 @@ class PessoasService extends ApiService {
 }
 
 export const pessoasService = new PessoasService();
+
+export { PessoasService };

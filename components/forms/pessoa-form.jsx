@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 
-export function PessoaSelect({ value, onChange, onAdd }) {
+export function PessoaSelect({ value, onChange, onAdd, disabled }) {
   const [pessoas, setPessoas] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -19,8 +19,8 @@ export function PessoaSelect({ value, onChange, onAdd }) {
 
   return (
     <div>
-      <label className="text-sm font-medium text-fyn-text">Pessoa/Beneficiário</label>
-      <Select value={value} onValueChange={onChange} disabled={loading}>
+      {/* <label className="text-sm font-medium text-fyn-text">Pessoa/Beneficiário</label> */}
+      <Select value={value} onValueChange={onChange} disabled={loading || disabled}>
         <SelectTrigger>
           <SelectValue placeholder="Selecione uma pessoa" />
         </SelectTrigger>
