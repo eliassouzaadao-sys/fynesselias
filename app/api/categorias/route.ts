@@ -1,13 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/get-user";
+import { getEmpresaIdValidada } from "@/lib/get-empresa";
 
 // GET - Lista categorias com subcategorias
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const tipo = searchParams.get("tipo"); // 'pagar' ou 'receber'
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+    }
 
-    const where: any = { ativo: true };
+    const empresaId = await getEmpresaIdValidada(user.id);
+
+    const { searchParams } = new URL(request.url);
+    const tipo = searchParams.get("tipo");
+
+    const where: any = { ativo: true, userId: user.id };
+    if (empresaId) where.empresaId = empresaId;
     if (tipo && ["pagar", "receber"].includes(tipo)) {
       where.tipo = tipo;
     }
@@ -36,6 +46,13 @@ export async function GET(request: NextRequest) {
 // POST - Cria nova categoria
 export async function POST(request: NextRequest) {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+    }
+
+    const empresaId = await getEmpresaIdValidada(user.id);
+
     const data = await request.json();
 
     if (!data.nome?.trim()) {
@@ -52,12 +69,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verificar se já existe
+    // Verificar se já existe para este usuário
+    const whereExistente: any = {
+      nome: data.nome.trim(),
+      tipo: data.tipo,
+      userId: user.id,
+    };
+    if (empresaId) whereExistente.empresaId = empresaId;
+
     const existente = await prisma.categoria.findFirst({
-      where: {
-        nome: data.nome.trim(),
-        tipo: data.tipo,
-      },
+      where: whereExistente,
     });
 
     if (existente) {
@@ -71,6 +92,8 @@ export async function POST(request: NextRequest) {
       data: {
         nome: data.nome.trim(),
         tipo: data.tipo,
+        userId: user.id,
+        empresaId: empresaId || undefined,
       },
       include: {
         subcategorias: true,

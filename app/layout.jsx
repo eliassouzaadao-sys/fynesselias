@@ -23,7 +23,7 @@ export const viewport = {
 export default function RootLayout({ children }) {
   return (
     <html lang="pt-BR">
-      <body className={`${inter.className} ${jetbrainsMono.variable} antialiased`}>
+      <body className={`${inter.className} ${jetbrainsMono.variable} antialiased`} suppressHydrationWarning>
         <SessionProvider>{children}</SessionProvider>
       </body>
     </html>

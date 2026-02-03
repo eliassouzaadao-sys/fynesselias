@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/get-user";
+import { getEmpresaIdValidada } from "@/lib/get-empresa";
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -8,6 +10,13 @@ interface RouteContext {
 // POST - Cria nova subcategoria para uma categoria
 export async function POST(request: NextRequest, context: RouteContext) {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+    }
+
+    const empresaId = await getEmpresaIdValidada(user.id);
+
     const params = await context.params;
     const categoriaId = parseInt(params.id);
 
@@ -27,9 +36,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
     }
 
-    // Verificar se categoria existe
-    const categoria = await prisma.categoria.findUnique({
-      where: { id: categoriaId },
+    // Verificar se categoria existe e pertence ao usuário
+    const categoriaWhere: { id: number; userId: number; empresaId?: number } = {
+      id: categoriaId,
+      userId: user.id
+    };
+    if (empresaId) categoriaWhere.empresaId = empresaId;
+
+    const categoria = await prisma.categoria.findFirst({
+      where: categoriaWhere,
     });
 
     if (!categoria) {

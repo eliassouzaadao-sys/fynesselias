@@ -196,10 +196,10 @@ export function ContasBancariasContent() {
         <KpiCard label="Contas Ativas" value={contas.length.toString()} subvalue="Bancos cadastrados" />
       </div>
 
-      <div className="rounded-xl border border-fyn-border bg-fyn-bg p-4">
+      <div className="rounded-xl border border-border bg-card p-4">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-fyn-text">Suas Contas Bancárias</h2>
-          <span className="text-xs text-fyn-muted">{contas.length} conta(s) cadastrada(s)</span>
+          <h2 className="text-sm font-semibold text-foreground">Suas Contas Bancárias</h2>
+          <span className="text-xs text-muted-foreground">{contas.length} conta(s) cadastrada(s)</span>
         </div>
 
         {/* Lista de Contas */}
@@ -210,14 +210,14 @@ export function ContasBancariasContent() {
 
           <button
             onClick={() => handleOpenModal()}
-            className="group relative flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-fyn-border bg-fyn-surface/50 p-6 min-h-[180px] transition-all duration-200 hover:border-fyn-accent hover:bg-fyn-surface"
+            className="group relative flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-muted/50 p-6 min-h-[180px] transition-all duration-200 hover:border-primary hover:bg-muted"
           >
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-fyn-accent/10 transition-all duration-200 group-hover:bg-fyn-accent/20 group-hover:scale-110">
-              <Plus className="h-6 w-6 text-fyn-accent" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 transition-all duration-200 group-hover:bg-primary/20 group-hover:scale-110">
+              <Plus className="h-6 w-6 text-primary" />
             </div>
             <div className="text-center">
-              <p className="text-sm font-medium text-fyn-text">Nova Conta Bancária</p>
-              <p className="text-xs text-fyn-muted mt-0.5">Clique para adicionar</p>
+              <p className="text-sm font-medium text-foreground">Nova Conta Bancária</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Clique para adicionar</p>
             </div>
           </button>
         </div>

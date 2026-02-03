@@ -52,7 +52,7 @@ export function SociosContent() {
       cell: ({ row }) => {
         const isPositive = row.original.type === "Aporte"
         return (
-          <span className={isPositive ? "text-fyn-success" : ""}>
+          <span className={isPositive ? "text-emerald-600" : ""}>
             {isPositive ? "+" : ""}
             {formatCurrency(row.original.amount)}
           </span>
@@ -85,11 +85,11 @@ export function SociosContent() {
 
       {/* Alert */}
       {alertaRetirada && (
-        <div className="flex items-start gap-3 rounded border border-fyn-warning/30 bg-fyn-warning/10 p-3">
-          <AlertTriangle className="h-5 w-5 shrink-0 text-fyn-warning" />
+        <div className="flex items-start gap-3 rounded border border-amber-500/30 bg-amber-500/10 p-3">
+          <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600" />
           <div>
-            <p className="text-sm font-medium text-fyn-text">Sistema detectou risco de violação do caixa mínimo</p>
-            <p className="text-sm text-fyn-muted">
+            <p className="text-sm font-medium text-foreground">Sistema detectou risco de violação do caixa mínimo</p>
+            <p className="text-sm text-muted-foreground">
               Se retirar mais R$ 30.000,00, o caixa ficará abaixo do limite seguro de {formatCurrency(kpis.caixaMinimo)}
               .
             </p>
@@ -98,21 +98,21 @@ export function SociosContent() {
       )}
 
       {/* Partners Summary */}
-      <div className="rounded border border-fyn-border bg-fyn-bg p-3">
-        <h3 className="mb-2 text-sm font-medium text-fyn-text">Resumo por Sócio (Mês Atual)</h3>
-        <table className="fyn-table w-full">
+      <div className="rounded border border-border bg-card p-3">
+        <h3 className="mb-2 text-sm font-medium text-foreground">Resumo por Sócio (Mês Atual)</h3>
+        <table className="w-full">
           <thead>
-            <tr className="border-b border-fyn-border">
-              <th className="py-2 text-left text-xs text-fyn-muted">Sócio</th>
-              <th className="py-2 text-right text-xs text-fyn-muted">Participação</th>
-              <th className="py-2 text-right text-xs text-fyn-muted">Pró-labore</th>
-              <th className="py-2 text-right text-xs text-fyn-muted">Retiradas</th>
-              <th className="py-2 text-right text-xs text-fyn-muted">Total</th>
+            <tr className="border-b border-border">
+              <th className="py-2 text-left text-xs text-muted-foreground">Sócio</th>
+              <th className="py-2 text-right text-xs text-muted-foreground">Participação</th>
+              <th className="py-2 text-right text-xs text-muted-foreground">Pró-labore</th>
+              <th className="py-2 text-right text-xs text-muted-foreground">Retiradas</th>
+              <th className="py-2 text-right text-xs text-muted-foreground">Total</th>
             </tr>
           </thead>
           <tbody>
             {mockPartners.map((p, idx) => (
-              <tr key={idx} className="border-b border-fyn-border last:border-0">
+              <tr key={idx} className="border-b border-border last:border-0">
                 <td className="py-2 text-sm">{p.name}</td>
                 <td className="py-2 text-right text-sm">{p.participacao}%</td>
                 <td className="py-2 text-right text-sm">{formatCurrency(p.prolabore)}</td>
@@ -131,16 +131,16 @@ export function SociosContent() {
       <Modal isOpen={showNewModal} onClose={() => setShowNewModal(false)} title="Novo Evento" size="sm">
         <form className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm font-medium text-fyn-text">Sócio</label>
-            <select className="w-full rounded border border-fyn-border bg-fyn-bg px-3 py-2 text-sm text-fyn-text focus:border-fyn-accent focus:outline-none focus:ring-1 focus:ring-fyn-accent">
+            <label className="mb-1 block text-sm font-medium text-foreground">Sócio</label>
+            <select className="w-full rounded border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary">
               <option value="">Selecione...</option>
               <option value="joao">João Silva</option>
               <option value="maria">Maria Santos</option>
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-fyn-text">Tipo</label>
-            <select className="w-full rounded border border-fyn-border bg-fyn-bg px-3 py-2 text-sm text-fyn-text focus:border-fyn-accent focus:outline-none focus:ring-1 focus:ring-fyn-accent">
+            <label className="mb-1 block text-sm font-medium text-foreground">Tipo</label>
+            <select className="w-full rounded border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary">
               <option value="prolabore">Pró-labore</option>
               <option value="retirada">Retirada</option>
               <option value="reembolso">Reembolso</option>
@@ -148,20 +148,20 @@ export function SociosContent() {
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-fyn-text">Valor</label>
+            <label className="mb-1 block text-sm font-medium text-foreground">Valor</label>
             <input
               type="number"
               step="0.01"
               placeholder="0,00"
-              className="w-full rounded border border-fyn-border bg-fyn-bg px-3 py-2 text-sm text-fyn-text focus:border-fyn-accent focus:outline-none focus:ring-1 focus:ring-fyn-accent"
+              className="w-full rounded border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-fyn-text">Data</label>
+            <label className="mb-1 block text-sm font-medium text-foreground">Data</label>
             <input
               type="date"
               defaultValue={new Date().toISOString().split("T")[0]}
-              className="w-full rounded border border-fyn-border bg-fyn-bg px-3 py-2 text-sm text-fyn-text focus:border-fyn-accent focus:outline-none focus:ring-1 focus:ring-fyn-accent"
+              className="w-full rounded border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             />
           </div>
           <div className="flex justify-end gap-2 pt-2">

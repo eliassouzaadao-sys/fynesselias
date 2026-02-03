@@ -1,0 +1,253 @@
+import { NextResponse } from "next/server";
+import prisma from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/get-user";
+import { getEmpresaIdValidada } from "@/lib/get-empresa";
+
+export async function GET(request: Request) {
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+    }
+
+    const empresaId = await getEmpresaIdValidada(user.id);
+
+    const { searchParams } = new URL(request.url);
+    const tipo = searchParams.get("tipo");
+    const dataInicio = searchParams.get("dataInicio");
+    const dataFim = searchParams.get("dataFim");
+
+    const where: any = {
+      ativo: true,
+      userId: user.id,
+    };
+
+    if (empresaId) where.empresaId = empresaId;
+
+    if (tipo) {
+      where.tipo = tipo;
+    }
+
+    const centros = await prisma.centroCusto.findMany({
+      where,
+      orderBy: { sigla: "asc" },
+    });
+
+    // Se há filtro de data, calcular previsto e realizado dinamicamente
+    if (dataInicio && dataFim) {
+      const dataInicioDate = new Date(dataInicio + "T00:00:00");
+      const dataFimDate = new Date(dataFim + "T23:59:59");
+
+      const contasWhere: any = {
+        userId: user.id,
+        vencimento: {
+          gte: dataInicioDate,
+          lte: dataFimDate,
+        },
+        codigoTipo: { not: null },
+        OR: [
+          { parentId: { not: null } },
+          {
+            AND: [
+              { parentId: null },
+              { totalParcelas: null },
+            ],
+          },
+        ],
+      };
+
+      if (empresaId) contasWhere.empresaId = empresaId;
+
+      const contas = await prisma.conta.findMany({
+        where: contasWhere,
+      });
+
+      const centrosComValores = centros.map((centro) => {
+        const contasDoCentro = contas.filter((c) => c.codigoTipo === centro.sigla);
+        const previsto = contasDoCentro.reduce((sum, c) => sum + Number(c.valor), 0);
+        const realizado = contasDoCentro
+          .filter((c) => c.pago)
+          .reduce((sum, c) => sum + Number(c.valor), 0);
+
+        return { ...centro, previsto, realizado };
+      });
+
+      return NextResponse.json(centrosComValores);
+    }
+
+    return NextResponse.json(centros);
+  } catch (error) {
+    console.error("Error fetching centros:", error);
+    return NextResponse.json({ error: "Failed to fetch centros" }, { status: 500 });
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+    }
+
+    const empresaId = await getEmpresaIdValidada(user.id);
+
+    const data = await request.json();
+    const { nome, sigla, tipo, parentId } = data;
+
+    if (!nome || !sigla || !tipo) {
+      return NextResponse.json(
+        { error: "Nome, sigla e tipo são obrigatórios" },
+        { status: 400 }
+      );
+    }
+
+    if (!["despesa", "faturamento"].includes(tipo)) {
+      return NextResponse.json(
+        { error: "Tipo deve ser 'despesa' ou 'faturamento'" },
+        { status: 400 }
+      );
+    }
+
+    const centro = await prisma.centroCusto.create({
+      data: {
+        nome,
+        sigla: sigla.toUpperCase(),
+        tipo,
+        parentId: parentId || null,
+        userId: user.id,
+        empresaId: empresaId || undefined,
+      },
+    });
+
+    return NextResponse.json(centro, { status: 201 });
+  } catch (error: any) {
+    console.error("Error creating centro:", error);
+
+    if (error.code === "P2002") {
+      return NextResponse.json(
+        { error: "Já existe um centro com esta sigla" },
+        { status: 400 }
+      );
+    }
+
+    return NextResponse.json({ error: "Failed to create centro" }, { status: 500 });
+  }
+}
+
+export async function PUT(request: Request) {
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+    }
+
+    const empresaId = await getEmpresaIdValidada(user.id);
+
+    const data = await request.json();
+    const { id, nome, sigla } = data;
+
+    if (!id) {
+      return NextResponse.json({ error: "ID é obrigatório" }, { status: 400 });
+    }
+
+    if (!nome || !sigla) {
+      return NextResponse.json(
+        { error: "Nome e sigla são obrigatórios" },
+        { status: 400 }
+      );
+    }
+
+    // Verificar se pertence ao usuário
+    const existingWhere: any = { id: parseInt(id), userId: user.id };
+    if (empresaId) existingWhere.empresaId = empresaId;
+
+    const existing = await prisma.centroCusto.findFirst({
+      where: existingWhere,
+    });
+
+    if (!existing) {
+      return NextResponse.json({ error: "Centro não encontrado" }, { status: 404 });
+    }
+
+    const centro = await prisma.centroCusto.update({
+      where: { id: parseInt(id) },
+      data: { nome, sigla: sigla.toUpperCase() },
+    });
+
+    return NextResponse.json(centro);
+  } catch (error: any) {
+    console.error("Error updating centro:", error);
+
+    if (error.code === "P2025") {
+      return NextResponse.json({ error: "Centro não encontrado" }, { status: 404 });
+    }
+
+    if (error.code === "P2002") {
+      return NextResponse.json(
+        { error: "Já existe um centro com esta sigla" },
+        { status: 400 }
+      );
+    }
+
+    return NextResponse.json({ error: "Failed to update centro" }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+    }
+
+    const empresaId = await getEmpresaIdValidada(user.id);
+
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+
+    if (!id) {
+      return NextResponse.json({ error: "ID é obrigatório" }, { status: 400 });
+    }
+
+    // Verificar se pertence ao usuário
+    const existingWhere: any = { id: parseInt(id), userId: user.id };
+    if (empresaId) existingWhere.empresaId = empresaId;
+
+    const existing = await prisma.centroCusto.findFirst({
+      where: existingWhere,
+    });
+
+    if (!existing) {
+      return NextResponse.json({ error: "Centro não encontrado" }, { status: 404 });
+    }
+
+    // Check if centro has subcentros
+    const subcentrosWhere: any = { parentId: parseInt(id) };
+    if (empresaId) subcentrosWhere.empresaId = empresaId;
+
+    const subcentros = await prisma.centroCusto.findMany({
+      where: subcentrosWhere,
+    });
+
+    if (subcentros.length > 0) {
+      return NextResponse.json(
+        { error: "Não é possível excluir um centro que possui subcentros" },
+        { status: 400 }
+      );
+    }
+
+    await prisma.centroCusto.delete({
+      where: { id: parseInt(id) },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    console.error("Error deleting centro:", error);
+
+    if (error.code === "P2025") {
+      return NextResponse.json({ error: "Centro não encontrado" }, { status: 404 });
+    }
+
+    return NextResponse.json({ error: "Failed to delete centro" }, { status: 500 });
+  }
+}

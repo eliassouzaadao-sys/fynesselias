@@ -11,6 +11,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { getCurrentUser } from '@/lib/get-user';
+import { getEmpresaIdValidada } from '@/lib/get-empresa';
 
 interface RouteContext {
   params: Promise<{
@@ -20,6 +22,13 @@ interface RouteContext {
 
 export async function POST(request: NextRequest, context: RouteContext) {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+    }
+
+    const empresaId = await getEmpresaIdValidada(user.id);
+
     const params = await context.params;
     const id = parseInt(params.id);
 
@@ -30,9 +39,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
     }
 
-    // Get conta to check if exists
-    const conta = await prisma.conta.findUnique({
-      where: { id },
+    // Get conta to check if exists and belongs to user
+    const where: any = { id, userId: user.id };
+    if (empresaId) where.empresaId = empresaId;
+
+    const conta = await prisma.conta.findFirst({
+      where,
     });
 
     if (!conta) {

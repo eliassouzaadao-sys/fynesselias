@@ -1,1334 +1,1854 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { PageHeader } from "@/components/ui/page-header"
-import { KpiCard } from "@/components/ui/kpi-card"
 import { Card } from "@/components/ui/card"
-import { DataTable } from "@/components/ui/data-table"
 import { Button } from "@/components/ui/button"
-import { Modal } from "@/components/ui/modal"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { StatusBadge } from "@/components/ui/status-badge"
-import { Drawer } from "@/components/ui/drawer"
-import { BankSelector } from "@/components/bank/bank-selector"
-import { BankAccountCard } from "@/components/bank/bank-account-card"
-import { CurrencyInput } from "@/components/ui/currency-input"
-import { BANK_DATA } from "@/lib/bank-data"
+import { Input } from "@/components/ui/input"
 import { formatCurrency, formatDate } from "@/lib/format"
-import { Plus, Download, Filter, ArrowRight, ArrowLeft, Upload, X, FileText, CheckCircle, Eye, Edit, CreditCard, Landmark, BadgePercent, Calendar, TrendingDown, DollarSign } from "lucide-react"
-import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
-
-// Mock data centros e subcentros
-const centrosCusto = [
-  { 
-    id: "1", 
-    name: "Matéria Prima",
-    subcentros: [
-      { id: "1-1", name: "Frios" },
-      { id: "1-2", name: "Secos" },
-      { id: "1-3", name: "Bebidas" },
-    ]
-  },
-  { 
-    id: "2", 
-    name: "Comercial",
-    subcentros: [
-      { id: "2-1", name: "Vendas Diretas" },
-      { id: "2-2", name: "E-commerce" },
-    ]
-  },
-  { 
-    id: "3", 
-    name: "Marketing",
-    subcentros: [
-      { id: "3-1", name: "Redes Sociais" },
-      { id: "3-2", name: "Anúncios Online" },
-      { id: "3-3", name: "Eventos" },
-    ]
-  },
-  { 
-    id: "4", 
-    name: "Operações",
-    subcentros: [
-      { id: "4-1", name: "Logística" },
-      { id: "4-2", name: "Produção" },
-    ]
-  },
-]
-
-// Mock data
-const mockTransactions = [
-  {
-    id: "1",
-    date: "2026-01-12",
-    description: "Venda à vista - Cliente ABC",
-    type: "in",
-    amount: 4500.0,
-    centro: "Comercial",
-    subcentro: "Vendas Diretas",
-    origin: "manual",
-    balance: 127450.32,
-  },
-  {
-    id: "2",
-    date: "2026-01-12",
-    description: "Pagamento Fornecedor XYZ",
-    type: "out",
-    amount: 2800.0,
-    centro: "Matéria Prima",
-    subcentro: "Secos",
-    origin: "banco",
-    balance: 122950.32,
-  },
-  {
-    id: "3",
-    date: "2026-01-11",
-    description: "Recebimento Fatura #2024",
-    type: "in",
-    amount: 8200.0,
-    centro: "Comercial",
-    subcentro: "E-commerce",
-    origin: "banco",
-    balance: 125750.32,
-  },
-  {
-    id: "4",
-    date: "2026-01-11",
-    description: "Energia Elétrica",
-    type: "out",
-    amount: 1250.0,
-    centro: "Operações",
-    subcentro: "Produção",
-    origin: "whatsapp",
-    balance: 117550.32,
-  },
-  {
-    id: "5",
-    date: "2026-01-11",
-    description: "Aluguel Escritório",
-    type: "out",
-    amount: 3500.0,
-    centro: "Operações",
-    subcentro: "Produção",
-    origin: "manual",
-    balance: 118800.32,
-  },
-  {
-    id: "6",
-    date: "2026-01-10",
-    description: "Venda Produto A",
-    type: "in",
-    amount: 12300.0,
-    centro: "Comercial",
-    subcentro: "Vendas Diretas",
-    origin: "nfe",
-    balance: 122300.32,
-  },
-  {
-    id: "7",
-    date: "2026-01-10",
-    description: "Combustível Frota",
-    type: "out",
-    amount: 890.0,
-    centro: "Operações",
-    subcentro: "Logística",
-    origin: "banco",
-    balance: 110000.32,
-  },
-  {
-    id: "8",
-    date: "2026-01-09",
-    description: "Serviços Prestados",
-    type: "in",
-    amount: 6500.0,
-    centro: "Comercial",
-    subcentro: "Vendas Diretas",
-    origin: "banco",
-    balance: 110890.32,
-  },
-  {
-    id: "9",
-    date: "2026-01-09",
-    description: "Material de Escritório",
-    type: "out",
-    amount: 320.0,
-    centro: "Operações",
-    subcentro: "Produção",
-    origin: "manual",
-    balance: 104390.32,
-  },
-  {
-    id: "10",
-    date: "2026-01-08",
-    description: "Internet e Telefone",
-    type: "out",
-    amount: 450.0,
-    centro: "Operações",
-    subcentro: "Produção",
-    origin: "banco",
-    balance: 104710.32,
-  },
-]
-
-const originLabels = {
-  manual: "Manual",
-  whatsapp: "WhatsApp",
-  banco: "Banco",
-  nfe: "NF-e",
-  api: "API",
-}
-
-const mockContas = [
-  {
-    id: "1",
-    bankId: "banco-do-brasil",
-    agencia: "1234-5",
-    conta: "12345-6",
-    tipo: "Conta Corrente",
-    saldo: 45230.5,
-    limiteCredito: 50000,
-    limiteChequeEspecial: 15000,
-    utilizadoChequeEspecial: 0,
-  },
-  {
-    id: "2",
-    bankId: "itau",
-    agencia: "0987",
-    conta: "98765-4",
-    tipo: "Conta Corrente",
-    saldo: 32150.0,
-    limiteCredito: 80000,
-    limiteChequeEspecial: 20000,
-    utilizadoChequeEspecial: 5000,
-  },
-  {
-    id: "3",
-    bankId: "bradesco",
-    agencia: "4567",
-    conta: "45678-9",
-    tipo: "Conta Corrente",
-    saldo: 18500.0,
-    limiteCredito: 30000,
-    limiteChequeEspecial: 10000,
-    utilizadoChequeEspecial: 0,
-  },
-  {
-    id: "4",
-    bankId: "nubank",
-    agencia: "0001",
-    conta: "789456-1",
-    tipo: "Conta Digital",
-    saldo: 8750.0,
-    limiteCredito: 25000,
-    limiteChequeEspecial: 0,
-    utilizadoChequeEspecial: 0,
-  },
-  {
-    id: "5",
-    bankId: "caixa",
-    agencia: "2468",
-    conta: "00123456-7",
-    tipo: "Conta Corrente",
-    saldo: 15320.82,
-    limiteCredito: 40000,
-    limiteChequeEspecial: 8000,
-    utilizadoChequeEspecial: 0,
-  },
-]
-
-const mockCreditos = [
-  {
-    id: "1",
-    tipo: "Cartão de Crédito",
-    banco: "Banco do Brasil",
-    limite: 50000,
-    utilizado: 32500,
-    disponivel: 17500,
-    vencimentoFatura: "2026-01-25",
-    taxaJuros: 12.5,
-    status: "Ativo",
-  },
-  {
-    id: "2",
-    tipo: "Cartão de Crédito",
-    banco: "Itaú Empresas",
-    limite: 80000,
-    utilizado: 45000,
-    disponivel: 35000,
-    vencimentoFatura: "2026-01-20",
-    taxaJuros: 10.8,
-    status: "Ativo",
-  },
-  {
-    id: "3",
-    tipo: "Empréstimo",
-    banco: "Bradesco",
-    limite: 200000,
-    utilizado: 200000,
-    disponivel: 0,
-    parcelas: "24/36",
-    valorParcela: 9800,
-    vencimentoParcela: "2026-01-15",
-    taxaJuros: 1.89,
-    status: "Em Dia",
-  },
-  {
-    id: "4",
-    tipo: "FGI PRONAMP",
-    banco: "BNDES via BB",
-    limite: 500000,
-    utilizado: 350000,
-    disponivel: 150000,
-    parcelas: "12/48",
-    valorParcela: 12500,
-    vencimentoParcela: "2026-01-10",
-    taxaJuros: 0.85,
-    status: "Em Dia",
-  },
-  {
-    id: "5",
-    tipo: "Cheque Especial",
-    banco: "Santander",
-    limite: 30000,
-    utilizado: 0,
-    disponivel: 30000,
-    taxaJuros: 8.5,
-    status: "Disponível",
-  },
-  {
-    id: "6",
-    tipo: "Capital de Giro",
-    banco: "Caixa",
-    limite: 150000,
-    utilizado: 150000,
-    disponivel: 0,
-    parcelas: "6/24",
-    valorParcela: 7200,
-    vencimentoParcela: "2026-01-18",
-    taxaJuros: 1.45,
-    status: "Em Dia",
-  },
-]
-
-const tipoIcons = {
-  "Cartão de Crédito": CreditCard,
-  Empréstimo: Landmark,
-  "FGI PRONAMP": BadgePercent,
-  "Cheque Especial": TrendingDown,
-  "Capital de Giro": Landmark,
-  "Antecipação Recebíveis": Calendar,
-}
-
-const columns = [
-  {
-    accessorKey: "date",
-    header: "Data",
-    cell: ({ row }) => formatDate(row.original.date),
-  },
-  {
-    accessorKey: "description",
-    header: "Descrição",
-  },
-  {
-    accessorKey: "centro",
-    header: "Centro",
-  },
-  {
-    accessorKey: "subcentro",
-    header: "Subcentro",
-  },
-  {
-    accessorKey: "origin",
-    header: "Origem",
-    cell: ({ row }) => (
-      <span className="text-xs text-fyn-text-muted">{originLabels[row.original.origin] || row.original.origin}</span>
-    ),
-  },
-  {
-    accessorKey: "amount",
-    header: "Valor",
-    cell: ({ row }) => (
-      <span className={row.original.type === "in" ? "text-fyn-success" : "text-fyn-danger"}>
-        {row.original.type === "in" ? "+" : "-"}
-        {formatCurrency(row.original.amount)}
-      </span>
-    ),
-  },
-  {
-    accessorKey: "balance",
-    header: "Saldo",
-    cell: ({ row }) => <span className="font-medium">{formatCurrency(row.original.balance)}</span>,
-  },
-]
+import { CurrencyInput } from "@/components/ui/currency-input"
+import { TrendingUp, TrendingDown, Building2, Plus, X, Trash2, Edit, Copy, ChevronDown, Calendar, Clock, CheckCircle2, ArrowDownCircle, ArrowUpCircle, Filter, Search, CreditCard, Wallet, Loader2, Eye } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { NovoCartaoModal } from "@/app/(app)/cartoes/components/NovoCartaoModal"
+import { CartaoCard } from "@/app/(app)/cartoes/components/CartaoCard"
+import { FaturaModal } from "@/app/(app)/cartoes/components/FaturaModal"
 
 export function FluxoCaixaContent() {
-  const [showAddModal, setShowAddModal] = useState(false)
-  const [selectedCentro, setSelectedCentro] = useState("")
-  const [selectedSubcentro, setSelectedSubcentro] = useState("")
-  const [filters, setFilters] = useState({
-    costCenter: "",
-    category: "",
-    origin: "",
-    dateFrom: "",
-    dateTo: "",
-  })
-  
-  const selectedCentroData = centrosCusto.find(c => c.id === selectedCentro)
+  const [selectedRow, setSelectedRow] = useState(null)
+  const [fluxoCaixa, setFluxoCaixa] = useState([])
+  const [activeTab, setActiveTab] = useState("fluxo") // "fluxo", "bancos" ou "cartoes"
 
-  const handleCentroChange = (e) => {
-    setSelectedCentro(e.target.value)
-    setSelectedSubcentro("") // Reset subcentro quando mudar o centro
-  }
-  
-  // Estados para Contas Bancárias
-  const [contas, setContas] = useState(mockContas)
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  const [modalStep, setModalStep] = useState(1)
-  const [editingConta, setEditingConta] = useState(null)
-  const [selectedBankId, setSelectedBankId] = useState("")
-  const [formData, setFormData] = useState({
+  // Estados para filtro de data
+  const [dataInicio, setDataInicio] = useState("")
+  const [dataFim, setDataFim] = useState("")
+  const [filtroAtivo, setFiltroAtivo] = useState("todos") // todos, hoje, amanha, personalizado
+
+  // Estados para filtros avancados
+  const [filtroCodigo, setFiltroCodigo] = useState("")
+  const [filtroDescricao, setFiltroDescricao] = useState("")
+  const [filtroBancoId, setFiltroBancoId] = useState("")
+  const [showFiltrosAvancados, setShowFiltrosAvancados] = useState(false)
+
+  // Estados para bancos
+  const [bancos, setBancos] = useState([])
+  const [loadingBancos, setLoadingBancos] = useState(false)
+  const [showBancoModal, setShowBancoModal] = useState(false)
+  const [editingBanco, setEditingBanco] = useState(null)
+  const [bancoForm, setBancoForm] = useState({
+    nome: "",
+    codigo: "",
     agencia: "",
     conta: "",
-    tipo: "Conta Corrente",
-    saldo: "",
-    limiteCredito: "",
-    limiteChequeEspecial: "",
+    chavePix: "",
+    tipoChavePix: "",
+    saldoInicial: 0
   })
-  
-  // Estados para upload de extrato
-  const [uploadedFiles, setUploadedFiles] = useState([])
-  const [isDragging, setIsDragging] = useState(false)
-  
-  // Estados para Créditos
-  const [creditos, setCreditos] = useState(mockCreditos)
-  const [showNovoCreditoModal, setShowNovoCreditoModal] = useState(false)
-  const [showCreditoDrawer, setShowCreditoDrawer] = useState(false)
-  const [selectedCredito, setSelectedCredito] = useState(null)
 
-  const saldoAtual = 127450.32
-  const entradasMes = 45200.0
-  const saidasMes = 32800.0
-  const saldoProjetado = 139850.32
-  
-  // KPIs para Contas Bancárias
-  const saldoTotal = contas.reduce((acc, c) => acc + c.saldo, 0)
-  const limiteTotal = contas.reduce((acc, c) => acc + c.limiteCredito, 0)
-  const chequeEspecialTotal = contas.reduce((acc, c) => acc + c.limiteChequeEspecial, 0)
-  const chequeEspecialUtilizado = contas.reduce((acc, c) => acc + c.utilizadoChequeEspecial, 0)
-  
-  // KPIs para Créditos
-  const kpisCreditos = {
-    limiteTotal: creditos.reduce((acc, c) => acc + c.limite, 0),
-    utilizado: creditos.reduce((acc, c) => acc + c.utilizado, 0),
-    disponivel: creditos.reduce((acc, c) => acc + c.disponivel, 0),
-    parcelasMes: creditos.filter((c) => c.valorParcela).reduce((acc, c) => acc + c.valorParcela, 0),
+  // Estados para cartões de crédito
+  const [cartoes, setCartoes] = useState([])
+  const [loadingCartoes, setLoadingCartoes] = useState(false)
+  const [showNovoCartaoModal, setShowNovoCartaoModal] = useState(false)
+  const [cartaoParaEditar, setCartaoParaEditar] = useState(null)
+  const [cartaoParaFaturas, setCartaoParaFaturas] = useState(null)
+  const [faturas, setFaturas] = useState([])
+  const [loadingFaturas, setLoadingFaturas] = useState(false)
+  const [faturaDetalhe, setFaturaDetalhe] = useState(null)
+
+  // Estado para dropdown de banco na tabela
+  const [openBancoDropdown, setOpenBancoDropdown] = useState(null)
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 })
+  const dropdownRef = useRef(null)
+
+  // Estados para modal de nova movimentação
+  const [showTipoSelector, setShowTipoSelector] = useState(false)
+  const [showMovimentacaoModal, setShowMovimentacaoModal] = useState(false)
+  const [savingMovimentacao, setSavingMovimentacao] = useState(false)
+  const [centros, setCentros] = useState([])
+  const [movimentacaoForm, setMovimentacaoForm] = useState({
+    tipo: "saida",
+    dia: new Date().toISOString().split('T')[0],
+    codigoTipo: "",
+    fornecedorCliente: "",
+    valor: 0,
+    bancoId: "",
+    cartaoId: ""
+  })
+
+  // Estados para aba de contas pendentes
+  const [contasPendentes, setContasPendentes] = useState([])
+  const [loadingContas, setLoadingContas] = useState(false)
+  const [showBancoSelector, setShowBancoSelector] = useState(false)
+  const [selectedBancoId, setSelectedBancoId] = useState(null)
+  const [contaParaPagar, setContaParaPagar] = useState(null)
+  const [processandoPagamento, setProcessandoPagamento] = useState(false)
+
+  // Buscar dados do fluxo de caixa e bancos
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        // Requisições sequenciais para evitar conflitos de concorrência
+        const fluxoRes = await fetch("/api/fluxo-caixa");
+        const fluxoData = await fluxoRes.json();
+
+        const bancosRes = await fetch("/api/bancos");
+        const bancosData = await bancosRes.json();
+
+        setFluxoCaixa(Array.isArray(fluxoData) ? fluxoData : []);
+        setBancos(Array.isArray(bancosData) ? bancosData : []);
+      } catch (error) {
+        console.error("Erro ao buscar dados:", error);
+        setFluxoCaixa([]);
+        setBancos([]);
+      }
+    }
+    fetchData();
+  }, []);
+
+  // Fechar dropdown ao clicar fora
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setOpenBancoDropdown(null)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  // Buscar contas pendentes junto com os dados iniciais
+  useEffect(() => {
+    fetchContasPendentes()
+  }, [])
+
+  async function fetchContasPendentes() {
+    try {
+      setLoadingContas(true)
+      // Usar modo=individual para obter parcelas como contas separadas
+      const res = await fetch('/api/contas?modo=individual')
+      const data = await res.json()
+      // Filtrar apenas contas não pagas
+      const pendentes = (Array.isArray(data) ? data : []).filter(c => !c.pago)
+      setContasPendentes(pendentes)
+    } catch (error) {
+      console.error('Erro ao buscar contas pendentes:', error)
+      setContasPendentes([])
+    } finally {
+      setLoadingContas(false)
+    }
   }
-  
-  // Colunas para tabela de Créditos
-  const creditosColumns = [
-    {
-      accessorKey: "tipo",
-      header: "Tipo",
-      cell: ({ row }) => {
-        const Icon = tipoIcons[row.original.tipo] || Landmark
-        return (
-          <div className="flex items-center gap-2">
-            <Icon className="h-4 w-4 text-fyn-muted" />
-            <span>{row.original.tipo}</span>
-          </div>
-        )
-      },
-    },
-    { accessorKey: "banco", header: "Banco" },
-    {
-      accessorKey: "limite",
-      header: "Limite",
-      cell: ({ row }) => formatCurrency(row.original.limite),
-    },
-    {
-      accessorKey: "utilizado",
-      header: "Utilizado",
-      cell: ({ row }) => (
-        <div className="flex flex-col">
-          <span>{formatCurrency(row.original.utilizado)}</span>
-          <div className="mt-1 h-1.5 w-20 overflow-hidden rounded-full bg-fyn-border">
-            <div
-              className="h-full rounded-full bg-fyn-accent"
-              style={{ width: `${(row.original.utilizado / row.original.limite) * 100}%` }}
-            />
-          </div>
-        </div>
-      ),
-    },
-    {
-      accessorKey: "disponivel",
-      header: "Disponível",
-      cell: ({ row }) => (
-        <span className={row.original.disponivel > 0 ? "text-fyn-success" : "text-fyn-muted"}>
-          {formatCurrency(row.original.disponivel)}
-        </span>
-      ),
-    },
-    {
-      accessorKey: "taxaJuros",
-      header: "Taxa a.m.",
-      cell: ({ row }) => <span className="text-xs">{row.original.taxaJuros}%</span>,
-    },
-    {
-      accessorKey: "status",
-      header: "Status",
-      cell: ({ row }) => <StatusBadge status={row.original.status} />,
-    },
-    {
-      id: "actions",
-      header: "Ações",
-      cell: ({ row }) => (
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => {
-              setSelectedCredito(row.original)
-              setShowCreditoDrawer(true)
-            }}
-            className="rounded p-1 text-fyn-muted hover:bg-fyn-surface hover:text-fyn-accent"
-            title="Ver detalhes"
-          >
-            <Eye className="h-4 w-4" />
-          </button>
-        </div>
-      ),
-    },
-  ]
 
-  // Funções para Contas Bancárias
-  function handleOpenModal(conta = null) {
-    if (conta) {
-      setEditingConta(conta)
-      setSelectedBankId(conta.bankId)
-      setFormData({
-        agencia: conta.agencia,
-        conta: conta.conta,
-        tipo: conta.tipo,
-        saldo: conta.saldo.toString(),
-        limiteCredito: conta.limiteCredito.toString(),
-        limiteChequeEspecial: conta.limiteChequeEspecial.toString(),
+  // Abrir modal de seleção de banco para pagar
+  function abrirSeletorBanco(conta) {
+    setContaParaPagar(conta)
+    fetchBancos()
+    setSelectedBancoId(null)
+    setShowBancoSelector(true)
+  }
+
+  // Confirmar pagamento com banco selecionado
+  async function confirmarPagamento() {
+    if (!contaParaPagar) return
+
+    try {
+      setProcessandoPagamento(true)
+      await fetch('/api/contas', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: contaParaPagar.id,
+          pago: true,
+          dataPagamento: new Date(),
+          bancoId: selectedBancoId
+        }),
       })
-      setModalStep(2)
-    } else {
-      setEditingConta(null)
-      setSelectedBankId("")
-      setFormData({
-        agencia: "",
-        conta: "",
-        tipo: "Conta Corrente",
-        saldo: "",
-        limiteCredito: "",
-        limiteChequeEspecial: "",
+      setShowBancoSelector(false)
+      setContaParaPagar(null)
+      setSelectedBancoId(null)
+      // Recarregar contas pendentes e fluxo
+      fetchContasPendentes()
+      const fluxoRes = await fetch('/api/fluxo-caixa')
+      const fluxoData = await fluxoRes.json()
+      setFluxoCaixa(Array.isArray(fluxoData) ? fluxoData : [])
+    } catch (error) {
+      console.error('Erro ao confirmar pagamento:', error)
+      alert('Erro ao confirmar pagamento')
+    } finally {
+      setProcessandoPagamento(false)
+    }
+  }
+
+  // Helper para badge de status
+  function getStatusBadge(conta) {
+    const vencido = new Date(conta.vencimento) < new Date()
+    if (vencido) {
+      return <Badge variant="destructive" className="bg-red-100 text-red-700">Vencida</Badge>
+    }
+    return <Badge variant="warning" className="bg-yellow-100 text-yellow-700">Pendente</Badge>
+  }
+
+  // Atualizar banco de uma movimentacao
+  async function updateFluxoBanco(fluxoId, bancoId) {
+    try {
+      await fetch('/api/fluxo-caixa', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: fluxoId, bancoId })
       })
-      setModalStep(1)
-    }
-    setIsModalOpen(true)
-  }
-
-  function handleCloseModal() {
-    setIsModalOpen(false)
-    setModalStep(1)
-    setSelectedBankId("")
-    setEditingConta(null)
-  }
-
-  function handleNextStep() {
-    if (selectedBankId) {
-      setModalStep(2)
+      // Atualizar localmente
+      setFluxoCaixa(prev => prev.map(item =>
+        item.id === fluxoId
+          ? { ...item, bancoId, banco: bancos.find(b => b.id === bancoId) || null }
+          : item
+      ))
+      setOpenBancoDropdown(null)
+    } catch (error) {
+      console.error('Erro ao atualizar banco:', error)
+      alert('Erro ao atualizar banco')
     }
   }
 
-  function handleSave() {
-    const novaConta = {
-      id: editingConta?.id || Date.now().toString(),
-      bankId: selectedBankId,
-      agencia: formData.agencia,
-      conta: formData.conta,
-      tipo: formData.tipo,
-      saldo: Number.parseFloat(formData.saldo) || 0,
-      limiteCredito: Number.parseFloat(formData.limiteCredito) || 0,
-      limiteChequeEspecial: Number.parseFloat(formData.limiteChequeEspecial) || 0,
-      utilizadoChequeEspecial: editingConta?.utilizadoChequeEspecial || 0,
+  // Recarregar bancos quando a aba de bancos estiver ativa
+  useEffect(() => {
+    if (activeTab === "bancos" && bancos.length === 0) {
+      fetchBancos()
     }
+  }, [activeTab, bancos.length])
 
-    if (editingConta) {
-      setContas(contas.map((c) => (c.id === editingConta.id ? novaConta : c)))
-    } else {
-      setContas([...contas, novaConta])
+  async function fetchBancos() {
+    try {
+      setLoadingBancos(true)
+      const res = await fetch('/api/bancos')
+      const data = await res.json()
+      setBancos(Array.isArray(data) ? data : [])
+    } catch (error) {
+      console.error('Erro ao buscar bancos:', error)
+      setBancos([])
+    } finally {
+      setLoadingBancos(false)
     }
-    handleCloseModal()
   }
 
-  function handleDelete(id) {
-    setContas(contas.filter((c) => c.id !== id))
-  }
-  
-  // Funções para upload de extrato
-  function handleFileUpload(files) {
-    const newFiles = Array.from(files).map(file => ({
-      id: Date.now() + Math.random(),
-      name: file.name,
-      size: file.size,
-      type: file.type,
-      uploadDate: new Date().toISOString(),
-      status: "processing",
-      file: file
-    }))
-    
-    setUploadedFiles(prev => [...prev, ...newFiles])
-    
-    // Simular processamento
-    newFiles.forEach(file => {
-      setTimeout(() => {
-        setUploadedFiles(prev => 
-          prev.map(f => f.id === file.id ? { ...f, status: "completed" } : f)
-        )
-      }, 2000)
+  function openNewBancoModal() {
+    setEditingBanco(null)
+    setBancoForm({
+      nome: "",
+      codigo: "",
+      agencia: "",
+      conta: "",
+      chavePix: "",
+      tipoChavePix: "",
+      saldoInicial: 0
     })
-  }
-  
-  function handleDragOver(e) {
-    e.preventDefault()
-    setIsDragging(true)
-  }
-  
-  function handleDragLeave(e) {
-    e.preventDefault()
-    setIsDragging(false)
-  }
-  
-  function handleDrop(e) {
-    e.preventDefault()
-    setIsDragging(false)
-    const files = e.dataTransfer.files
-    if (files.length > 0) {
-      handleFileUpload(files)
-    }
-  }
-  
-  function handleRemoveFile(id) {
-    setUploadedFiles(prev => prev.filter(f => f.id !== id))
-  }
-  
-  function formatFileSize(bytes) {
-    if (bytes === 0) return '0 Bytes'
-    const k = 1024
-    const sizes = ['Bytes', 'KB', 'MB', 'GB']
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i]
+    setShowBancoModal(true)
   }
 
-  const selectedBank = selectedBankId ? BANK_DATA[selectedBankId] : null
+  function openEditBancoModal(banco) {
+    setEditingBanco(banco)
+    setBancoForm({
+      nome: banco.nome || "",
+      codigo: banco.codigo || "",
+      agencia: banco.agencia || "",
+      conta: banco.conta || "",
+      chavePix: banco.chavePix || "",
+      tipoChavePix: banco.tipoChavePix || "",
+      saldoInicial: banco.saldoInicial || 0
+    })
+    setShowBancoModal(true)
+  }
+
+  async function handleSaveBanco(e) {
+    e.preventDefault()
+
+    try {
+      const method = editingBanco ? 'PUT' : 'POST'
+      const body = editingBanco
+        ? { ...bancoForm, id: editingBanco.id }
+        : bancoForm
+
+      const response = await fetch('/api/bancos', {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Erro ao salvar banco')
+      }
+
+      setShowBancoModal(false)
+      fetchBancos()
+    } catch (error) {
+      console.error('Erro ao salvar banco:', error)
+      alert(error.message || 'Erro ao salvar banco')
+    }
+  }
+
+  async function handleDeleteBanco(id) {
+    if (!confirm('Tem certeza que deseja excluir este banco?')) return
+
+    try {
+      await fetch('/api/bancos', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      })
+      fetchBancos()
+    } catch (error) {
+      console.error('Erro ao excluir banco:', error)
+      alert('Erro ao excluir banco')
+    }
+  }
+
+  function copyToClipboard(text) {
+    navigator.clipboard.writeText(text)
+  }
+
+  // Funções para cartões de crédito
+  async function fetchCartoes() {
+    try {
+      setLoadingCartoes(true)
+      const res = await fetch("/api/cartoes")
+      const data = await res.json()
+      setCartoes(Array.isArray(data) ? data : [])
+    } catch (error) {
+      console.error("Erro ao carregar cartões:", error)
+      setCartoes([])
+    } finally {
+      setLoadingCartoes(false)
+    }
+  }
+
+  // Carregar cartões quando a aba de cartões estiver ativa
+  useEffect(() => {
+    if (activeTab === "cartoes" && cartoes.length === 0) {
+      fetchCartoes()
+    }
+  }, [activeTab, cartoes.length])
+
+  async function loadFaturas(cartaoId) {
+    try {
+      setLoadingFaturas(true)
+      const res = await fetch(`/api/cartoes/${cartaoId}/faturas`)
+      const data = await res.json()
+      setFaturas(Array.isArray(data) ? data : [])
+    } catch (error) {
+      console.error("Erro ao carregar faturas:", error)
+      setFaturas([])
+    } finally {
+      setLoadingFaturas(false)
+    }
+  }
+
+  function handleVerFaturas(cartao) {
+    setCartaoParaFaturas(cartao)
+    loadFaturas(cartao.id)
+  }
+
+  function handleEditarCartao(cartao) {
+    setCartaoParaEditar(cartao)
+    setShowNovoCartaoModal(true)
+  }
+
+  async function handleExcluirCartao(cartaoId) {
+    if (!confirm("Tem certeza que deseja excluir este cartão?")) return
+
+    try {
+      const res = await fetch(`/api/cartoes?id=${cartaoId}`, { method: "DELETE" })
+      if (res.ok) {
+        fetchCartoes()
+      }
+    } catch (error) {
+      console.error("Erro ao excluir cartão:", error)
+      alert("Erro ao excluir cartão")
+    }
+  }
+
+  function handleCartaoSuccess() {
+    fetchCartoes()
+    setShowNovoCartaoModal(false)
+    setCartaoParaEditar(null)
+  }
+
+  // Calcular KPIs dos cartões
+  const limiteTotal = cartoes.reduce((acc, c) => acc + c.limite, 0)
+  const limiteUtilizado = cartoes.reduce((acc, c) => acc + (c.limiteUtilizado || 0), 0)
+  const limiteDisponivel = limiteTotal - limiteUtilizado
+  const percentUtilizado = limiteTotal > 0 ? (limiteUtilizado / limiteTotal) * 100 : 0
+
+  // Buscar centros de custo filtrados por tipo
+  async function fetchCentrosByTipo(tipoMovimentacao) {
+    try {
+      const tipoCentro = tipoMovimentacao === "entrada" ? "faturamento" : "despesa"
+      const res = await fetch(`/api/centros?tipo=${tipoCentro}`)
+      const data = await res.json()
+      setCentros(Array.isArray(data) ? data : [])
+    } catch (error) {
+      console.error('Erro ao buscar centros:', error)
+      setCentros([])
+    }
+  }
+
+  // Abrir modal de nova movimentação
+  async function openMovimentacaoModal(tipo) {
+    const tipoInicial = tipo || "saida"
+    setMovimentacaoForm({
+      tipo: tipoInicial,
+      dia: new Date().toISOString().split('T')[0],
+      codigoTipo: "",
+      fornecedorCliente: "",
+      valor: 0,
+      bancoId: "",
+      cartaoId: ""
+    })
+    setShowTipoSelector(false)
+    setShowMovimentacaoModal(true)
+
+    // Buscar centros de custo filtrados pelo tipo inicial
+    fetchCentrosByTipo(tipoInicial)
+
+    // Buscar bancos e cartões se ainda não carregados
+    if (bancos.length === 0) {
+      fetchBancos()
+    }
+    if (cartoes.length === 0) {
+      fetchCartoes()
+    }
+  }
+
+  // Atualizar centros quando tipo de movimentação mudar
+  function handleTipoMovimentacaoChange(novoTipo) {
+    setMovimentacaoForm(prev => ({
+      ...prev,
+      tipo: novoTipo,
+      codigoTipo: "" // Limpa o centro selecionado ao mudar o tipo
+    }))
+    fetchCentrosByTipo(novoTipo)
+  }
+
+  // Excluir movimentação (apenas lançamentos diretos)
+  async function handleDeleteMovimentacao(id) {
+    if (!confirm('Tem certeza que deseja excluir esta movimentacao?')) return
+
+    try {
+      const response = await fetch('/api/fluxo-caixa', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Erro ao excluir movimentação')
+      }
+
+      // Recarregar dados
+      const fluxoRes = await fetch('/api/fluxo-caixa')
+      const fluxoData = await fluxoRes.json()
+      setFluxoCaixa(Array.isArray(fluxoData) ? fluxoData : [])
+      setSelectedRow(null)
+    } catch (error) {
+      console.error('Erro ao excluir movimentação:', error)
+      alert(error.message || 'Erro ao excluir movimentação')
+    }
+  }
+
+  // Salvar nova movimentação
+  async function handleSaveMovimentacao(e) {
+    e.preventDefault()
+
+    if (!movimentacaoForm.valor || movimentacaoForm.valor <= 0) {
+      alert('Valor deve ser maior que zero')
+      return
+    }
+
+    setSavingMovimentacao(true)
+    try {
+      const payload = {
+        tipo: movimentacaoForm.tipo,
+        dia: movimentacaoForm.dia,
+        codigoTipo: movimentacaoForm.codigoTipo || null,
+        centroCustoSigla: movimentacaoForm.codigoTipo || null,
+        fornecedorCliente: movimentacaoForm.fornecedorCliente || 'Movimentação manual',
+        valor: movimentacaoForm.valor,
+        bancoId: movimentacaoForm.bancoId ? Number(movimentacaoForm.bancoId) : null,
+        cartaoId: movimentacaoForm.cartaoId ? Number(movimentacaoForm.cartaoId) : null,
+      }
+
+      const response = await fetch('/api/fluxo-caixa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Erro ao criar movimentação')
+      }
+
+      // Recarregar dados
+      const fluxoRes = await fetch('/api/fluxo-caixa')
+      const fluxoData = await fluxoRes.json()
+      setFluxoCaixa(Array.isArray(fluxoData) ? fluxoData : [])
+
+      setShowMovimentacaoModal(false)
+    } catch (error) {
+      console.error('Erro ao salvar movimentação:', error)
+      alert(error.message || 'Erro ao salvar movimentação')
+    } finally {
+      setSavingMovimentacao(false)
+    }
+  }
+
+  // Calcular saldo atual (último fluxo)
+  const saldoAtual = fluxoCaixa[0]?.fluxo || 0
+
+  // Helper para normalizar data (evita problemas de timezone)
+  const normalizarData = (dateStr) => {
+    const d = new Date(dateStr)
+    const ano = d.getFullYear()
+    const mes = String(d.getMonth() + 1).padStart(2, '0')
+    const dia = String(d.getDate()).padStart(2, '0')
+    return `${ano}-${mes}-${dia}`
+  }
+
+  // Filtrar fluxo por período e filtros avancados
+  const fluxoFiltrado = fluxoCaixa.filter(item => {
+    const dataItemStr = item.dia.split('T')[0] // Extrai apenas YYYY-MM-DD
+    if (dataInicio && dataItemStr < dataInicio) return false
+    if (dataFim && dataItemStr > dataFim) return false
+
+    // Filtro por codigo
+    if (filtroCodigo && item.codigoTipo) {
+      if (!item.codigoTipo.toLowerCase().includes(filtroCodigo.toLowerCase())) return false
+    } else if (filtroCodigo && !item.codigoTipo) {
+      return false
+    }
+
+    // Filtro por descricao/fornecedor
+    if (filtroDescricao && item.fornecedorCliente) {
+      if (!item.fornecedorCliente.toLowerCase().includes(filtroDescricao.toLowerCase())) return false
+    } else if (filtroDescricao && !item.fornecedorCliente) {
+      return false
+    }
+
+    // Filtro por banco
+    if (filtroBancoId && item.bancoId !== parseInt(filtroBancoId)) return false
+
+    return true
+  })
+
+  // Filtrar contas pendentes por período
+  // Uma conta pendente aparece se a data de vencimento está no período selecionado
+  const contasPendentesFiltradas = contasPendentes.filter(conta => {
+    if (!dataInicio && !dataFim) return true // Sem filtro de data, mostra todas
+
+    const dataVencimentoStr = normalizarData(conta.vencimento)
+
+    // Verifica se vencimento está no período
+    const vencimentoNoPeriodo =
+      (!dataInicio || dataVencimentoStr >= dataInicio) &&
+      (!dataFim || dataVencimentoStr <= dataFim)
+
+    return vencimentoNoPeriodo
+  })
+
+  // Funções de filtro rápido
+  function getDataFormatada(date) {
+    // Usa data local (não UTC) para evitar problemas de timezone
+    const ano = date.getFullYear()
+    const mes = String(date.getMonth() + 1).padStart(2, '0')
+    const dia = String(date.getDate()).padStart(2, '0')
+    return `${ano}-${mes}-${dia}`
+  }
+
+  function filtrarHoje() {
+    const hoje = getDataFormatada(new Date())
+    setDataInicio(hoje)
+    setDataFim(hoje)
+    setFiltroAtivo("hoje")
+  }
+
+  function filtrarAmanha() {
+    const amanha = new Date()
+    amanha.setDate(amanha.getDate() + 1)
+    const dataAmanha = getDataFormatada(amanha)
+    setDataInicio(dataAmanha)
+    setDataFim(dataAmanha)
+    setFiltroAtivo("amanha")
+  }
+
+  function filtrarSemana() {
+    const hoje = new Date()
+    const fimSemana = new Date()
+    fimSemana.setDate(hoje.getDate() + 7)
+    setDataInicio(getDataFormatada(hoje))
+    setDataFim(getDataFormatada(fimSemana))
+    setFiltroAtivo("semana")
+  }
+
+  // Limpar filtros
+  function limparFiltros() {
+    setDataInicio("")
+    setDataFim("")
+    setFiltroAtivo("todos")
+    setFiltroCodigo("")
+    setFiltroDescricao("")
+    setFiltroBancoId("")
+  }
+
+  // Ao mudar manualmente as datas, marca como personalizado
+  function handleDataInicioChange(value) {
+    setDataInicio(value)
+    setFiltroAtivo("personalizado")
+  }
+
+  function handleDataFimChange(value) {
+    setDataFim(value)
+    setFiltroAtivo("personalizado")
+  }
+
+  const temFiltro = dataInicio || dataFim || filtroCodigo || filtroDescricao || filtroBancoId
+
+  // Calcular saldo do período filtrado (entradas - saídas)
+  const saldoPeriodo = fluxoFiltrado.reduce((acc, item) => {
+    if (item.tipo === 'entrada') {
+      return acc + Number(item.valor)
+    } else {
+      return acc - Number(item.valor)
+    }
+  }, 0)
+
+  // Calcular totais de entradas e saídas do período
+  const totalEntradasPeriodo = fluxoFiltrado
+    .filter(item => item.tipo === 'entrada')
+    .reduce((acc, item) => acc + Number(item.valor), 0)
+
+  const totalSaidasPeriodo = fluxoFiltrado
+    .filter(item => item.tipo === 'saida')
+    .reduce((acc, item) => acc + Number(item.valor), 0)
+
+  // Calcular saldo por banco (saldo inicial + movimentações)
+  const saldosPorBanco = bancos.reduce((acc, banco) => {
+    const saldoInicial = Number(banco.saldoInicial) || 0
+    const movimentacoesBanco = fluxoCaixa.filter(item => item.bancoId === banco.id)
+    const saldoMovimentacoes = movimentacoesBanco.reduce((total, item) => {
+      if (item.tipo === 'entrada') {
+        return total + Number(item.valor)
+      } else {
+        return total - Number(item.valor)
+      }
+    }, 0)
+    acc[banco.id] = saldoInicial + saldoMovimentacoes
+    return acc
+  }, {})
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-4">
       <PageHeader
         title="Fluxo de Caixa"
-        description="Lançamentos, movimentação financeira e contas bancárias"
+        description="Gestao de movimentacao financeira"
       />
 
-      <Tabs defaultValue="lancamentos" className="w-full">
-        <TabsList>
-          <TabsTrigger value="lancamentos">Lançamentos</TabsTrigger>
-          <TabsTrigger value="contas">Contas Bancárias</TabsTrigger>
-          <TabsTrigger value="creditos">Créditos</TabsTrigger>
-          <TabsTrigger value="extrato">Upload de Extrato</TabsTrigger>
-        </TabsList>
+      {/* Tabs */}
+      <div className="flex gap-2 border-b border-border">
+        <button
+          onClick={() => setActiveTab("fluxo")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "fluxo"
+              ? "border-primary text-primary"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <TrendingUp className="h-4 w-4 inline mr-2" />
+          Movimentacoes
+        </button>
+        <button
+          onClick={() => setActiveTab("bancos")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "bancos"
+              ? "border-primary text-primary"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Building2 className="h-4 w-4 inline mr-2" />
+          Bancos
+        </button>
+        <button
+          onClick={() => setActiveTab("cartoes")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "cartoes"
+              ? "border-primary text-primary"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <CreditCard className="h-4 w-4 inline mr-2" />
+          Cartoes
+        </button>
+      </div>
 
-        <TabsContent value="lancamentos" className="space-y-2">
-          <div className="flex justify-end gap-2">
-            <Button size="sm" onClick={() => setShowAddModal(true)}>
-              <Plus className="mr-1 h-3.5 w-3.5" />
-              Lançamento
-            </Button>
-          </div>
-
-          {/* KPIs - responsivo */}
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <Card className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <div className="rounded-lg bg-fyn-success/10 p-2">
-                  <DollarSign className="h-4 w-4 text-fyn-success" />
-                </div>
-                <span className="text-xs text-fyn-muted">Saldo Atual</span>
-              </div>
-              <p className="text-2xl font-bold text-fyn-text">{formatCurrency(saldoAtual)}</p>
-              <p className="text-xs text-fyn-muted mt-1">Saldo disponível</p>
-            </Card>
-            <Card className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <div className="rounded-lg bg-fyn-success/10 p-2">
-                  <TrendingDown className="h-4 w-4 text-fyn-success" />
-                </div>
-                <span className="text-xs text-fyn-muted">Entradas (Mês)</span>
-              </div>
-              <p className="text-2xl font-bold text-fyn-success">{formatCurrency(entradasMes)}</p>
-              <p className="text-xs text-fyn-muted mt-1">Recebimentos do mês</p>
-            </Card>
-            <Card className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <div className="rounded-lg bg-fyn-danger/10 p-2">
-                  <TrendingDown className="h-4 w-4 text-fyn-danger" />
-                </div>
-                <span className="text-xs text-fyn-muted">Saídas (Mês)</span>
-              </div>
-              <p className="text-2xl font-bold text-fyn-danger">{formatCurrency(saidasMes)}</p>
-              <p className="text-xs text-fyn-muted mt-1">Pagamentos do mês</p>
-            </Card>
-            <Card className="p-4">
-              <div className="flex items-center justify-between mb-2">
-                <div className="rounded-lg bg-blue-500/10 p-2">
-                  <Calendar className="h-4 w-4 text-blue-600" />
-                </div>
-                <span className="text-xs text-fyn-muted">Saldo Projetado (30d)</span>
-              </div>
-              <p className="text-2xl font-bold text-fyn-text">{formatCurrency(saldoProjetado)}</p>
-              <p className="text-xs text-fyn-muted mt-1">Projeção para 30 dias</p>
-            </Card>
-          </div>
-
-      {/* Filtros estilo Contas a Pagar */}
-      <Card className="p-4 mb-2">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <div className="relative">
-            <Filter className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fyn-muted" />
-            <input
-              type="text"
-              placeholder="Buscar por centro, subcentro..."
-              value={filters.search || ""}
-              onChange={e => setFilters({ ...filters, search: e.target.value })}
-              className="pl-9 w-full rounded border border-fyn-border bg-fyn-bg px-2 py-1 text-sm text-fyn-text focus:border-fyn-accent focus:outline-none focus:ring-1 focus:ring-fyn-accent"
-            />
-          </div>
-          <select
-            value={filters.costCenter}
-            onChange={e => setFilters({ ...filters, costCenter: e.target.value })}
-            className="w-full rounded border border-fyn-border bg-fyn-bg px-2 py-1 text-sm text-fyn-text focus:border-fyn-accent focus:outline-none focus:ring-1 focus:ring-fyn-accent"
-          >
-            <option value="">Todos os Centros de Custo</option>
-            {centrosCusto.map((centro) => (
-              <option key={centro.id} value={centro.name}>{centro.name}</option>
-            ))}
-          </select>
-          <Button variant="outline" className="w-full">
-            <Calendar className="mr-2 h-4 w-4" />
-            Este Mês
-          </Button>
-        </div>
-      </Card>
-
-      {/* Transactions Table */}
-      <DataTable data={mockTransactions} columns={columns} searchPlaceholder="Buscar lançamentos..." pageSize={15} />
-        </TabsContent>
-
-        <TabsContent value="contas" className="space-y-4 mt-4">
-          <div className="flex justify-end gap-2">
-            <Button size="sm" onClick={() => handleOpenModal()}>
-              <Plus className="mr-1 h-3.5 w-3.5" />
-              Nova Conta
-            </Button>
-          </div>
-
-          {/* KPIs Contas Bancárias - responsivo */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-            <KpiCard
-              label="Saldo Total"
-              value={formatCurrency(saldoTotal)}
-              trend={saldoTotal >= 0 ? "up" : "down"}
-              trendValue={saldoTotal >= 0 ? "Positivo" : "Negativo"}
-              variant={saldoTotal >= 0 ? "default" : "danger"}
-            />
-            <KpiCard label="Limite de Crédito" value={formatCurrency(limiteTotal)} subvalue="Total disponível em linhas" />
-            <KpiCard
-              label="Cheque Especial"
-              value={formatCurrency(chequeEspecialTotal)}
-              subvalue={`${formatCurrency(chequeEspecialUtilizado)} utilizado`}
-              variant={chequeEspecialUtilizado > 0 ? "warning" : "default"}
-            />
-            {/* Mostra o 4º KPI só em desktop grande */}
-            <div className="hidden lg:block">
-              <KpiCard label="Contas Ativas" value={contas.length.toString()} subvalue="Bancos cadastrados" />
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-fyn-border bg-fyn-bg p-4">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-fyn-text">Suas Contas Bancárias</h2>
-              <span className="text-xs text-fyn-muted">{contas.length} conta(s) cadastrada(s)</span>
-            </div>
-
-            {/* Lista de Contas */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {contas.map((conta) => (
-                <BankAccountCard key={conta.id} conta={conta} onEdit={handleOpenModal} onDelete={handleDelete} />
-              ))}
-
-              <button
-                onClick={() => handleOpenModal()}
-                className="group relative flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-fyn-border bg-fyn-surface/50 p-6 min-h-[180px] transition-all duration-200 hover:border-fyn-accent hover:bg-fyn-surface"
-              >
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-fyn-accent/10 transition-all duration-200 group-hover:bg-fyn-accent/20 group-hover:scale-110">
-                  <Plus className="h-6 w-6 text-fyn-accent" />
-                </div>
-                <div className="text-center">
-                  <p className="text-sm font-medium text-fyn-text">Nova Conta Bancária</p>
-                  <p className="text-xs text-fyn-muted mt-0.5">Clique para adicionar</p>
-                </div>
-              </button>
-            </div>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="creditos" className="space-y-4 mt-4">
-          <div className="flex justify-end gap-2">
-            <Button size="sm" onClick={() => setShowNovoCreditoModal(true)}>
-              <Plus className="mr-1 h-3.5 w-3.5" />
-              Novo Crédito
-            </Button>
-          </div>
-
-          {/* KPIs Créditos - grid compacto */}
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 mb-2">
-            <KpiCard label="Limite Total" value={formatCurrency(kpisCreditos.limiteTotal)} />
-            <KpiCard label="Utilizado" value={formatCurrency(kpisCreditos.utilizado)} variant="warning" />
-            <KpiCard label="Disponível" value={formatCurrency(kpisCreditos.disponivel)} variant="success" />
-            <KpiCard label="Parcelas/Mês" value={formatCurrency(kpisCreditos.parcelasMes)} variant="accent" />
-          </div>
-
-          {/* Resumo por Tipo - grid compacto */}
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-lg border border-fyn-border bg-fyn-bg p-2">
-              <div className="flex items-center gap-2 mb-1">
-                <CreditCard className="h-4 w-4 text-fyn-accent" />
-                <span className="text-xs font-medium text-fyn-muted">Cartões de Crédito</span>
-              </div>
-              <p className="text-base font-semibold text-fyn-text">
-                {formatCurrency(
-                  creditos.filter((c) => c.tipo === "Cartão de Crédito").reduce((acc, c) => acc + c.utilizado, 0),
-                )}
-              </p>
-              <p className="text-xs text-fyn-muted">
-                de {formatCurrency(creditos.filter((c) => c.tipo === "Cartão de Crédito").reduce((acc, c) => acc + c.limite, 0))} limite
-              </p>
-            </div>
-            <div className="rounded-lg border border-fyn-border bg-fyn-bg p-2">
-              <div className="flex items-center gap-2 mb-1">
-                <Landmark className="h-4 w-4 text-fyn-warning" />
-                <span className="text-xs font-medium text-fyn-muted">Empréstimos</span>
-              </div>
-              <p className="text-base font-semibold text-fyn-text">
-                {formatCurrency(
-                  creditos.filter((c) => c.tipo === "Empréstimo" || c.tipo === "Capital de Giro").reduce((acc, c) => acc + c.utilizado, 0),
-                )}
-              </p>
-              <p className="text-xs text-fyn-muted">saldo devedor</p>
-            </div>
-            <div className="rounded-lg border border-fyn-border bg-fyn-bg p-2">
-              <div className="flex items-center gap-2 mb-1">
-                <BadgePercent className="h-4 w-4 text-fyn-success" />
-                <span className="text-xs font-medium text-fyn-muted">FGI PRONAMP</span>
-              </div>
-              <p className="text-base font-semibold text-fyn-text">
-                {formatCurrency(
-                  creditos.filter((c) => c.tipo === "FGI PRONAMP").reduce((acc, c) => acc + c.utilizado, 0),
-                )}
-              </p>
-              <p className="text-xs text-fyn-muted">taxa subsidiada</p>
-            </div>
-            <div className="rounded-lg border border-fyn-border bg-fyn-bg p-2">
-              <div className="flex items-center gap-2 mb-1">
-                <TrendingDown className="h-4 w-4 text-fyn-accent" />
-                <span className="text-xs font-medium text-fyn-muted">Cheque Especial</span>
-              </div>
-              <p className="text-base font-semibold text-fyn-text">
-                {formatCurrency(
-                  creditos.filter((c) => c.tipo === "Cheque Especial").reduce((acc, c) => acc + c.disponivel, 0),
-                )}
-              </p>
-              <p className="text-xs text-fyn-muted">disponível</p>
-            </div>
-          </div>
-
-          {/* Créditos Table */}
-          <DataTable data={creditos} columns={creditosColumns} searchPlaceholder="Buscar créditos..." pageSize={10} />
-        </TabsContent>
-
-        <TabsContent value="extrato" className="space-y-4 mt-4">
-          <div className="space-y-2">
-            {/* Upload Area */}
-            <div 
-              className={`rounded-xl border-2 border-dashed transition-all ${
-                isDragging 
-                  ? 'border-fyn-accent bg-fyn-accent/5' 
-                  : 'border-fyn-border bg-fyn-surface'
-              } p-8`}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-            >
-              <div className="flex flex-col items-center justify-center gap-4">
-                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-fyn-accent/10">
-                  <Upload className="h-8 w-8 text-fyn-accent" />
-                </div>
-                <div className="text-center">
-                  <h3 className="text-lg font-semibold text-fyn-text mb-1">
-                    Upload de Extrato Bancário
-                  </h3>
-                  <p className="text-sm text-fyn-muted mb-3">
-                    Arraste e solte <span className="font-semibold text-fyn-accent">múltiplos arquivos</span> aqui ou clique para selecionar
+      {activeTab === "fluxo" && (
+        <>
+          {/* KPI - Saldo + Filtros de Data */}
+          <Card className="p-4">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+              <div className="flex items-center gap-4 sm:gap-6 flex-wrap">
+                {/* Saldo Principal */}
+                <div className="min-w-0">
+                  <p className="text-sm text-muted-foreground mb-1">
+                    {temFiltro ? "Saldo do Periodo" : "Saldo Atual"}
                   </p>
-                  <p className="text-xs text-fyn-muted">
-                    Formatos aceitos: PDF, PNG, JPG, JPEG • Máx. 10MB por arquivo • Upload simultâneo
+                  <p className={`text-2xl sm:text-3xl font-bold truncate ${temFiltro && saldoPeriodo < 0 ? 'text-red-600' : temFiltro && saldoPeriodo > 0 ? 'text-emerald-600' : 'text-foreground'}`}>
+                    {formatCurrency(temFiltro ? saldoPeriodo : saldoAtual)}
                   </p>
                 </div>
-                <label className="cursor-pointer">
-                  <input
-                    type="file"
-                    className="hidden"
-                    multiple
-                    accept=".pdf,.png,.jpg,.jpeg"
-                    onChange={(e) => handleFileUpload(e.target.files)}
-                  />
-                  <Button size="sm">
-                    <Upload className="mr-2 h-4 w-4" />
-                    Selecionar Arquivos
-                  </Button>
-                </label>
-              </div>
-            </div>
 
-            {/* Uploaded Files List */}
-            {uploadedFiles.length > 0 && (
-              <div className="rounded-xl border border-fyn-border bg-fyn-bg p-4">
-                <div className="mb-3 flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-fyn-text">
-                    Arquivos Enviados ({uploadedFiles.length})
-                  </h3>
-                  <Button 
-                    variant="secondary" 
-                    size="sm"
-                    onClick={() => setUploadedFiles([])}
-                  >
-                    Limpar Todos
-                  </Button>
-                </div>
-                <div className="space-y-2">
-                  {uploadedFiles.map((file) => (
-                    <div
-                      key={file.id}
-                      className="flex items-center justify-between rounded-lg border border-fyn-border bg-fyn-surface p-3"
-                    >
-                      <div className="flex items-center gap-3 flex-1">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-fyn-accent/10">
-                          <FileText className="h-5 w-5 text-fyn-accent" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-fyn-text truncate">
-                            {file.name}
-                          </p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <span className="text-xs text-fyn-muted">
-                              {formatFileSize(file.size)}
-                            </span>
-                            <span className="text-xs text-fyn-muted">•</span>
-                            <span className="text-xs text-fyn-muted">
-                              {new Date(file.uploadDate).toLocaleDateString('pt-BR')}
-                            </span>
-                          </div>
-                        </div>
-                        {file.status === "completed" && (
-                          <div className="flex items-center gap-1.5 text-fyn-success">
-                            <CheckCircle className="h-4 w-4" />
-                            <span className="text-xs font-medium">Processado</span>
-                          </div>
-                        )}
-                        {file.status === "processing" && (
-                          <div className="flex items-center gap-1.5 text-fyn-accent">
-                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-fyn-accent border-t-transparent" />
-                            <span className="text-xs font-medium">Processando...</span>
-                          </div>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => handleRemoveFile(file.id)}
-                        className="ml-3 flex h-8 w-8 items-center justify-center rounded-lg text-fyn-muted hover:bg-fyn-danger/10 hover:text-fyn-danger transition-colors"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
+                {/* Entradas e Saídas do Período (só mostra com filtro) */}
+                {temFiltro && (
+                  <>
+                    <div className="border-l border-border pl-4 sm:pl-6 min-w-0">
+                      <p className="text-sm text-muted-foreground mb-1 flex items-center gap-1">
+                        <TrendingUp className="h-3 w-3 text-emerald-600 shrink-0" />
+                        Entradas
+                      </p>
+                      <p className="text-lg sm:text-xl font-semibold text-emerald-600 truncate">
+                        {formatCurrency(totalEntradasPeriodo)}
+                      </p>
                     </div>
-                  ))}
+                    <div className="border-l border-border pl-4 sm:pl-6 min-w-0">
+                      <p className="text-sm text-muted-foreground mb-1 flex items-center gap-1">
+                        <TrendingDown className="h-3 w-3 text-red-600 shrink-0" />
+                        Saidas
+                      </p>
+                      <p className="text-lg sm:text-xl font-semibold text-red-600 truncate">
+                        {formatCurrency(totalSaidasPeriodo)}
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+              <div className="flex items-center gap-3 flex-wrap shrink-0">
+                {/* Filtros Rápidos */}
+                <div className="flex items-center gap-1 lg:border-r border-border lg:pr-3">
+                  <Button
+                    variant={filtroAtivo === "todos" ? "default" : "ghost"}
+                    size="sm"
+                    onClick={limparFiltros}
+                    className="h-8 text-xs px-2 sm:px-3"
+                  >
+                    Todos
+                  </Button>
+                  <Button
+                    variant={filtroAtivo === "hoje" ? "default" : "ghost"}
+                    size="sm"
+                    onClick={filtrarHoje}
+                    className="h-8 text-xs px-2 sm:px-3"
+                  >
+                    Hoje
+                  </Button>
+                  <Button
+                    variant={filtroAtivo === "amanha" ? "default" : "ghost"}
+                    size="sm"
+                    onClick={filtrarAmanha}
+                    className="h-8 text-xs px-2 sm:px-3"
+                  >
+                    Amanha
+                  </Button>
+                  <Button
+                    variant={filtroAtivo === "semana" ? "default" : "ghost"}
+                    size="sm"
+                    onClick={filtrarSemana}
+                    className="h-8 text-xs px-2 sm:px-3"
+                  >
+                    7 dias
+                  </Button>
+                </div>
+
+                {/* Filtro Personalizado */}
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <Input
+                    type="date"
+                    value={dataInicio}
+                    onChange={(e) => handleDataInicioChange(e.target.value)}
+                    className="h-8 w-32 sm:w-36 text-xs"
+                  />
+                  <span className="text-muted-foreground text-xs">ate</span>
+                  <Input
+                    type="date"
+                    value={dataFim}
+                    onChange={(e) => handleDataFimChange(e.target.value)}
+                    className="h-8 w-32 sm:w-36 text-xs"
+                  />
+                </div>
+
+                {/* Botao Filtros Avancados */}
+                <Button
+                  variant={showFiltrosAvancados ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setShowFiltrosAvancados(!showFiltrosAvancados)}
+                  className="h-8 text-xs px-3"
+                >
+                  <Filter className="h-3 w-3 mr-1" />
+                  Filtros
+                  {(filtroCodigo || filtroDescricao || filtroBancoId) && (
+                    <span className="ml-1 bg-primary text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px]">
+                      {[filtroCodigo, filtroDescricao, filtroBancoId].filter(Boolean).length}
+                    </span>
+                  )}
+                </Button>
+              </div>
+            </div>
+
+            {/* Filtros Avancados */}
+            {showFiltrosAvancados && (
+              <div className="mt-4 pt-4 border-t border-border">
+                <div className="flex flex-wrap gap-3 items-end">
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground">Codigo</label>
+                    <div className="relative">
+                      <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                      <Input
+                        placeholder="Ex: DEP-01"
+                        value={filtroCodigo}
+                        onChange={(e) => setFiltroCodigo(e.target.value)}
+                        className="h-8 w-32 pl-7 text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground">Descricao</label>
+                    <div className="relative">
+                      <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                      <Input
+                        placeholder="Ex: Fornecedor XYZ"
+                        value={filtroDescricao}
+                        onChange={(e) => setFiltroDescricao(e.target.value)}
+                        className="h-8 w-44 pl-7 text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-muted-foreground">Banco</label>
+                    <select
+                      value={filtroBancoId}
+                      onChange={(e) => setFiltroBancoId(e.target.value)}
+                      className="h-8 px-2 rounded-md border border-border bg-white text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary min-w-[140px]"
+                    >
+                      <option value="">Todos os bancos</option>
+                      {bancos.map((banco) => (
+                        <option key={banco.id} value={banco.id}>
+                          {banco.codigo} - {banco.nome}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {(filtroCodigo || filtroDescricao || filtroBancoId) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setFiltroCodigo("")
+                        setFiltroDescricao("")
+                        setFiltroBancoId("")
+                      }}
+                      className="h-8 text-xs text-red-600 hover:text-red-600"
+                    >
+                      <X className="h-3 w-3 mr-1" />
+                      Limpar filtros
+                    </Button>
+                  )}
                 </div>
               </div>
             )}
+          </Card>
 
-            {/* Info Box */}
-            <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
-              <h4 className="text-sm font-semibold text-blue-900 mb-2">
-                Como funciona?
-              </h4>
-              <ul className="space-y-1.5 text-xs text-blue-700">
-                <li className="flex items-start gap-2">
-                  <span className="text-blue-500 mt-0.5">•</span>
-                  <span>Faça upload do extrato bancário em PDF ou imagem</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-blue-500 mt-0.5">•</span>
-                  <span>Nosso sistema processará automaticamente as transações</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-blue-500 mt-0.5">•</span>
-                  <span>Os lançamentos serão adicionados automaticamente ao Fluxo de Caixa</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-blue-500 mt-0.5">•</span>
-                  <span>Você pode revisar e editar antes de confirmar</span>
-                </li>
-              </ul>
-            </div>
-          </div>
-        </TabsContent>
-      </Tabs>
-
-      {/* Add Transaction Modal */}
-      <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)} title="Novo Lançamento" size="md">
-        <form className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-fyn-text">Tipo</label>
-              <select className="w-full rounded border border-fyn-border bg-fyn-bg px-3 py-2 text-sm text-fyn-text focus:border-fyn-accent focus:outline-none focus:ring-1 focus:ring-fyn-accent">
-                <option value="in">Entrada</option>
-                <option value="out">Saída</option>
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-fyn-text">Data</label>
-              <input
-                type="date"
-                defaultValue={new Date().toISOString().split("T")[0]}
-                className="w-full rounded border border-fyn-border bg-fyn-bg px-3 py-2 text-sm text-fyn-text focus:border-fyn-accent focus:outline-none focus:ring-1 focus:ring-fyn-accent"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-fyn-text">Valor</label>
-            <CurrencyInput
-              placeholder="R$ 0,00"
-              className="w-full rounded border border-fyn-border bg-fyn-bg px-3 py-2 text-sm text-fyn-text focus:border-fyn-accent focus:outline-none focus:ring-1 focus:ring-fyn-accent"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-fyn-text">Descrição</label>
-            <input
-              type="text"
-              placeholder="Descrição do lançamento"
-              className="w-full rounded border border-fyn-border bg-fyn-bg px-3 py-2 text-sm text-fyn-text focus:border-fyn-accent focus:outline-none focus:ring-1 focus:ring-fyn-accent"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-fyn-text">Centro de Custo/Receita</label>
-              <select 
-                value={selectedCentro}
-                onChange={handleCentroChange}
-                className="w-full rounded border border-fyn-border bg-fyn-bg px-3 py-2 text-sm text-fyn-text focus:border-fyn-accent focus:outline-none focus:ring-1 focus:ring-fyn-accent"
-              >
-                <option value="">Selecione o centro...</option>
-                {centrosCusto.map((centro) => (
-                  <option key={centro.id} value={centro.id}>{centro.name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-fyn-text">Subcentro</label>
-              <select 
-                value={selectedSubcentro}
-                onChange={(e) => setSelectedSubcentro(e.target.value)}
-                disabled={!selectedCentro}
-                className="w-full rounded border border-fyn-border bg-fyn-bg px-3 py-2 text-sm text-fyn-text focus:border-fyn-accent focus:outline-none focus:ring-1 focus:ring-fyn-accent disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <option value="">Selecione o subcentro...</option>
-                {selectedCentroData?.subcentros.map((sub) => (
-                  <option key={sub.id} value={sub.id}>{sub.name}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="secondary" onClick={() => setShowAddModal(false)}>
-              Cancelar
-            </Button>
-            <Button>Salvar</Button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* Modal - Step 1: Selecionar Banco */}
-      <Modal
-        isOpen={isModalOpen && modalStep === 1}
-        onClose={handleCloseModal}
-        title="Selecione o Banco"
-        size="lg"
-        variant="light"
-      >
-        <div className="space-y-4">
-          <BankSelector selectedBank={selectedBankId} onSelect={setSelectedBankId} />
-          <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
-            <Button variant="secondary" size="sm" onClick={handleCloseModal}>
-              Cancelar
-            </Button>
-            <Button size="sm" onClick={handleNextStep} disabled={!selectedBankId}>
-              Continuar
-              <ArrowRight className="ml-1 h-3.5 w-3.5" />
-            </Button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* Modal - Step 2: Detalhes da Conta */}
-      <Modal
-        isOpen={isModalOpen && modalStep === 2}
-        onClose={handleCloseModal}
-        title={editingConta ? `Editar Conta - ${selectedBank?.name}` : `Nova Conta - ${selectedBank?.name}`}
-        size="md"
-        variant="light"
-      >
-        <div className="space-y-4">
-          {/* Preview do card do banco */}
-          {selectedBank && (
-            <div className="rounded-xl p-4 mb-4" style={{ background: selectedBank.cardBg }}>
-              <p
-                className="text-sm font-medium"
-                style={{
-                  color: ["banco-do-brasil", "neon", "pan"].includes(selectedBankId)
-                    ? selectedBank.textColor
-                    : "#FFFFFF",
-                }}
-              >
-                Preview do card da conta
-              </p>
-            </div>
+          {/* Card de Saldos Bancários */}
+          {bancos.length > 0 && (
+            <Card className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Building2 className="h-4 w-4 text-primary" />
+                  <h3 className="text-sm font-semibold text-foreground">Saldos Bancarios</h3>
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  Total: {formatCurrency(Object.values(saldosPorBanco).reduce((a, b) => a + b, 0))}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                {bancos.map((banco) => {
+                  const saldo = saldosPorBanco[banco.id] || 0
+                  return (
+                    <div
+                      key={banco.id}
+                      className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border bg-muted/30 min-w-[180px]"
+                    >
+                      <div className={`p-1.5 rounded-full ${saldo >= 0 ? 'bg-green-100' : 'bg-red-100'}`}>
+                        <Building2 className={`h-3.5 w-3.5 ${saldo >= 0 ? 'text-green-600' : 'text-red-600'}`} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-muted-foreground truncate">{banco.codigo} - {banco.nome}</p>
+                        <p className={`text-sm font-bold ${saldo < 0 ? 'text-red-600' : saldo > 0 ? 'text-emerald-600' : 'text-foreground'}`}>
+                          {formatCurrency(saldo)}
+                        </p>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </Card>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-gray-700">Agência</label>
-              <input
-                type="text"
-                value={formData.agencia}
-                onChange={(e) => setFormData({ ...formData, agencia: e.target.value })}
-                placeholder="0000-0"
-                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-gray-700">Conta</label>
-              <input
-                type="text"
-                value={formData.conta}
-                onChange={(e) => setFormData({ ...formData, conta: e.target.value })}
-                placeholder="00000-0"
-                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-gray-700">Tipo de Conta</label>
-            <select
-              value={formData.tipo}
-              onChange={(e) => setFormData({ ...formData, tipo: e.target.value })}
-              className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-            >
-              <option value="Conta Corrente">Conta Corrente</option>
-              <option value="Conta Digital">Conta Digital</option>
-              <option value="Conta Poupança">Conta Poupança</option>
-              <option value="Conta Investimento">Conta Investimento</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-gray-700">Saldo Atual</label>
-            <input
-              type="number"
-              value={formData.saldo}
-              onChange={(e) => setFormData({ ...formData, saldo: e.target.value })}
-              placeholder="0,00"
-              className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-gray-700">Limite de Crédito</label>
-              <input
-                type="number"
-                value={formData.limiteCredito}
-                onChange={(e) => setFormData({ ...formData, limiteCredito: e.target.value })}
-                placeholder="0,00"
-                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-              />
-            </div>
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-gray-700">Limite Cheque Especial</label>
-              <input
-                type="number"
-                value={formData.limiteChequeEspecial}
-                onChange={(e) => setFormData({ ...formData, limiteChequeEspecial: e.target.value })}
-                placeholder="0,00"
-                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-              />
-            </div>
-          </div>
-
-          <div className="flex justify-between gap-3 pt-4 border-t border-gray-200">
-            <Button variant="secondary" size="sm" onClick={() => setModalStep(1)}>
-              <ArrowLeft className="mr-1 h-3.5 w-3.5" />
-              Voltar
+          {/* Botão de Ação */}
+          <div className="flex justify-end">
+            <Button size="sm" onClick={() => setShowTipoSelector(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Nova Movimentacao
             </Button>
-            <div className="flex gap-3">
-              <Button variant="secondary" size="sm" onClick={handleCloseModal}>
-                Cancelar
-              </Button>
-              <Button size="sm" onClick={handleSave} disabled={!formData.agencia || !formData.conta}>
-                {editingConta ? "Salvar Alterações" : "Adicionar Conta"}
-              </Button>
-            </div>
           </div>
-        </div>
-      </Modal>
 
-      {/* Modal Novo Crédito */}
-      <Modal isOpen={showNovoCreditoModal} onClose={() => setShowNovoCreditoModal(false)} title="Novo Crédito Bancário" size="md">
-        <form className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-fyn-text">Tipo</label>
-              <select className="w-full rounded border border-fyn-border bg-fyn-bg px-3 py-2 text-sm text-fyn-text focus:border-fyn-accent focus:outline-none">
-                <option>Cartão de Crédito</option>
-                <option>Empréstimo</option>
-                <option>FGI PRONAMP</option>
-                <option>Capital de Giro</option>
-                <option>Cheque Especial</option>
-                <option>Antecipação Recebíveis</option>
-              </select>
+          {/* Tabela Unificada - Fluxo de Caixa + Contas Pendentes */}
+          <Card className="overflow-visible">
+            <div className="overflow-x-auto overflow-y-visible">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border bg-muted/50">
+                    <th className="py-3 px-4 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider w-12">
+                      Status
+                    </th>
+                    <th className="py-3 px-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Dia
+                    </th>
+                    <th className="py-3 px-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Cod Tipo
+                    </th>
+                    <th className="py-3 px-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Fornecedor/Cliente
+                    </th>
+                    <th className="py-3 px-4 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Valor
+                    </th>
+                    <th className="py-3 px-4 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Fluxo
+                    </th>
+                    <th className="py-3 px-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Banco
+                    </th>
+                    <th className="py-3 px-4 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider w-16">
+                      Acoes
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* Contas Pendentes primeiro (filtradas pelo período) */}
+                  {contasPendentesFiltradas.map((conta) => {
+                    const vencido = new Date(conta.vencimento) < new Date()
+                    return (
+                      <tr
+                        key={`pendente-${conta.id}`}
+                        className="border-b border-border hover:bg-yellow-50/50 transition-colors bg-yellow-50/30"
+                      >
+                        <td className="py-3 px-4 text-center">
+                          <div className={`p-1.5 rounded-full border-2 inline-block ${
+                            vencido
+                              ? 'border-red-300 bg-red-50'
+                              : 'border-yellow-300 bg-yellow-50'
+                          }`}>
+                            <Clock className={`h-4 w-4 ${vencido ? 'text-red-500' : 'text-yellow-500'}`} />
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 text-sm text-foreground whitespace-nowrap">
+                          {formatDate(new Date(conta.vencimento))}
+                        </td>
+                        <td className="py-3 px-4 text-sm text-foreground">
+                          {conta.codigoTipo || "-"}
+                        </td>
+                        <td className="py-3 px-4 text-sm text-foreground">
+                          {conta.beneficiario || conta.pessoa?.nome || "-"}
+                        </td>
+                        <td className="py-3 px-4 text-sm font-medium text-right">
+                          <span className={conta.tipo === 'receber' ? 'text-emerald-600' : 'text-red-600'}>
+                            {conta.tipo === 'receber' ? '+' : '-'} {formatCurrency(conta.valor)}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-sm text-muted-foreground text-right">
+                          -
+                        </td>
+                        <td className="py-3 px-4 text-sm text-muted-foreground">
+                          -
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => abrirSeletorBanco(conta)}
+                            className={`text-xs h-7 px-2 ${vencido ? 'border-red-300 text-red-600 hover:bg-red-50' : 'border-yellow-400 text-yellow-700 hover:bg-yellow-50'}`}
+                          >
+                            <CheckCircle2 className="h-3 w-3 mr-1" />
+                            {conta.tipo === "pagar" ? "Pagar" : "Receber"}
+                          </Button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+
+                  {/* Movimentações já realizadas */}
+                  {fluxoFiltrado.length === 0 && contasPendentesFiltradas.length === 0 ? (
+                    <tr>
+                      <td colSpan="8" className="py-8 text-center text-sm text-muted-foreground">
+                        {temFiltro ? "Nenhuma movimentacao no periodo selecionado" : "Nenhuma movimentacao registrada"}
+                      </td>
+                    </tr>
+                  ) : (
+                    fluxoFiltrado.map((item) => (
+                    <tr
+                      key={item.id}
+                      className={`border-b border-border hover:bg-muted/50 transition-colors cursor-pointer ${
+                        selectedRow === item.id ? 'bg-muted' : ''
+                      }`}
+                      onClick={() => setSelectedRow(item.id)}
+                    >
+                      <td className="py-3 px-4 text-center">
+                        <div className="p-1.5 rounded-full border-2 border-green-300 bg-green-50 inline-block">
+                          <CheckCircle2 className="h-4 w-4 text-green-600" />
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-sm text-foreground whitespace-nowrap">
+                        {formatDate(new Date(item.dia))}
+                      </td>
+                      <td className="py-3 px-4 text-sm text-foreground">
+                        {item.codigoTipo}
+                      </td>
+                      <td className="py-3 px-4 text-sm text-foreground">
+                        {item.fornecedorCliente}
+                      </td>
+                      <td className="py-3 px-4 text-sm font-medium text-right">
+                        <span className={item.tipo === 'entrada' ? 'text-emerald-600' : 'text-red-600'}>
+                          {item.tipo === 'entrada' ? '+' : '-'} {formatCurrency(item.valor)}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-sm font-semibold text-foreground text-right">
+                        {formatCurrency(item.fluxo)}
+                      </td>
+                      <td className="py-3 px-4 text-sm text-foreground">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            const rect = e.currentTarget.getBoundingClientRect()
+                            setDropdownPosition({
+                              top: rect.bottom + 4,
+                              left: rect.left
+                            })
+                            if (openBancoDropdown !== item.id) {
+                              fetchBancos()
+                            }
+                            setOpenBancoDropdown(openBancoDropdown === item.id ? null : item.id)
+                          }}
+                          className="flex items-center gap-1 px-2 py-1 rounded hover:bg-muted border border-border transition-colors min-w-[100px]"
+                        >
+                          {item.banco ? (
+                            <span title={`${item.banco.codigo} | Ag: ${item.banco.agencia} | Conta: ${item.banco.conta}`}>
+                              {item.banco.nome}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">Selecionar</span>
+                          )}
+                          <ChevronDown className="h-3 w-3 text-muted-foreground ml-auto" />
+                        </button>
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        {!item.contaId && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleDeleteMovimentacao(item.id)
+                            }}
+                            className="text-muted-foreground hover:text-red-600 transition-colors"
+                            title="Excluir movimentacao"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                  )}
+                </tbody>
+              </table>
             </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-fyn-text">Banco</label>
-              <input
-                type="text"
-                placeholder="Nome do banco"
-                className="w-full rounded border border-fyn-border bg-fyn-bg px-3 py-2 text-sm text-fyn-text focus:border-fyn-accent focus:outline-none"
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-fyn-text">Limite/Valor</label>
-              <input
-                type="number"
-                placeholder="0,00"
-                className="w-full rounded border border-fyn-border bg-fyn-bg px-3 py-2 text-sm text-fyn-text focus:border-fyn-accent focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-fyn-text">Taxa de Juros (% a.m.)</label>
-              <input
-                type="number"
-                step="0.01"
-                placeholder="0,00"
-                className="w-full rounded border border-fyn-border bg-fyn-bg px-3 py-2 text-sm text-fyn-text focus:border-fyn-accent focus:outline-none"
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-fyn-text">Parcelas (se aplicável)</label>
-              <input
-                type="number"
-                placeholder="Número de parcelas"
-                className="w-full rounded border border-fyn-border bg-fyn-bg px-3 py-2 text-sm text-fyn-text focus:border-fyn-accent focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-fyn-text">Dia de Vencimento</label>
-              <input
-                type="number"
-                min="1"
-                max="31"
-                placeholder="Dia"
-                className="w-full rounded border border-fyn-border bg-fyn-bg px-3 py-2 text-sm text-fyn-text focus:border-fyn-accent focus:outline-none"
-              />
-            </div>
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="secondary" onClick={() => setShowNovoCreditoModal(false)}>
-              Cancelar
+          </Card>
+        </>
+      )}
+
+      {activeTab === "bancos" && (
+        <>
+          {/* Header Bancos */}
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">Cadastre suas contas bancarias para selecionar ao marcar pagamentos</p>
+            <Button size="sm" onClick={openNewBancoModal}>
+              <Plus className="mr-2 h-4 w-4" />
+              Novo Banco
             </Button>
-            <Button>Salvar</Button>
           </div>
-        </form>
-      </Modal>
 
-      {/* Drawer Detalhes Crédito */}
-      <Drawer
-        isOpen={showCreditoDrawer}
-        onClose={() => setShowCreditoDrawer(false)}
-        title={selectedCredito ? `${selectedCredito.tipo} - ${selectedCredito.banco}` : "Detalhes"}
-      >
-        {selectedCredito && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-2">
-              <div className="rounded bg-fyn-surface p-2">
-                <p className="text-[10px] uppercase text-fyn-muted">Limite</p>
-                <p className="text-sm font-semibold">{formatCurrency(selectedCredito.limite)}</p>
-              </div>
-              <div className="rounded bg-fyn-surface p-2">
-                <p className="text-[10px] uppercase text-fyn-muted">Utilizado</p>
-                <p className="text-sm font-semibold">{formatCurrency(selectedCredito.utilizado)}</p>
-              </div>
-              <div className="rounded bg-fyn-surface p-2">
-                <p className="text-[10px] uppercase text-fyn-muted">Disponível</p>
-                <p className="text-sm font-semibold text-fyn-success">{formatCurrency(selectedCredito.disponivel)}</p>
-              </div>
-              <div className="rounded bg-fyn-surface p-2">
-                <p className="text-[10px] uppercase text-fyn-muted">Taxa a.m.</p>
-                <p className="text-sm font-semibold">{selectedCredito.taxaJuros}%</p>
-              </div>
+          {/* Tabela de Bancos */}
+          <Card className="overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border bg-muted/50">
+                    <th className="py-3 px-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      N Banco
+                    </th>
+                    <th className="py-3 px-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Agencia
+                    </th>
+                    <th className="py-3 px-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Conta
+                    </th>
+                    <th className="py-3 px-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Chave Pix
+                    </th>
+                    <th className="py-3 px-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Tipo
+                    </th>
+                    <th className="py-3 px-4 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Saldo
+                    </th>
+                    <th className="py-3 px-4 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Acoes
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loadingBancos ? (
+                    <tr>
+                      <td colSpan="7" className="py-8 text-center text-sm text-muted-foreground">
+                        Carregando...
+                      </td>
+                    </tr>
+                  ) : bancos.length === 0 ? (
+                    <tr>
+                      <td colSpan="7" className="py-8 text-center text-sm text-muted-foreground">
+                        Nenhum banco cadastrado
+                      </td>
+                    </tr>
+                  ) : (
+                    bancos.map((banco) => (
+                      <tr
+                        key={banco.id}
+                        className="border-b border-border hover:bg-muted/50 transition-colors"
+                      >
+                        <td className="py-3 px-4 text-sm text-foreground">
+                          <span className="font-medium">{banco.codigo}</span>
+                          <span className="text-muted-foreground ml-2">({banco.nome})</span>
+                        </td>
+                        <td className="py-3 px-4 text-sm text-foreground">
+                          {banco.agencia}
+                        </td>
+                        <td className="py-3 px-4 text-sm text-foreground">
+                          {banco.conta}
+                        </td>
+                        <td className="py-3 px-4 text-sm">
+                          {banco.chavePix ? (
+                            <div className="flex items-center gap-2">
+                              <span className="text-blue-600 hover:underline cursor-pointer" onClick={() => copyToClipboard(banco.chavePix)}>
+                                {banco.chavePix}
+                              </span>
+                              <button
+                                onClick={() => copyToClipboard(banco.chavePix)}
+                                className="text-muted-foreground hover:text-foreground"
+                                title="Copiar"
+                              >
+                                <Copy className="h-3 w-3" />
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-sm text-foreground capitalize">
+                          {banco.tipoChavePix || "-"}
+                        </td>
+                        <td className="py-3 px-4 text-sm font-semibold text-right">
+                          <span className={saldosPorBanco[banco.id] < 0 ? 'text-red-600' : saldosPorBanco[banco.id] > 0 ? 'text-emerald-600' : 'text-foreground'}>
+                            {formatCurrency(saldosPorBanco[banco.id] || 0)}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => openEditBancoModal(banco)}
+                              className="text-muted-foreground hover:text-foreground"
+                              title="Editar"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteBanco(banco.id)}
+                              className="text-muted-foreground hover:text-red-600"
+                              title="Excluir"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
+          </Card>
+        </>
+      )}
 
-            {selectedCredito.parcelas && (
-              <div className="rounded-lg border border-fyn-border bg-fyn-surface p-3">
-                <h3 className="mb-2 text-sm font-medium text-fyn-text">Parcelas</h3>
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div>
-                    <span className="text-fyn-muted">Situação:</span> {selectedCredito.parcelas}
-                  </div>
-                  <div>
-                    <span className="text-fyn-muted">Valor:</span> {formatCurrency(selectedCredito.valorParcela)}
-                  </div>
-                  <div className="col-span-2">
-                    <span className="text-fyn-muted">Próximo Venc.:</span>{" "}
-                    {formatDate(selectedCredito.vencimentoParcela)}
-                  </div>
+      {activeTab === "cartoes" && (
+        <>
+          {/* KPIs dos Cartões */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-blue-100">
+                  <Wallet className="h-5 w-5 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Limite Total</p>
+                  <p className="text-lg font-bold text-foreground">{formatCurrency(limiteTotal)}</p>
                 </div>
               </div>
-            )}
+            </Card>
 
-            {selectedCredito.vencimentoFatura && (
-              <div className="rounded-lg border border-fyn-border bg-fyn-surface p-3">
-                <h3 className="mb-2 text-sm font-medium text-fyn-text">Fatura</h3>
-                <p className="text-sm">
-                  <span className="text-fyn-muted">Vencimento:</span> {formatDate(selectedCredito.vencimentoFatura)}
-                </p>
+            <Card className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-red-100">
+                  <TrendingDown className="h-5 w-5 text-red-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Limite Utilizado</p>
+                  <p className="text-lg font-bold text-foreground">{formatCurrency(limiteUtilizado)}</p>
+                </div>
               </div>
+            </Card>
+
+            <Card className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-green-100">
+                  <CreditCard className="h-5 w-5 text-green-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Limite Disponivel</p>
+                  <p className="text-lg font-bold text-foreground">{formatCurrency(limiteDisponivel)}</p>
+                </div>
+              </div>
+            </Card>
+
+            <Card className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-purple-100">
+                  <Calendar className="h-5 w-5 text-purple-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Uso do Limite</p>
+                  <p className="text-lg font-bold text-foreground">{percentUtilizado.toFixed(1)}%</p>
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          {/* Header Cartões */}
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">Gerencie seus cartoes de credito e faturas</p>
+            <Button size="sm" onClick={() => setShowNovoCartaoModal(true)}>
+              <Plus className="mr-2 h-4 w-4" />
+              Novo Cartao
+            </Button>
+          </div>
+
+          {/* Lista de Cartões */}
+          {loadingCartoes ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : cartoes.length === 0 ? (
+            <Card className="p-12 text-center">
+              <CreditCard className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-foreground mb-2">Nenhum cartao cadastrado</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Adicione seu primeiro cartao de credito para comecar a controlar suas faturas.
+              </p>
+              <Button onClick={() => setShowNovoCartaoModal(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Adicionar Cartao
+              </Button>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {cartoes.map((cartao) => (
+                <CartaoCard
+                  key={cartao.id}
+                  cartao={cartao}
+                  onEdit={() => handleEditarCartao(cartao)}
+                  onDelete={() => handleExcluirCartao(cartao.id)}
+                  onViewFaturas={() => handleVerFaturas(cartao)}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Dropdown de seleção de banco - renderizado fora da tabela */}
+      {openBancoDropdown !== null && (
+        <>
+          {/* Overlay para fechar ao clicar fora */}
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setOpenBancoDropdown(null)}
+          />
+          {/* Menu do dropdown */}
+          <div
+            ref={dropdownRef}
+            className="fixed z-50 bg-white border border-border rounded-md shadow-lg py-1 min-w-[200px] max-h-[200px] overflow-y-auto"
+            style={{
+              top: dropdownPosition.top,
+              left: dropdownPosition.left
+            }}
+          >
+            {bancos.length === 0 ? (
+              <div className="px-3 py-2 text-sm text-muted-foreground">
+                Nenhum banco cadastrado
+              </div>
+            ) : (
+              bancos.map((banco) => (
+                <button
+                  key={banco.id}
+                  onClick={() => updateFluxoBanco(openBancoDropdown, banco.id)}
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors flex items-center justify-between"
+                >
+                  <span>
+                    <span className="font-medium">{banco.codigo}</span>
+                    <span className="text-muted-foreground ml-2">- {banco.nome}</span>
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    Ag: {banco.agencia}
+                  </span>
+                </button>
+              ))
+            )}
+            {/* Opção para remover banco */}
+            {fluxoCaixa.find(f => f.id === openBancoDropdown)?.banco && (
+              <button
+                onClick={() => updateFluxoBanco(openBancoDropdown, null)}
+                className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 transition-colors border-t border-border"
+              >
+                Remover banco
+              </button>
             )}
           </div>
-        )}
-      </Drawer>
+        </>
+      )}
+
+      {/* Modal Banco */}
+      {showBancoModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <Card className="w-full max-w-md">
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <h2 className="text-lg font-semibold text-foreground">
+                {editingBanco ? "Editar Banco" : "Novo Banco"}
+              </h2>
+              <Button variant="ghost" size="sm" onClick={() => setShowBancoModal(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+
+            <form onSubmit={handleSaveBanco} className="p-4 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Codigo do Banco</label>
+                  <Input
+                    placeholder="237"
+                    value={bancoForm.codigo}
+                    onChange={(e) => setBancoForm({ ...bancoForm, codigo: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Nome do Banco</label>
+                  <Input
+                    placeholder="Bradesco"
+                    value={bancoForm.nome}
+                    onChange={(e) => setBancoForm({ ...bancoForm, nome: e.target.value })}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Agencia</label>
+                  <Input
+                    placeholder="1692"
+                    value={bancoForm.agencia}
+                    onChange={(e) => setBancoForm({ ...bancoForm, agencia: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Conta</label>
+                  <Input
+                    placeholder="62419-1"
+                    value={bancoForm.conta}
+                    onChange={(e) => setBancoForm({ ...bancoForm, conta: e.target.value })}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Chave Pix</label>
+                <Input
+                  placeholder="email@exemplo.com ou celular"
+                  value={bancoForm.chavePix}
+                  onChange={(e) => setBancoForm({ ...bancoForm, chavePix: e.target.value })}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Tipo da Chave Pix</label>
+                  <select
+                    value={bancoForm.tipoChavePix}
+                    onChange={(e) => setBancoForm({ ...bancoForm, tipoChavePix: e.target.value })}
+                    className="w-full h-10 px-3 rounded-md border border-border bg-white text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    <option value="">Selecione...</option>
+                    <option value="celular">Celular</option>
+                    <option value="email">E-mail</option>
+                    <option value="cpf">CPF</option>
+                    <option value="cnpj">CNPJ</option>
+                    <option value="aleatoria">Chave Aleatoria</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Saldo Inicial</label>
+                  <CurrencyInput
+                    value={bancoForm.saldoInicial}
+                    onValueChange={(val) => setBancoForm({ ...bancoForm, saldoInicial: val })}
+                    placeholder="R$ 0,00"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <Button type="button" variant="outline" className="flex-1" onClick={() => setShowBancoModal(false)}>
+                  Cancelar
+                </Button>
+                <Button type="submit" className="flex-1">
+                  {editingBanco ? "Salvar" : "Cadastrar"}
+                </Button>
+              </div>
+            </form>
+          </Card>
+        </div>
+      )}
+
+      {/* Modal Selecao de Banco para Pagamento */}
+      {showBancoSelector && contaParaPagar && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <Card className="w-full max-w-md">
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <h2 className="text-lg font-semibold text-foreground">
+                {contaParaPagar.tipo === "pagar" ? "Confirmar Pagamento" : "Confirmar Recebimento"}
+              </h2>
+              <Button variant="ghost" size="sm" onClick={() => {
+                setShowBancoSelector(false)
+                setContaParaPagar(null)
+              }}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              {/* Resumo da conta */}
+              <div className="bg-muted/50 rounded-lg p-3 space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Descricao:</span>
+                  <span className="text-sm font-medium text-foreground">{contaParaPagar.descricao || contaParaPagar.beneficiario || "-"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Valor:</span>
+                  <span className="text-sm font-bold text-foreground">{formatCurrency(contaParaPagar.valor)}</span>
+                </div>
+              </div>
+
+              <p className="text-sm text-muted-foreground">
+                Em qual conta bancaria foi realizado o {contaParaPagar.tipo === "pagar" ? "pagamento" : "recebimento"}?
+              </p>
+
+              <div className="space-y-2 max-h-60 overflow-y-auto">
+                {bancos.length === 0 ? (
+                  <div className="text-center py-4">
+                    <Building2 className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                    <p className="text-sm text-muted-foreground">Nenhum banco cadastrado</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Cadastre seus bancos na aba Bancos
+                    </p>
+                  </div>
+                ) : (
+                  bancos.map((banco) => {
+                    const saldoBanco = saldosPorBanco[banco.id] || 0
+                    return (
+                      <button
+                        key={banco.id}
+                        onClick={() => setSelectedBancoId(banco.id)}
+                        className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                          selectedBancoId === banco.id
+                            ? "border-primary bg-primary/5"
+                            : "border-border hover:border-primary/50"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-medium text-foreground">
+                              {banco.codigo} - {banco.nome}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Ag: {banco.agencia} | Conta: {banco.conta}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="text-right">
+                              <p className="text-xs text-muted-foreground">Saldo</p>
+                              <p className={`text-sm font-semibold ${saldoBanco < 0 ? 'text-red-600' : saldoBanco > 0 ? 'text-emerald-600' : 'text-foreground'}`}>
+                                {formatCurrency(saldoBanco)}
+                              </p>
+                            </div>
+                            {selectedBancoId === banco.id && (
+                              <CheckCircle2 className="h-5 w-5 text-primary" />
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    )
+                  })
+                )}
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-border">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => {
+                    setShowBancoSelector(false)
+                    setContaParaPagar(null)
+                  }}
+                  disabled={processandoPagamento}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  className="flex-1"
+                  onClick={confirmarPagamento}
+                  disabled={(bancos.length > 0 && !selectedBancoId) || processandoPagamento}
+                >
+                  <CheckCircle2 className="mr-2 h-4 w-4" />
+                  {processandoPagamento ? "Processando..." : "Confirmar"}
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Modal Seletor de Tipo */}
+      {showTipoSelector && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <Card className="w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-foreground">Selecione o Tipo de Conta</h2>
+              <Button variant="ghost" size="sm" onClick={() => setShowTipoSelector(false)}>
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+            <p className="text-sm text-muted-foreground mb-6">Escolha se deseja registrar uma saída ou entrada</p>
+            <div className="grid gap-3">
+              <Button
+                variant="outline"
+                className="h-auto py-4 flex-col items-start hover:border-red-500 hover:bg-red-50"
+                onClick={() => openMovimentacaoModal("saida")}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <ArrowDownCircle className="h-5 w-5 text-red-600" />
+                  <span className="font-semibold">Saída</span>
+                </div>
+                <p className="text-xs text-muted-foreground">Despesas, pagamentos, saídas de caixa</p>
+              </Button>
+              <Button
+                variant="outline"
+                className="h-auto py-4 flex-col items-start hover:border-emerald-500 hover:bg-emerald-50"
+                onClick={() => openMovimentacaoModal("entrada")}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <ArrowUpCircle className="h-5 w-5 text-emerald-600" />
+                  <span className="font-semibold">Entrada</span>
+                </div>
+                <p className="text-xs text-muted-foreground">Receitas, recebimentos, entradas de caixa</p>
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Modal Nova Movimentação */}
+      {showMovimentacaoModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <Card className="w-full max-w-lg">
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <h2 className="text-lg font-semibold text-foreground">Nova Movimentacao</h2>
+              <Button variant="ghost" size="sm" onClick={() => setShowMovimentacaoModal(false)} disabled={savingMovimentacao}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+
+            <form onSubmit={handleSaveMovimentacao} className="p-4 space-y-4">
+              {/* Indicador do tipo selecionado */}
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
+                {movimentacaoForm.tipo === "entrada" ? (
+                  <>
+                    <ArrowUpCircle className="h-5 w-5 text-emerald-600" />
+                    <span className="text-sm font-medium text-emerald-600">Entrada</span>
+                  </>
+                ) : (
+                  <>
+                    <ArrowDownCircle className="h-5 w-5 text-red-600" />
+                    <span className="text-sm font-medium text-red-600">Saída</span>
+                  </>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                {/* Data */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Data *</label>
+                  <Input
+                    type="date"
+                    value={movimentacaoForm.dia}
+                    onChange={(e) => setMovimentacaoForm({ ...movimentacaoForm, dia: e.target.value })}
+                    required
+                    disabled={savingMovimentacao}
+                  />
+                </div>
+
+                {/* Valor */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Valor *</label>
+                  <CurrencyInput
+                    value={movimentacaoForm.valor}
+                    onValueChange={(val) => setMovimentacaoForm({ ...movimentacaoForm, valor: val })}
+                    required
+                    disabled={savingMovimentacao}
+                  />
+                </div>
+              </div>
+
+              {/* Centro de Custo/Receita */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">
+                  {movimentacaoForm.tipo === "entrada" ? "Centro de Receita" : "Centro de Custo"}
+                </label>
+                <select
+                  value={movimentacaoForm.codigoTipo}
+                  onChange={(e) => setMovimentacaoForm({ ...movimentacaoForm, codigoTipo: e.target.value })}
+                  className="w-full h-10 px-3 rounded-md border border-border bg-white text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                  disabled={savingMovimentacao}
+                >
+                  <option value="">Selecione...</option>
+                  {centros.map((centro) => (
+                    <option key={centro.id} value={centro.sigla}>
+                      {centro.sigla} - {centro.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                {/* Banco */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground flex items-center gap-1">
+                    <Building2 className="h-4 w-4" />
+                    Banco
+                  </label>
+                  <select
+                    value={movimentacaoForm.bancoId}
+                    onChange={(e) => setMovimentacaoForm({ ...movimentacaoForm, bancoId: e.target.value })}
+                    className="w-full h-10 px-3 rounded-md border border-border bg-white text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                    disabled={savingMovimentacao}
+                  >
+                    <option value="">Selecione...</option>
+                    {bancos.map((banco) => (
+                      <option key={banco.id} value={banco.id}>
+                        {banco.codigo} - {banco.nome}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Cartão de Crédito */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground flex items-center gap-1">
+                    <CreditCard className="h-4 w-4" />
+                    Cartao de Credito
+                  </label>
+                  <select
+                    value={movimentacaoForm.cartaoId}
+                    onChange={(e) => setMovimentacaoForm({ ...movimentacaoForm, cartaoId: e.target.value })}
+                    className="w-full h-10 px-3 rounded-md border border-border bg-white text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                    disabled={savingMovimentacao}
+                  >
+                    <option value="">Selecione...</option>
+                    {cartoes.map((cartao) => (
+                      <option key={cartao.id} value={cartao.id}>
+                        {cartao.nome} (**** {cartao.ultimos4Digitos})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Fornecedor/Cliente */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">
+                  {movimentacaoForm.tipo === "entrada" ? "Cliente" : "Fornecedor"}
+                </label>
+                <Input
+                  placeholder={movimentacaoForm.tipo === "entrada" ? "Nome do cliente" : "Nome do fornecedor"}
+                  value={movimentacaoForm.fornecedorCliente}
+                  onChange={(e) => setMovimentacaoForm({ ...movimentacaoForm, fornecedorCliente: e.target.value })}
+                  disabled={savingMovimentacao}
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <Button type="button" variant="outline" className="flex-1" onClick={() => setShowMovimentacaoModal(false)} disabled={savingMovimentacao}>
+                  Cancelar
+                </Button>
+                <Button type="submit" className="flex-1" disabled={savingMovimentacao}>
+                  {savingMovimentacao ? "Salvando..." : "Adicionar"}
+                </Button>
+              </div>
+            </form>
+          </Card>
+        </div>
+      )}
+
+      {/* Modal Novo/Editar Cartão */}
+      {showNovoCartaoModal && (
+        <NovoCartaoModal
+          cartao={cartaoParaEditar}
+          onClose={() => {
+            setShowNovoCartaoModal(false)
+            setCartaoParaEditar(null)
+          }}
+          onSuccess={handleCartaoSuccess}
+        />
+      )}
+
+      {/* Modal de Faturas do Cartão */}
+      {cartaoParaFaturas && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <Card className="w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <div>
+                <h2 className="text-lg font-semibold text-foreground">
+                  Faturas - {cartaoParaFaturas.nome}
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  **** {cartaoParaFaturas.ultimos4Digitos}
+                </p>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setCartaoParaFaturas(null)}>
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+
+            <div className="p-4 overflow-y-auto flex-1">
+              {loadingFaturas ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : faturas.length === 0 ? (
+                <div className="text-center py-8">
+                  <Calendar className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+                  <p className="text-sm text-muted-foreground">Nenhuma fatura encontrada</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {faturas.map((fatura) => {
+                    const meses = [
+                      "Janeiro", "Fevereiro", "Marco", "Abril", "Maio", "Junho",
+                      "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+                    ]
+                    const mesNome = meses[fatura.mesReferencia - 1]
+
+                    return (
+                      <Card
+                        key={fatura.id}
+                        className={`p-4 cursor-pointer hover:shadow-md transition-shadow ${
+                          fatura.pago ? "bg-green-50" : "bg-yellow-50"
+                        }`}
+                        onClick={() => setFaturaDetalhe(fatura)}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h4 className="font-medium text-foreground">
+                              {mesNome}/{fatura.anoReferencia}
+                            </h4>
+                            <p className="text-xs text-muted-foreground">
+                              Vencimento: {new Date(fatura.dataVencimento).toLocaleDateString("pt-BR")}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-bold text-foreground">
+                              {formatCurrency(fatura.valorTotal)}
+                            </p>
+                            <span className={`text-xs px-2 py-0.5 rounded ${
+                              fatura.pago
+                                ? "bg-green-100 text-green-700"
+                                : "bg-yellow-100 text-yellow-700"
+                            }`}>
+                              {fatura.pago ? "Paga" : "Aberta"}
+                            </span>
+                          </div>
+                        </div>
+                      </Card>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Modal Detalhe Fatura */}
+      {faturaDetalhe && (
+        <FaturaModal
+          fatura={faturaDetalhe}
+          onClose={() => setFaturaDetalhe(null)}
+          onPago={() => {
+            setFaturaDetalhe(null)
+            if (cartaoParaFaturas) {
+              loadFaturas(cartaoParaFaturas.id)
+            }
+            fetchCartoes()
+          }}
+        />
+      )}
     </div>
   )
 }

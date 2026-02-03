@@ -43,44 +43,44 @@ export function DataTable({
       {showSearch && (
         <div className="flex items-center justify-between">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fyn-muted" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
               type="text"
               value={globalFilter}
               onChange={(e) => setGlobalFilter(e.target.value)}
               placeholder={searchPlaceholder}
-              className="w-72 rounded-lg border border-fyn-border bg-fyn-bg py-2 pl-10 pr-4 text-sm text-fyn-text placeholder:text-fyn-text-light transition-all focus:border-fyn-accent focus:outline-none focus:ring-2 focus:ring-fyn-accent/20"
+              className="w-72 rounded-lg border border-border bg-card py-2 pl-10 pr-4 text-sm text-foreground placeholder:text-muted-foreground/50 transition-all focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
             />
           </div>
-          <p className="text-sm text-fyn-text-muted">
-            <span className="font-medium text-fyn-text">{table.getFilteredRowModel().rows.length}</span> registros
+          <p className="text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">{table.getFilteredRowModel().rows.length}</span> registros
           </p>
         </div>
       )}
 
-      <div className="overflow-hidden rounded-xl border border-fyn-border bg-fyn-bg shadow-sm">
+      <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
         <table className="w-full">
           <thead>
             {table.getHeaderGroups().map((headerGroup) => (
-              <tr key={headerGroup.id} className="border-b border-fyn-border bg-fyn-surface">
+              <tr key={headerGroup.id} className="border-b border-border bg-muted">
                 {headerGroup.headers.map((header) => (
                   <th
                     key={header.id}
-                    className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-fyn-text-muted"
+                    className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground"
                   >
                     {header.isPlaceholder ? null : (
                       <div
                         className={`flex items-center gap-2 ${
-                          header.column.getCanSort() ? "cursor-pointer select-none hover:text-fyn-text" : ""
+                          header.column.getCanSort() ? "cursor-pointer select-none hover:text-foreground" : ""
                         }`}
                         onClick={header.column.getToggleSortingHandler()}
                       >
                         {flexRender(header.column.columnDef.header, header.getContext())}
                         {header.column.getCanSort() && (
-                          <span className="text-fyn-text-light">
+                          <span className="text-muted-foreground/50">
                             {{
-                              asc: <ChevronUp className="h-4 w-4 text-fyn-accent" />,
-                              desc: <ChevronDown className="h-4 w-4 text-fyn-accent" />,
+                              asc: <ChevronUp className="h-4 w-4 text-primary" />,
+                              desc: <ChevronDown className="h-4 w-4 text-primary" />,
                             }[header.column.getIsSorted()] ?? <ChevronsUpDown className="h-4 w-4" />}
                           </span>
                         )}
@@ -91,13 +91,13 @@ export function DataTable({
               </tr>
             ))}
           </thead>
-          <tbody className="divide-y divide-fyn-border">
+          <tbody className="divide-y divide-border">
             {table.getRowModel().rows.length === 0 ? (
               <tr>
                 <td colSpan={columns.length} className="px-4 py-12 text-center">
                   <div className="flex flex-col items-center gap-2">
-                    {EmptyIcon && <EmptyIcon className="h-10 w-10 text-fyn-text-light" />}
-                    <p className="text-sm text-fyn-text-muted">{emptyMessage}</p>
+                    {EmptyIcon && <EmptyIcon className="h-10 w-10 text-muted-foreground/50" />}
+                    <p className="text-sm text-muted-foreground">{emptyMessage}</p>
                   </div>
                 </td>
               </tr>
@@ -105,10 +105,10 @@ export function DataTable({
               table.getRowModel().rows.map((row, idx) => (
                 <tr
                   key={row.id}
-                  className={`transition-colors hover:bg-fyn-surface/70 ${idx % 2 === 1 ? "bg-fyn-surface/30" : ""}`}
+                  className={`transition-colors hover:bg-muted/70 ${idx % 2 === 1 ? "bg-muted/30" : ""}`}
                 >
                   {row.getVisibleCells().map((cell) => (
-                    <td key={cell.id} className="px-4 py-3 text-sm text-fyn-text">
+                    <td key={cell.id} className="px-4 py-3 text-sm text-foreground">
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </td>
                   ))}
@@ -122,15 +122,15 @@ export function DataTable({
       {/* Pagination */}
       {table.getPageCount() > 1 && (
         <div className="flex items-center justify-between">
-          <p className="text-sm text-fyn-text-muted">
-            Página <span className="font-medium text-fyn-text">{table.getState().pagination.pageIndex + 1}</span> de{" "}
-            <span className="font-medium text-fyn-text">{table.getPageCount()}</span>
+          <p className="text-sm text-muted-foreground">
+            Página <span className="font-medium text-foreground">{table.getState().pagination.pageIndex + 1}</span> de{" "}
+            <span className="font-medium text-foreground">{table.getPageCount()}</span>
           </p>
           <div className="flex items-center gap-1">
             <button
               onClick={() => table.previousPage()}
               disabled={!table.getCanPreviousPage()}
-              className="flex items-center gap-1 rounded-lg border border-fyn-border px-3 py-1.5 text-sm font-medium text-fyn-text transition-colors hover:bg-fyn-surface disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
             >
               <ChevronLeft className="h-4 w-4" />
               Anterior
@@ -138,7 +138,7 @@ export function DataTable({
             <button
               onClick={() => table.nextPage()}
               disabled={!table.getCanNextPage()}
-              className="flex items-center gap-1 rounded-lg border border-fyn-border px-3 py-1.5 text-sm font-medium text-fyn-text transition-colors hover:bg-fyn-surface disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
             >
               Próxima
               <ChevronRight className="h-4 w-4" />

@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(npx prisma migrate:*)",
+      "Bash(npx prisma generate)",
+      "Bash(npm run dev:*)",
+      "Bash(npx prisma studio:*)",
+      "Bash(sqlite3:*)",
+      "Bash(node check-db.mjs:*)",
+      "Bash(taskkill:*)",
+      "Bash(node create-test-centro.mjs:*)",
+      "Bash(curl:*)",
+      "Bash(node test-centro-hierarchy.js:*)",
+      "Bash(node:*)",
+      "Bash(find:*)",
+      "Bash(npx prisma db push:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run build:*)",
+      "Bash(npx prisma:*)",
+      "Bash(test:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ]
+  }
+}

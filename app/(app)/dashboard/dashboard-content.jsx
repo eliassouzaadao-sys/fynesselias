@@ -1,737 +1,654 @@
-
-
 "use client"
-import React from "react"
 
-
-import { PageHeader } from "@/components/ui/page-header"
-import { KpiCard } from "@/components/ui/kpi-card"
-import { DataTable } from "@/components/ui/data-table"
-import { StatusBadge } from "@/components/ui/status-badge"
+import { useState, useEffect, useMemo } from "react"
+import { formatCurrency, formatDate } from "@/lib/format"
+import {
+  TrendingUp,
+  TrendingDown,
+  ArrowUpCircle,
+  ArrowDownCircle,
+  Clock,
+  CheckCircle2,
+  BarChart3,
+  ChevronRight,
+  RefreshCw,
+  Calendar,
+} from "lucide-react"
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts"
+import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { formatCurrency, formatPercentage } from "@/lib/format"
-import { AlertTriangle, ArrowRight, Lightbulb } from "lucide-react"
-import { Line, Bar } from "@/components/ui/charts"
-// import ChartDataLabels from "chartjs-plugin-datalabels"
-// import { Chart } from "chart.js"
-// Chart.register(ChartDataLabels)
-import { useEffect, useState } from "react"
+import { Input } from "@/components/ui/input"
 
-// Mock data
-// Dados mock para gráficos
-const receitaProjetada = [88000, 90000, 95000, 100000, 105000, 110000, 115000];
-const mesesProjecao = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul"];
+// KPI Card Component
+function KpiCard({ label, value, trend, trendValue, subtitle }) {
+  const isPositive = trend === "up"
+  const isNegative = trend === "down"
 
-const clientesEvolucao = [120, 135, 150, 170, 200, 230, 250];
-const mesesClientes = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul"];
-
-const receitaPorProduto = [
-  { produto: "Software", valor: 42000 },
-  { produto: "Consultoria", valor: 18000 },
-  { produto: "Suporte", valor: 9000 },
-  { produto: "Treinamento", valor: 6000 },
-];
-const produtosLabels = receitaPorProduto.map(p => p.produto);
-const produtosValores = receitaPorProduto.map(p => p.valor);
-const statusDia = {
-  caixaAtual: 127450.32,
-  previsao30d: 89200.0,
-  limiteSeguro: 50000.0,
-  exposicaoRisco: 15.2,
+  return (
+    <Card className="p-5 bg-card border-border hover:border-primary/30 transition-all duration-300">
+      <div className="flex items-start justify-between">
+        <div className="space-y-1">
+          <p className="text-sm text-muted-foreground">{label}</p>
+          <p className="text-2xl font-bold text-foreground">{value}</p>
+        </div>
+        {trendValue && (
+          <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+            isPositive
+              ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
+              : isNegative
+                ? "bg-red-500/10 text-red-500 border border-red-500/20"
+                : "bg-muted text-muted-foreground border border-border"
+          }`}>
+            {isPositive && <TrendingUp className="h-3 w-3" />}
+            {isNegative && <TrendingDown className="h-3 w-3" />}
+            {trendValue}
+          </div>
+        )}
+      </div>
+      {subtitle && (
+        <div className="mt-3 flex items-center gap-2 text-sm">
+          {isPositive && <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />}
+          {isNegative && <TrendingDown className="h-3.5 w-3.5 text-red-500" />}
+          <span className="text-muted-foreground">{subtitle}</span>
+        </div>
+      )}
+    </Card>
+  )
 }
 
-const empresasData = [
-  { empresa: "Tech Solutions ME", caixa: 87450.32, receita: 45000, resultado: 12500, risco: "Baixo" },
-  { empresa: "Comércio ABC EPP", caixa: 32000.0, receita: 28000, resultado: -3200, risco: "Médio" },
-  { empresa: "Serviços XYZ ME", caixa: 8000.0, receita: 15000, resultado: 2800, risco: "Alto" },
-]
+// Chart Tooltip Component
+function CustomTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null
 
-const centrosCustoData = [
-  { centro: "Operações", receita: 45000, custos: 32000, resultado: 13000, impacto: 42.5 },
-  { centro: "Comercial", receita: 28000, custos: 18000, resultado: 10000, impacto: 32.7 },
-  { centro: "Administrativo", receita: 0, custos: 8500, resultado: -8500, impacto: -27.8 },
-  { centro: "Logística", receita: 15000, custos: 12000, resultado: 3000, impacto: 9.8 },
-]
+  return (
+    <div className="bg-card border border-border rounded-lg shadow-lg p-3">
+      <p className="text-xs text-muted-foreground mb-1">{label}</p>
+      {payload.map((entry, index) => (
+        <p key={index} className="text-sm font-medium text-foreground">
+          {entry.name}: {formatCurrency(entry.value)}
+        </p>
+      ))}
+    </div>
+  )
+}
 
-const comparativoMensal = [
-  { mes: "Ago", receita: 68000, custos: 52000, resultado: 16000 },
-  { mes: "Set", receita: 72000, custos: 58000, resultado: 14000 },
-  { mes: "Out", receita: 65000, custos: 48000, resultado: 17000 },
-  { mes: "Nov", receita: 78000, custos: 62000, resultado: 16000 },
-  { mes: "Dez", receita: 85000, custos: 68000, resultado: 17000 },
-  { mes: "Jan", receita: 88000, custos: 70500, resultado: 17500 },
-]
+// Conta List Item Component
+function ContaItem({ conta }) {
+  const isVencida = !conta.pago && new Date(conta.vencimento) < new Date()
+  const isPagar = conta.tipo === "pagar"
 
-
-const decisoesRecomendadas = [
-  {
-    tipo: "Cobrança",
-    prioridade: "alta",
-    descricao: "Distribuidora Norte: 32 dias de atraso",
-    valor: "R$ 45.000",
-  },
-  {
-    tipo: "Crédito",
-    prioridade: "media",
-    descricao: "Comercial Centro: score deteriorando",
-    valor: "R$ 22.000",
-  },
-  {
-    tipo: "Fluxo",
-    prioridade: "alta",
-    descricao: "Previsão 30 dias abaixo do limite",
-    valor: null,
-  },
-]
-
-const empresasColumns = [
-  { accessorKey: "empresa", header: "Empresa" },
-  {
-    accessorKey: "caixa",
-    header: "Caixa",
-    cell: ({ row }) => <span className="font-medium">{formatCurrency(row.original.caixa)}</span>,
-  },
-  {
-    accessorKey: "receita",
-    header: "Receita Mês",
-    cell: ({ row }) => formatCurrency(row.original.receita),
-  },
-  {
-    accessorKey: "resultado",
-    header: "Resultado",
-    cell: ({ row }) => (
-      <span className={`font-medium ${row.original.resultado < 0 ? "text-fyn-danger" : "text-fyn-success"}`}>
-        {formatCurrency(row.original.resultado)}
-      </span>
-    ),
-  },
-  {
-    accessorKey: "risco",
-    header: "Risco",
-    cell: ({ row }) => <StatusBadge status={row.original.risco} size="xs" />,
-  },
-]
-
-const centrosCustoColumns = [
-  { accessorKey: "centro", header: "Centro" },
-  {
-    accessorKey: "receita",
-    header: "Receita",
-    cell: ({ row }) => formatCurrency(row.original.receita),
-  },
-  {
-    accessorKey: "custos",
-    header: "Custos",
-    cell: ({ row }) => formatCurrency(row.original.custos),
-  },
-  {
-    accessorKey: "resultado",
-    header: "Resultado",
-    cell: ({ row }) => (
-      <span className={`font-medium ${row.original.resultado < 0 ? "text-fyn-danger" : "text-fyn-success"}`}>
-        {formatCurrency(row.original.resultado)}
-      </span>
-    ),
-  },
-  {
-    accessorKey: "impacto",
-    header: "Impacto",
-    cell: ({ row }) => (
-      <span className={row.original.impacto < 0 ? "text-fyn-danger" : "text-fyn-text"}>
-        {formatPercentage(row.original.impacto)}
-      </span>
-    ),
-  },
-]
-
-
+  return (
+    <div className="flex items-center justify-between py-3 px-4 rounded-lg bg-muted/30 hover:bg-muted/50 border border-border hover:border-primary/30 transition-all cursor-pointer group">
+      <div className="flex items-center gap-3">
+        <div className={`p-2 rounded-lg ${isPagar ? "bg-red-500/10" : "bg-emerald-500/10"}`}>
+          {isPagar ? (
+            <ArrowDownCircle className={`h-4 w-4 ${isVencida ? "text-red-500" : "text-red-400"}`} />
+          ) : (
+            <ArrowUpCircle className="h-4 w-4 text-emerald-500" />
+          )}
+        </div>
+        <div>
+          <p className="text-sm font-medium text-foreground">
+            {conta.beneficiario || conta.descricao || "Sem descricao"}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {formatDate(new Date(conta.vencimento))}
+            {isVencida && (
+              <span className="ml-2 text-red-500 font-medium">Vencida</span>
+            )}
+          </p>
+        </div>
+      </div>
+      <div className="flex items-center gap-3">
+        <span className={`font-semibold ${isPagar ? "text-red-500" : "text-emerald-500"}`}>
+          {isPagar ? "-" : "+"} {formatCurrency(conta.valor)}
+        </span>
+        <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+      </div>
+    </div>
+  )
+}
 
 export function DashboardContent() {
-  // Filtros de período para centros de custo e receita
-  const [periodoCentroCusto, setPeriodoCentroCusto] = useState('Mês atual');
-  const [periodoCentroReceita, setPeriodoCentroReceita] = useState('Mês atual');
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [centrosReceita, setCentrosReceita] = useState([])
+  const [centrosCusto, setCentrosCusto] = useState([])
+  const [contas, setContas] = useState([])
+  const [fluxoCaixa, setFluxoCaixa] = useState([])
+  const [periodoGrafico, setPeriodoGrafico] = useState("30dias")
 
-  // Mock data for macro/micro centers
-  const macroCentros = [
-            {
-              id: 1,
-              nome: "Operações",
-              valor: 38000,
-              micro: [
-                { id: 11, nome: "Operação 1", valor: 18000 },
-                { id: 12, nome: "Operação 2", valor: 12000 },
-                { id: 13, nome: "Operação 3", valor: 8000 },
-              ],
-            },
-            {
-              id: 2,
-              nome: "Comercial",
-              valor: 21000,
-              micro: [
-                { id: 21, nome: "Comercial 1", valor: 12000 },
-                { id: 22, nome: "Comercial 2", valor: 9000 },
-              ],
-            },
-            {
-              id: 3,
-              nome: "Logística",
-              valor: 14000,
-              micro: [
-                { id: 31, nome: "Logística 1", valor: 8000 },
-                { id: 32, nome: "Logística 2", valor: 6000 },
-              ],
-            },
-            {
-              id: 4,
-              nome: "Administrativo",
-              valor: 10000,
-              micro: [
-                { id: 41, nome: "Administrativo 1", valor: 6000 },
-                { id: 42, nome: "Administrativo 2", valor: 4000 },
-              ],
-            },
-          ]
+  // Filtros de mês e ano
+  const dataAtual = new Date()
+  const primeiroDiaMes = new Date(dataAtual.getFullYear(), dataAtual.getMonth(), 1)
+  const ultimoDiaMes = new Date(dataAtual.getFullYear(), dataAtual.getMonth() + 1, 0)
+  const [mesSelecionado, setMesSelecionado] = useState(dataAtual.getMonth())
+  const [anoSelecionado, setAnoSelecionado] = useState(dataAtual.getFullYear())
+  const [filtroTipo, setFiltroTipo] = useState('mes') // 'mes' ou 'personalizado'
+  const [dataInicial, setDataInicial] = useState(primeiroDiaMes.toISOString().split('T')[0])
+  const [dataFinal, setDataFinal] = useState(ultimoDiaMes.toISOString().split('T')[0])
 
-          const macroReceita = [
-            {
-              id: 101,
-              nome: "Produto A",
-              valor: 44000,
-              micro: [
-                { id: 111, nome: "Produto A1", valor: 25000 },
-                { id: 112, nome: "Produto A2", valor: 19000 },
-              ],
-            },
-            {
-              id: 102,
-              nome: "Produto B",
-              valor: 27000,
-              micro: [
-                { id: 121, nome: "Produto B1", valor: 15000 },
-                { id: 122, nome: "Produto B2", valor: 12000 },
-              ],
-            },
-            {
-              id: 103,
-              nome: "Produto C",
-              valor: 15000,
-              micro: [
-                { id: 131, nome: "Produto C1", valor: 9000 },
-                { id: 132, nome: "Produto C2", valor: 6000 },
-              ],
-            },
-            {
-              id: 104,
-              nome: "Serviço X",
-              valor: 8000,
-              micro: [
-                { id: 141, nome: "Serviço X1", valor: 5000 },
-                { id: 142, nome: "Serviço X2", valor: 3000 },
-              ],
-            },
-          ]
+  // Nomes dos meses
+  const meses = [
+    'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+  ]
 
-  // State for expanded rows
-  const [expandedCost, setExpandedCost] = useState([])
-  const [expandedRevenue, setExpandedRevenue] = useState([])
+  // Anos disponíveis (últimos 5 anos)
+  const anosDisponiveis = Array.from({ length: 5 }, (_, i) => dataAtual.getFullYear() - 2 + i)
 
-  const toggleExpand = (id, type) => {
-    if (type === "cost") {
-      setExpandedCost((prev) =>
-        prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-      )
-    } else {
-      setExpandedRevenue((prev) =>
-        prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-      )
+  // Calcular datas do mês selecionado
+  const calcularDatasDoMes = (mes, ano) => {
+    const primeiroDia = new Date(ano, mes, 1)
+    const ultimoDia = new Date(ano, mes + 1, 0)
+    return {
+      inicio: primeiroDia.toISOString().split('T')[0],
+      fim: ultimoDia.toISOString().split('T')[0]
     }
   }
 
-  // ...existing code...
+  async function fetchData(inicio = dataInicial, fim = dataFinal) {
+    try {
+      // Parâmetros de data para centros
+      const params = new URLSearchParams({
+        dataInicio: inicio,
+        dataFim: fim
+      })
 
-  // POSICIONE AQUI a tabela interativa, dentro do return:
-  // ...existing code...
-        // Animação de contagem para saldo e margem
-        const useCountUp = (end, duration = 1200) => {
-          const [value, setValue] = useState(0)
-          useEffect(() => {
-            let start = 0
-            const increment = end / (duration / 16)
-            let raf
-            const animate = () => {
-              start += increment
-              if (start < end) {
-                setValue(Math.round(start))
-                raf = requestAnimationFrame(animate)
-              } else {
-                setValue(end)
-              }
-            }
-            animate()
-            return () => raf && cancelAnimationFrame(raf)
-          }, [end, duration])
-          return value
-        }
+      // Fazer todas as chamadas em paralelo para melhor performance
+      const [centrosReceitaRes, centrosCustoRes, contasRes, fluxoRes] = await Promise.all([
+        fetch(`/api/centros?tipo=faturamento&${params.toString()}`),
+        fetch(`/api/centros?tipo=despesa&${params.toString()}`),
+        fetch("/api/contas"),
+        fetch("/api/fluxo-caixa"),
+      ])
 
-        const saldoAnimado = useCountUp(Math.round(statusDia.caixaAtual))
-        const margemAnimada = useCountUp(32.4)
-    // Dados para gráficos
-    const meses = comparativoMensal.map((row) => row.mes)
-    const receitaData = comparativoMensal.map((row) => row.receita)
-    const custosData = comparativoMensal.map((row) => row.custos)
-    const resultadoData = comparativoMensal.map((row) => row.resultado)
+      const [centrosReceitaData, centrosCustoData, contasData, fluxoData] = await Promise.all([
+        centrosReceitaRes.json(),
+        centrosCustoRes.json(),
+        contasRes.json(),
+        fluxoRes.json(),
+      ])
 
-    const lineData = {
-      labels: meses,
-      datasets: [
-        {
-          label: "Saldo de Caixa",
-          data: [120000, 125000, 123000, 130000, 127450, 127450],
-          borderColor: "#059669",
-          backgroundColor: "#05966933",
-          tension: 0.4,
-          fill: true,
-        },
-      ],
+      setCentrosReceita(Array.isArray(centrosReceitaData) ? centrosReceitaData.filter(c => !c.parentId) : [])
+      setCentrosCusto(Array.isArray(centrosCustoData) ? centrosCustoData.filter(c => !c.parentId) : [])
+
+      setContas(Array.isArray(contasData) ? contasData : [])
+      setFluxoCaixa(Array.isArray(fluxoData) ? fluxoData : [])
+    } catch (error) {
+      console.error("Erro ao carregar dados:", error)
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
     }
+  }
 
-    // Gráfico de crescimento de crédito
-    const creditoCrescimentoData = {
-      labels: meses,
-      datasets: [
-        {
-          label: "Crédito Utilizado",
-          data: [90000, 100000, 110000, 120000, 135000, 142000],
-          borderColor: "#f59e42",
-          backgroundColor: "#f59e4233",
-          tension: 0.4,
-          fill: true,
-        },
-      ],
+  // Load data on mount
+  useEffect(() => {
+    const { inicio, fim } = calcularDatasDoMes(mesSelecionado, anoSelecionado)
+    setDataInicial(inicio)
+    setDataFinal(fim)
+    fetchData(inicio, fim)
+  }, [])
+
+  // Recarregar quando mês/ano mudar (filtro por mês)
+  useEffect(() => {
+    if (filtroTipo === 'mes') {
+      const { inicio, fim } = calcularDatasDoMes(mesSelecionado, anoSelecionado)
+      setDataInicial(inicio)
+      setDataFinal(fim)
+      fetchData(inicio, fim)
     }
+  }, [mesSelecionado, anoSelecionado, filtroTipo])
 
-    const barData = {
-      labels: meses,
-      datasets: [
-        {
-          label: "Receita",
-          data: receitaData,
-          backgroundColor: "#10b981",
-        },
-        {
-          label: "Custos",
-          data: custosData,
-          backgroundColor: "#ef4444",
-        },
-        {
-          label: "Resultado",
-          data: resultadoData,
-          backgroundColor: "#3b82f6",
-        },
-      ],
+  // Recarregar quando datas personalizadas mudarem
+  useEffect(() => {
+    if (filtroTipo === 'personalizado' && dataInicial && dataFinal) {
+      fetchData(dataInicial, dataFinal)
     }
+  }, [dataInicial, dataFinal, filtroTipo])
 
-    const pizzaData = {
-      labels: centrosCustoData.map((c) => c.centro),
-      datasets: [
-        {
-          label: "Despesas por Centro",
-          data: centrosCustoData.map((c) => Math.abs(c.custos)),
-          backgroundColor: ["#3b82f6", "#10b981", "#f59e42", "#ef4444"],
-        },
-      ],
+  const handleRefresh = () => {
+    setRefreshing(true)
+    fetchData(dataInicial, dataFinal)
+  }
+
+  // Calculate KPIs
+  const totalReceitaPrevista = centrosReceita.reduce((acc, c) => acc + (c.previsto || 0), 0)
+  const totalReceitaRealizada = centrosReceita.reduce((acc, c) => acc + (c.realizado || 0), 0)
+  const totalCustoPrevisto = centrosCusto.reduce((acc, c) => acc + (c.previsto || 0), 0)
+  const totalCustoRealizado = centrosCusto.reduce((acc, c) => acc + (c.realizado || 0), 0)
+
+  const resultadoPrevisto = totalReceitaPrevista - totalCustoPrevisto
+  const resultadoRealizado = totalReceitaRealizada - totalCustoRealizado
+
+  // Para calcular A Pagar e A Receber corretamente:
+  // - Excluir contas pai de parcelamento (que têm totalParcelas definido)
+  // - Para parcelamentos, usar as parcelas individuais (que estão dentro de cada conta pai)
+  // - Aplicar filtro de data
+
+  // Obter datas do período selecionado
+  const dataInicioFiltro = new Date(dataInicial + "T00:00:00")
+  const dataFimFiltro = new Date(dataFinal + "T23:59:59")
+
+  // Função para verificar se uma conta está no período
+  const contaNoPeriodo = (conta) => {
+    const vencimento = new Date(conta.vencimento)
+    return vencimento >= dataInicioFiltro && vencimento <= dataFimFiltro
+  }
+
+  // Extrair todas as contas individuais (excluindo pais de parcelamento)
+  // Para cada conta pai com parcelas, usamos as parcelas individuais
+  // Para contas simples (sem totalParcelas), usamos a própria conta
+  const todasContasIndividuais = contas.flatMap((conta) => {
+    // Se é uma conta pai de parcelamento (tem totalParcelas > 0), usar as parcelas
+    if (conta.totalParcelas && conta.totalParcelas > 0 && conta.parcelas?.length > 0) {
+      // Herdar tipo do pai para parcelas que não têm tipo definido
+      return conta.parcelas.map(p => ({
+        ...p,
+        tipo: p.tipo || conta.tipo
+      }))
     }
-  const sparklineData = [60, 65, 58, 72, 68, 85, 78, 92, 88, 95]
+    // Se é uma conta simples (sem parcelamento), usar a própria conta
+    return [conta]
+  })
 
-  const [sociosOpen, setSociosOpen] = useState(false)
-  // Mock de sócios por empresa
-  const socios = [
-    { id: 1, nome: "João Silva", cpf: "123.456.789-00", percentual: 60, saldo: 12000 },
-    { id: 2, nome: "Maria Souza", cpf: "987.654.321-00", percentual: 40, saldo: 8000 },
-  ]
+  // Filtrar por tipo e período
+  const contasPagar = todasContasIndividuais.filter((c) => c.tipo === "pagar" && contaNoPeriodo(c))
+  const contasReceber = todasContasIndividuais.filter((c) => c.tipo === "receber" && contaNoPeriodo(c))
 
-  return (
-    <div>
-      <div className="space-y-4">
-        <PageHeader
-          title="Dashboard"
-          description="Central de decisão financeira - Visão consolidada de todas as empresas"
-        />
+  const totalAPagar = contasPagar.filter((c) => !c.pago).reduce((acc, c) => acc + (c.valor || 0), 0)
+  const totalAReceber = contasReceber.filter((c) => !c.pago).reduce((acc, c) => acc + (c.valor || 0), 0)
 
-        {/* Filtros para o dashboard */}
-        <div className="flex flex-col md:flex-row gap-4 mb-4 items-center">
-          {/* Filtro de período */}
-          <div>
-            <label className="block text-xs text-fyn-muted mb-1">Período</label>
-            <select className="border border-fyn-border rounded px-3 py-1 text-fyn-text bg-white shadow-sm focus:outline-none">
-              <option>Últimos 6 meses</option>
-              <option>Últimos 12 meses</option>
-              <option>Este ano</option>
-              <option>Personalizado...</option>
-            </select>
-          </div>
-        </div>
+  // Contagem de contas pendentes (para exibir nos KPIs)
+  const qtdContasPagarPendentes = contasPagar.filter((c) => !c.pago).length
+  const qtdContasReceberPendentes = contasReceber.filter((c) => !c.pago).length
 
-        {/* Aviso visual abaixo dos KPIs */}
-        <div data-tour="dashboard-kpis" className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-          <KpiCard label="Evolução do Saldo de Caixa" value={formatCurrency(statusDia.caixaAtual)} trend="up" trendValue="+8.2%" sparkline={sparklineData} />
-          <KpiCard label="Crescimento de Crédito" value={formatCurrency(142000)} subvalue={`Limite: ${formatCurrency(250000)}`} variant="accent" />
-          <KpiCard label="Inadimplência" value={formatCurrency(18500)} variant="danger" subvalue="Clientes em atraso" />
-          <KpiCard label="Lucro Líquido" value={formatPercentage(18.6)} variant="success" subvalue="Mês atual" />
-        </div>
+  const hoje = new Date()
+  hoje.setHours(0, 0, 0, 0)
 
-        {/* Gráficos diretamente na página, ocupando toda a largura */}
-        <div className="flex flex-col gap-8 animate-fade-in">
-          {/* Linha e crédito lado a lado */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="bg-white rounded-2xl shadow-lg p-6 border border-fyn-border animate-slide-up">
-              <h2 className="text-lg font-bold text-fyn-text mb-2">Evolução do Saldo de Caixa</h2>
-              <Line data={lineData} options={{ responsive: true, plugins: { legend: { display: false }, datalabels: { display: false }, animation: { duration: 1200 } } }} />
-            </div>
-            <div className="bg-white rounded-2xl shadow-lg p-6 border border-fyn-border animate-slide-up">
-              <h2 className="text-lg font-bold text-fyn-text mb-2">Crescimento de Crédito</h2>
-              <Line data={creditoCrescimentoData} options={{ responsive: true, plugins: { legend: { display: false }, datalabels: { display: false }, animation: { duration: 1200 } } }} />
-            </div>
-          </div>
-          {/* Tabela interativa de Centros de Custo e Receita */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-            {/* Centros de Custo */}
-            <div className="bg-white rounded-2xl shadow-lg p-6 border border-fyn-border animate-slide-up">
-              {/* Filtro interno de período para Centro de Custo */}
-              <div className="mb-4 flex items-center gap-2">
-                <label className="font-semibold text-fyn-text">Período:</label>
-                <select
-                  className="border border-fyn-border rounded px-3 py-1 text-fyn-text bg-white shadow-sm focus:outline-none"
-                  value={periodoCentroCusto}
-                  onChange={e => setPeriodoCentroCusto(e.target.value)}
-                >
-                  <option>Mês atual</option>
-                  <option>Mês anterior</option>
-                  <option>Últimos 3 meses</option>
-                  <option>Últimos 6 meses</option>
-                  <option>Personalizado...</option>
-                </select>
-                <span className="text-xs text-fyn-muted ml-2">Período selecionado: <b>{periodoCentroCusto}</b></span>
-              </div>
-              <h2 className="text-lg font-bold text-fyn-text mb-4">Centros de Custo (Macro/Micro)</h2>
-              <table className="w-full text-sm">
-                <thead>
-                <tr className="border-b border-fyn-border">
-                  <th className="text-left py-2">Centro</th>
-                  <th className="text-right py-2">Valor</th>
-                  <th className="w-10"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {macroCentros.flatMap((macro) => {
-                  const total = macroCentros.reduce((acc, c) => acc + c.valor, 0);
-                  const percent = ((macro.valor / total) * 100).toFixed(1);
-                  const rows = [
-                    <tr key={macro.id} className="border-b border-fyn-border hover:bg-fyn-bg/40 transition">
-                      <td className="py-2 font-medium flex items-center gap-2">
-                        <button
-                          className="w-5 h-5 flex items-center justify-center rounded bg-fyn-bg border border-fyn-border text-fyn-muted hover:bg-fyn-accent/10 focus:outline-none"
-                          onClick={() => toggleExpand(macro.id, "cost")}
-                          aria-label={expandedCost.includes(macro.id) ? "Recolher" : "Expandir"}
-                          type="button"
-                        >
-                          <span className={`transition-transform ${expandedCost.includes(macro.id) ? "rotate-90" : "rotate-0"}`}>▶</span>
-                        </button>
-                        {macro.nome}
-                      </td>
-                      <td className="py-2 text-right">{formatCurrency(macro.valor)} <span className="text-fyn-muted text-xs">({percent}%)</span></td>
-                      <td></td>
-                    </tr>
-                  ];
-                  if (expandedCost.includes(macro.id)) {
-                    const microTotal = macro.micro.reduce((acc, c) => acc + c.valor, 0);
-                    rows.push(...macro.micro.map((micro) => {
-                      const microPercent = ((micro.valor / microTotal) * 100).toFixed(1);
-                      return (
-                        <tr key={micro.id} className="bg-fyn-bg/40">
-                          <td className="pl-10 py-1 text-fyn-muted">{micro.nome}</td>
-                          <td className="py-1 text-right">{formatCurrency(micro.valor)} <span className="text-xs">({microPercent}%)</span></td>
-                          <td></td>
-                        </tr>
-                      );
-                    }));
-                  }
-                  // Linha separadora após cada macro
-                  rows.push(
-                    <tr key={`sep-${macro.id}`}> 
-                      <td colSpan={3}><div style={{borderBottom: '2px solid #e5e7eb', margin: 0}}></div></td>
-                    </tr>
-                  );
-                  return rows;
-                })}
-              </tbody>
-            </table>
-          </div>
-          {/* Centros de Receita */}
-          <div className="bg-white rounded-2xl shadow-lg p-6 border border-fyn-border animate-slide-up">
-            {/* Filtro interno de período para Centro de Receita */}
-            <div className="mb-4 flex items-center gap-2">
-              <label className="font-semibold text-fyn-text">Período:</label>
-              <select
-                className="border border-fyn-border rounded px-3 py-1 text-fyn-text bg-white shadow-sm focus:outline-none"
-                value={periodoCentroReceita}
-                onChange={e => setPeriodoCentroReceita(e.target.value)}
-              >
-                <option>Mês atual</option>
-                <option>Mês anterior</option>
-                <option>Últimos 3 meses</option>
-                <option>Últimos 6 meses</option>
-                <option>Personalizado...</option>
-              </select>
-              <span className="text-xs text-fyn-muted ml-2">Período selecionado: <b>{periodoCentroReceita}</b></span>
-            </div>
-            <h2 className="text-lg font-bold text-fyn-text mb-4">Centros de Receita (Macro/Micro)</h2>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-fyn-border">
-                  <th className="text-left py-2">Centro</th>
-                  <th className="text-right py-2">Valor</th>
-                  <th className="w-10"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {macroReceita.flatMap((macro) => {
-                  const total = macroReceita.reduce((acc, c) => acc + c.valor, 0);
-                  const percent = ((macro.valor / total) * 100).toFixed(1);
-                  const rows = [
-                    <tr key={macro.id} className="border-b border-fyn-border hover:bg-fyn-bg/40 transition">
-                      <td className="py-2 font-medium flex items-center gap-2">
-                        <button
-                          className="w-5 h-5 flex items-center justify-center rounded bg-fyn-bg border border-fyn-border text-fyn-muted hover:bg-fyn-accent/10 focus:outline-none"
-                          onClick={() => toggleExpand(macro.id, "revenue")}
-                          aria-label={expandedRevenue.includes(macro.id) ? "Recolher" : "Expandir"}
-                          type="button"
-                        >
-                          <span className={`transition-transform ${expandedRevenue.includes(macro.id) ? "rotate-90" : "rotate-0"}`}>▶</span>
-                        </button>
-                        {macro.nome}
-                      </td>
-                      <td className="py-2 text-right">{formatCurrency(macro.valor)} <span className="text-fyn-muted text-xs">({percent}%)</span></td>
-                      <td></td>
-                    </tr>
-                  ];
-                  if (expandedRevenue.includes(macro.id)) {
-                    const microTotal = macro.micro.reduce((acc, c) => acc + c.valor, 0);
-                    rows.push(...macro.micro.map((micro) => {
-                      const microPercent = ((micro.valor / microTotal) * 100).toFixed(1);
-                      return (
-                        <tr key={micro.id} className="bg-fyn-bg/40">
-                          <td className="pl-10 py-1 text-fyn-muted">{micro.nome}</td>
-                          <td className="py-1 text-right">{formatCurrency(micro.valor)} <span className="text-xs">({microPercent}%)</span></td>
-                          <td></td>
-                        </tr>
-                      );
-                    }));
-                  }
-                  // Linha separadora após cada macro
-                  rows.push(
-                    <tr key={`sep-${macro.id}`}> 
-                      <td colSpan={3}><div style={{borderBottom: '2px solid #e5e7eb', margin: 0}}></div></td>
-                    </tr>
-                  );
-                  return rows;
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-          {/* Gráfico de Barras Horizontais: Centros de Custo */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {/* Gráfico de Barras Horizontais: Centros de Custo */}
-            <div className="bg-white rounded-2xl shadow-lg p-6 border border-fyn-border flex flex-col items-center animate-slide-up">
-              <h2 className="text-lg font-bold text-fyn-text mb-2">Principais centros de custo (%)</h2>
-              <div className="w-full h-64 flex flex-col items-center justify-center mb-2">
-                {(() => {
-                  const centros = [
-                    { nome: 'Operações', valor: 38 },
-                    { nome: 'Comercial', valor: 21 },
-                    { nome: 'Logística', valor: 14 },
-                    { nome: 'Administrativo', valor: 10 },
-                    { nome: 'TI', valor: 7 },
-                    { nome: 'RH', valor: 4 },
-                    { nome: 'Financeiro', valor: 3 },
-                    { nome: 'Jurídico', valor: 2 },
-                  ];
-                  const top5 = centros.slice(0, 5);
-                  const outros = centros.slice(5);
-                  const outrosTotal = outros.reduce((acc, c) => acc + c.valor, 0);
-                  const labels = top5.map(c => `${c.nome} (${c.valor}%)`);
-                  const data = top5.map(c => c.valor);
-                  if (outrosTotal > 0) {
-                    labels.push(`Outros (${outrosTotal}%)`);
-                    data.push(outrosTotal);
-                  }
-                  const colors = ['#ef4444', '#f59e42', '#3b82f6', '#10b981', '#6366f1', '#a3a3a3'];
-                  return (
-                    <Bar
-                      data={{
-                        labels,
-                        datasets: [{
-                          data,
-                          backgroundColor: colors,
-                          borderRadius: 8,
-                          barThickness: 24,
-                        }],
-                      }}
-                      options={{
-                        indexAxis: 'y',
-                        responsive: true,
-                        plugins: {
-                          legend: { display: false },
-                          tooltip: { enabled: true },
-                          datalabels: {
-                            display: true,
-                            anchor: 'end',
-                            align: 'right',
-                            formatter: value => value + '%',
-                            color: '#333',
-                            font: { weight: 'bold' },
-                          },
-                        },
-                        scales: {
-                          x: {
-                            beginAtZero: true,
-                            max: 100,
-                            ticks: { callback: value => value + '%' },
-                            grid: { display: false },
-                          },
-                          y: {
-                            grid: { display: false },
-                            ticks: { font: { size: 14 } },
-                          },
-                        },
-                        animation: { duration: 1200 },
-                      }}
-                    />
-                  );
-                })()}
-              </div>
-            </div>
-            {/* Gráfico de Rosca: Centros de Receita */}
-            <div className="bg-white rounded-2xl shadow-lg p-6 border border-fyn-border flex flex-col items-center animate-slide-up">
-              <h2 className="text-lg font-bold text-fyn-text mb-2">Principais centros de receita (%)</h2>
-              <div className="w-full h-64 flex flex-col items-center justify-center mb-2">
-                {(() => {
-                  const receitas = [
-                    { nome: 'Produto A', valor: 44 },
-                    { nome: 'Produto B', valor: 27 },
-                    { nome: 'Produto C', valor: 15 },
-                    { nome: 'Serviço X', valor: 8 },
-                    { nome: 'Serviço Y', valor: 6 },
-                    { nome: 'Produto D', valor: 4 },
-                    { nome: 'Produto E', valor: 3 },
-                    { nome: 'Produto F', valor: 2 },
-                  ];
-                  const top5 = receitas.slice(0, 5);
-                  const outros = receitas.slice(5);
-                  const outrosTotal = outros.reduce((acc, c) => acc + c.valor, 0);
-                  const labels = top5.map(c => `${c.nome} (${c.valor}%)`);
-                  const data = top5.map(c => c.valor);
-                  if (outrosTotal > 0) {
-                    labels.push(`Outros (${outrosTotal}%)`);
-                    data.push(outrosTotal);
-                  }
-                  const colors = ['#10b981', '#3b82f6', '#f59e42', '#ef4444', '#6366f1', '#a3a3a3'];
-                  return (
-                    <Bar
-                      data={{
-                        labels,
-                        datasets: [{
-                          data,
-                          backgroundColor: colors,
-                          borderRadius: 8,
-                          barThickness: 24,
-                        }],
-                      }}
-                      options={{
-                        indexAxis: 'y',
-                        responsive: true,
-                        plugins: {
-                          legend: { display: false },
-                          tooltip: { enabled: true },
-                          datalabels: {
-                            display: true,
-                            anchor: 'end',
-                            align: 'right',
-                            formatter: value => value + '%',
-                            color: '#333',
-                            font: { weight: 'bold' },
-                          },
-                        },
-                        scales: {
-                          x: {
-                            beginAtZero: true,
-                            max: 100,
-                            ticks: { callback: value => value + '%' },
-                            grid: { display: false },
-                          },
-                          y: {
-                            grid: { display: false },
-                            ticks: { font: { size: 14 } },
-                          },
-                        },
-                        animation: { duration: 1200 },
-                      }}
-                    />
-                  );
-                })()}
-              </div>
-            </div>
-          </div>
+  const proximaSemana = new Date()
+  proximaSemana.setDate(proximaSemana.getDate() + 7)
+  // Usar todasContasIndividuais para próximos vencimentos (exclui contas pai de parcelamento)
+  const contasProximas = todasContasIndividuais
+    .filter((c) => !c.pago && new Date(c.vencimento) >= hoje && new Date(c.vencimento) <= proximaSemana)
+    .sort((a, b) => new Date(a.vencimento) - new Date(b.vencimento))
+    .slice(0, 5)
+
+  const saldoCaixa = fluxoCaixa[0]?.fluxo || 0
+
+  // Calculate trends
+  const receitaTrend = totalReceitaPrevista > 0
+    ? ((totalReceitaRealizada - totalReceitaPrevista) / totalReceitaPrevista * 100).toFixed(1)
+    : 0
+  const custoTrend = totalCustoPrevisto > 0
+    ? ((totalCustoRealizado - totalCustoPrevisto) / totalCustoPrevisto * 100).toFixed(1)
+    : 0
+
+  // Prepare chart data
+  const chartData = useMemo(() => {
+    if (!fluxoCaixa.length) return []
+
+    const diasPeriodo = periodoGrafico === "7dias" ? 7 : periodoGrafico === "30dias" ? 30 : 90
+    const dataInicio = new Date()
+    dataInicio.setDate(dataInicio.getDate() - diasPeriodo)
+
+    const fluxoFiltrado = fluxoCaixa
+      .filter((f) => new Date(f.dia) >= dataInicio)
+      .sort((a, b) => new Date(a.dia) - new Date(b.dia))
+
+    const grouped = {}
+    fluxoFiltrado.forEach((item) => {
+      const dateKey = new Date(item.dia).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })
+      if (!grouped[dateKey]) {
+        grouped[dateKey] = { date: dateKey, entradas: 0, saidas: 0, saldo: item.fluxo || 0 }
+      }
+      if (item.tipo === "entrada") {
+        grouped[dateKey].entradas += item.valor || 0
+      } else {
+        grouped[dateKey].saidas += item.valor || 0
+      }
+      grouped[dateKey].saldo = item.fluxo || 0
+    })
+
+    return Object.values(grouped)
+  }, [fluxoCaixa, periodoGrafico])
+
+  if (loading) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <RefreshCw className="h-8 w-8 text-primary animate-spin mx-auto" />
+          <p className="text-muted-foreground">Carregando dados...</p>
         </div>
       </div>
-  
-      <div className="mt-8 space-y-6">
-        {/* Gráfico de evolução do lucro líquido */}
-        <div className="bg-white rounded-2xl shadow-lg p-6 border border-fyn-border max-w-md md:float-left md:mr-8">
-          <h2 className="text-lg font-bold text-fyn-text mb-2">Evolução do Lucro Líquido</h2>
-          <Line data={{
-            labels: meses,
-            datasets: [{
-              label: 'Lucro Líquido',
-              data: [16000, 14000, 17000, 16000, 17000, 17500],
-              borderColor: '#3b82f6',
-              backgroundColor: '#3b82f633',
-              tension: 0.4,
-              fill: true,
-            }],
-          }} options={{ responsive: true, plugins: { legend: { display: false }, datalabels: { display: false } } }} />
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
+          <p className="text-sm text-muted-foreground mt-1">Visao geral das suas financas</p>
         </div>
-        {/* KPIs adicionais em linha */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <KpiCard label="Ticket Médio" value={formatCurrency(3500)} variant="default" subvalue="Mês atual">
-            {/* Mini sparkline */}
-            <div className="mt-2">
-              <Line data={{
-                labels: ["Set", "Out", "Nov", "Dez", "Jan"],
-                datasets: [{
-                  data: [3200, 3400, 3300, 3500, 3500],
-                  borderColor: '#6366f1',
-                  backgroundColor: '#6366f133',
-                  tension: 0.4,
-                  fill: true,
-                  pointRadius: 0,
-                }],
-              }} options={{ responsive: true, plugins: { legend: { display: false }, tooltip: { enabled: false } }, scales: { x: { display: false }, y: { display: false } } }} height={40} />
+        <div className="flex items-center gap-2 flex-wrap">
+          {filtroTipo === 'mes' ? (
+            <>
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+              <select
+                value={mesSelecionado}
+                onChange={(e) => setMesSelecionado(parseInt(e.target.value))}
+                className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                {meses.map((mes, index) => (
+                  <option key={index} value={index}>{mes}</option>
+                ))}
+              </select>
+              <select
+                value={anoSelecionado}
+                onChange={(e) => setAnoSelecionado(parseInt(e.target.value))}
+                className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                {anosDisponiveis.map((ano) => (
+                  <option key={ano} value={ano}>{ano}</option>
+                ))}
+              </select>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setFiltroTipo('personalizado')}
+                className="text-xs"
+              >
+                Personalizado
+              </Button>
+            </>
+          ) : (
+            <>
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+              <Input
+                type="date"
+                value={dataInicial}
+                onChange={(e) => setDataInicial(e.target.value)}
+                className="w-36"
+              />
+              <span className="text-muted-foreground text-sm">até</span>
+              <Input
+                type="date"
+                value={dataFinal}
+                onChange={(e) => setDataFinal(e.target.value)}
+                className="w-36"
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setFiltroTipo('mes')}
+                className="text-xs"
+              >
+                Por Mês
+              </Button>
+            </>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={refreshing}
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? "animate-spin" : ""}`} />
+            Atualizar
+          </Button>
+        </div>
+      </div>
+
+      {/* KPIs Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <KpiCard
+          label="Saldo de Caixa"
+          value={formatCurrency(saldoCaixa)}
+          trend={saldoCaixa >= 0 ? "up" : "down"}
+          trendValue={saldoCaixa >= 0 ? "Positivo" : "Negativo"}
+          subtitle="Saldo atual consolidado"
+        />
+        <KpiCard
+          label="A Receber"
+          value={formatCurrency(totalAReceber)}
+          trend="up"
+          trendValue={`${qtdContasReceberPendentes} contas`}
+          subtitle="Total pendente de recebimento"
+        />
+        <KpiCard
+          label="A Pagar"
+          value={formatCurrency(totalAPagar)}
+          trend="down"
+          trendValue={`${qtdContasPagarPendentes} contas`}
+          subtitle="Total pendente de pagamento"
+        />
+        <KpiCard
+          label="Resultado Realizado"
+          value={formatCurrency(resultadoRealizado)}
+          trend={resultadoRealizado >= 0 ? "up" : "down"}
+          trendValue={resultadoRealizado >= 0 ? "Lucro" : "Prejuizo"}
+          subtitle="Receitas - Despesas realizadas"
+        />
+      </div>
+
+      {/* Chart Section */}
+      <Card className="p-6">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">Fluxo de Caixa</h2>
+            <p className="text-sm text-muted-foreground">Evolucao do saldo ao longo do tempo</p>
+          </div>
+          <div className="flex items-center gap-1 p-1 bg-muted rounded-lg">
+            <button
+              onClick={() => setPeriodoGrafico("7dias")}
+              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${
+                periodoGrafico === "7dias"
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              7 dias
+            </button>
+            <button
+              onClick={() => setPeriodoGrafico("30dias")}
+              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${
+                periodoGrafico === "30dias"
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              30 dias
+            </button>
+            <button
+              onClick={() => setPeriodoGrafico("90dias")}
+              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${
+                periodoGrafico === "90dias"
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              90 dias
+            </button>
+          </div>
+        </div>
+
+        {chartData.length > 0 ? (
+          <div className="h-[300px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorSaldo" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+                <XAxis
+                  dataKey="date"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
+                />
+                <YAxis
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
+                  tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`}
+                />
+                <Tooltip content={<CustomTooltip />} />
+                <Area
+                  type="monotone"
+                  dataKey="saldo"
+                  name="Saldo"
+                  stroke="hsl(var(--primary))"
+                  strokeWidth={2}
+                  fill="url(#colorSaldo)"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <div className="h-[300px] flex items-center justify-center">
+            <div className="text-center">
+              <BarChart3 className="h-12 w-12 text-muted-foreground/50 mx-auto mb-3" />
+              <p className="text-muted-foreground">Nenhuma movimentacao no periodo</p>
             </div>
-            {/* Badge de meta */}
-            <span className="inline-block mt-2 px-2 py-1 text-xs rounded bg-fyn-success/10 text-fyn-success">Meta atingida</span>
-          </KpiCard>
-          <KpiCard label="Crescimento Mês a Mês" value={formatPercentage(6.2)} variant="accent" subvalue="vs mês anterior">
-            {/* Badge de tendência */}
-            <span className="inline-block mt-2 px-2 py-1 text-xs rounded bg-blue-100 text-blue-700">Tendência positiva</span>
-          </KpiCard>
-        </div>
-        {/* Aviso visual - Despesas acima do previsto */}
-        <div className="rounded-lg bg-fyn-danger-light/20 border-l-4 border-fyn-danger px-4 py-3 text-fyn-danger flex items-center gap-2 mt-4">
-          <AlertTriangle className="w-5 h-5" />
-          <span>Despesas acima do previsto neste mês!</span>
-        </div>
+          </div>
+        )}
+      </Card>
+
+      {/* Bottom Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Proximos Vencimentos */}
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-amber-500/10 rounded-lg">
+                <Clock className="h-5 w-5 text-amber-500" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-foreground">Proximos Vencimentos</h3>
+                <p className="text-xs text-muted-foreground">Nos proximos 7 dias</p>
+              </div>
+            </div>
+          </div>
+
+          {contasProximas.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-8">
+              <CheckCircle2 className="h-12 w-12 text-emerald-500/50 mb-3" />
+              <p className="text-muted-foreground">Nenhuma conta nos proximos 7 dias</p>
+              <p className="text-sm text-muted-foreground/70">Voce esta em dia!</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {contasProximas.map((conta) => (
+                <ContaItem key={conta.id} conta={conta} />
+              ))}
+            </div>
+          )}
+        </Card>
+
+        {/* Comparativo Receitas vs Despesas */}
+        <Card className="p-6">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="p-2 bg-primary/10 rounded-lg">
+              <BarChart3 className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-foreground">Comparativo</h3>
+              <p className="text-xs text-muted-foreground">Previsto vs Realizado</p>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            {/* Receitas */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-foreground flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-emerald-500" />
+                  Receitas
+                </span>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${
+                  Number(receitaTrend) >= 0
+                    ? "bg-emerald-500/10 text-emerald-500"
+                    : "bg-red-500/10 text-red-500"
+                }`}>
+                  {Number(receitaTrend) >= 0 ? "+" : ""}{receitaTrend}%
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Previsto</span>
+                <span className="text-foreground">{formatCurrency(totalReceitaPrevista)}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Realizado</span>
+                <span className="font-semibold text-emerald-500">{formatCurrency(totalReceitaRealizada)}</span>
+              </div>
+              <div className="h-2 bg-muted rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                  style={{
+                    width: `${Math.min((totalReceitaRealizada / (totalReceitaPrevista || 1)) * 100, 100)}%`
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Despesas */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-foreground flex items-center gap-2">
+                  <TrendingDown className="h-4 w-4 text-red-500" />
+                  Despesas
+                </span>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${
+                  Number(custoTrend) <= 0
+                    ? "bg-emerald-500/10 text-emerald-500"
+                    : "bg-red-500/10 text-red-500"
+                }`}>
+                  {Number(custoTrend) >= 0 ? "+" : ""}{custoTrend}%
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Previsto</span>
+                <span className="text-foreground">{formatCurrency(totalCustoPrevisto)}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Realizado</span>
+                <span className="font-semibold text-red-500">{formatCurrency(totalCustoRealizado)}</span>
+              </div>
+              <div className="h-2 bg-muted rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-red-500 rounded-full transition-all duration-500"
+                  style={{
+                    width: `${Math.min((totalCustoRealizado / (totalCustoPrevisto || 1)) * 100, 100)}%`
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Resultado */}
+            <div className="pt-4 border-t border-border">
+              <div className="flex items-center justify-between">
+                <span className="font-medium text-foreground">Resultado</span>
+                <span className={`text-lg font-bold ${resultadoRealizado >= 0 ? "text-emerald-500" : "text-red-500"}`}>
+                  {formatCurrency(resultadoRealizado)}
+                </span>
+              </div>
+            </div>
+          </div>
+        </Card>
       </div>
     </div>
   )

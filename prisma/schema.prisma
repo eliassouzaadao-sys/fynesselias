@@ -23,6 +23,17 @@ model Pessoa {
   contas        Conta[]
   criadoEm      DateTime @default(now())
   atualizadoEm  DateTime @updatedAt
+
+  // Relacionamento com usuário
+  userId        Int
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Relacionamento com empresa
+  empresaId     Int?
+  empresa       Empresa? @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([empresaId])
 }
 
 model Conta {
@@ -34,10 +45,14 @@ model Conta {
   dataPagamento       DateTime?           // data efetiva do pagamento/recebimento
   tipo                String              // 'pagar' ou 'receber'
   beneficiario        String?             // nome do beneficiário (opcional)
+  fonte               String?             // fonte da receita (apenas para contas a receber)
   banco               String?             // banco de pagamento (opcional)
   categoria           String?             // categoria da despesa/receita
+  subcategoria        String?             // subcategoria da despesa/receita
   formaPagamento      String?             // forma de pagamento
   numeroDocumento     String?             // número do documento (NF, boleto, etc)
+  numeroParcela       String?             // número da parcela (ex: 1/12, 2/6)
+  codigoTipo          String?             // código do tipo (ex: 001, FRN-001)
   observacoes         String?             // observações adicionais
   comprovante         String?             // URL do arquivo de comprovante
 
@@ -53,6 +68,34 @@ model Conta {
   pessoaId            Int?
   pessoa              Pessoa?             @relation(fields: [pessoaId], references: [id])
   whatsappMessages    WhatsAppMessage[]
+  fluxoCaixa          FluxoCaixa?
+
+  // Cartão de Crédito
+  cartaoId            Int?
+  cartao              CartaoCredito?      @relation(fields: [cartaoId], references: [id])
+  faturaOrigem        Fatura?             @relation("FaturaConta")
+
+  // Sócio responsável pelo gasto (para desconto no pró-labore)
+  socioResponsavelId  Int?
+  socioResponsavel    CentroCusto?        @relation("ContasSocio", fields: [socioResponsavelId], references: [id])
+
+  // Controle de processamento do pró-labore (para não contar duas vezes)
+  proLaboreProcessado Boolean             @default(false) // se já foi contabilizado em um pró-labore
+
+  // Hierarquia para parcelamentos (conta pai agrupa parcelas)
+  parentId            Int?
+  parent              Conta?              @relation("ContaParcelas", fields: [parentId], references: [id])
+  parcelas            Conta[]             @relation("ContaParcelas")
+  valorTotal          Float?              // valor total quando é conta pai de parcelamento
+  totalParcelas       Int?                // total de parcelas quando é conta pai
+
+  // Relacionamento com usuário
+  userId              Int
+  user                User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Relacionamento com empresa
+  empresaId           Int?
+  empresa             Empresa?            @relation(fields: [empresaId], references: [id], onDelete: Cascade)
 
   // Timestamps
   criadoEm            DateTime            @default(now())
@@ -62,15 +105,42 @@ model Conta {
   @@index([status])
   @@index([pago])
   @@index([vencimento])
+  @@index([cartaoId])
+  @@index([socioResponsavelId])
+  @@index([parentId])
+  @@index([userId])
+  @@index([empresaId])
 }
 
 model Banco {
-  id        Int      @id @default(autoincrement())
-  nome      String   @unique
-  codigo    String?  // Código do banco (ex: 001, 237)
-  ativo     Boolean  @default(true)
-  criadoEm  DateTime @default(now())
+  id           Int      @id @default(autoincrement())
+  nome         String   // Nome do banco (ex: Bradesco, Itaú)
+  codigo       String   // Código do banco (ex: 001, 237, 341)
+  agencia      String   // Número da agência
+  conta        String   // Número da conta
+  chavePix     String?  // Chave Pix
+  tipoChavePix String?  // Tipo da chave: celular, email, cpf, cnpj, aleatoria
+  saldoInicial Float    @default(0) // Saldo inicial da conta
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now())
   atualizadoEm DateTime @updatedAt
+
+  // Relacionamento com FluxoCaixa
+  movimentacoes FluxoCaixa[]
+
+  // Relacionamento com Cartões de Crédito
+  cartoes       CartaoCredito[]
+
+  // Relacionamento com usuário
+  userId        Int
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Relacionamento com empresa
+  empresaId     Int?
+  empresa       Empresa? @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([empresaId])
 }
 
 model Categoria {
@@ -82,8 +152,18 @@ model Categoria {
   criadoEm      DateTime      @default(now())
   atualizadoEm  DateTime      @updatedAt
 
-  @@unique([nome, tipo])
+  // Relacionamento com usuário
+  userId        Int
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Relacionamento com empresa
+  empresaId     Int?
+  empresa       Empresa?      @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  @@unique([nome, tipo, empresaId])
   @@index([tipo])
+  @@index([userId])
+  @@index([empresaId])
 }
 
 model Subcategoria {
@@ -121,10 +201,305 @@ model WhatsAppMessage {
   confirmed         Boolean  @default(false)
   confirmationDate  DateTime?
 
+  // Relacionamento com usuário
+  userId            Int
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Relacionamento com empresa
+  empresaId         Int?
+  empresa           Empresa? @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
   @@index([phoneNumber])
   @@index([status])
   @@index([createdAt])
+  @@index([userId])
+  @@index([empresaId])
+}
+
+model CentroCusto {
+  id          Int      @id @default(autoincrement())
+  nome        String
+  sigla       String   // código/acronym (ex: FX, MKT)
+  tipo        String   // 'despesa' (custo) ou 'faturamento' (receita)
+  ativo       Boolean  @default(true)
+
+  // Orçamento e realizado
+  previsto    Float    @default(0) // valor previsto/orçado (para sócio = pró-labore base)
+  realizado   Float    @default(0) // valor realizado/executado (para sócio = gastos no cartão)
+
+  // Hierarquia (para subcentros)
+  parentId    Int?
+  parent      CentroCusto? @relation("SubCentros", fields: [parentId], references: [id])
+  subcentros  CentroCusto[] @relation("SubCentros")
+
+  // Campos para Sócio (quando isSocio = true)
+  isSocio     Boolean  @default(false)
+  cpfSocio    String?  // CPF do sócio
+
+  // Contas onde este sócio é responsável (gastos pessoais)
+  contasResponsavel Conta[] @relation("ContasSocio")
+
+  // Relacionamento com usuário
+  userId      Int
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Relacionamento com empresa
+  empresaId   Int?
+  empresa     Empresa? @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  criadoEm    DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@unique([sigla, empresaId])
+  @@index([tipo])
+  @@index([ativo])
+  @@index([parentId])
+  @@index([isSocio])
+  @@index([userId])
+  @@index([empresaId])
+}
+
+model FluxoCaixa {
+  id                 Int      @id @default(autoincrement())
+  dia                DateTime // data da movimentação
+  codigoTipo         String   // código do tipo (ex: REC-001, PAG-045)
+  fornecedorCliente  String   // nome do fornecedor ou cliente
+  valor              Float    // valor da movimentação
+  tipo               String   // 'entrada' ou 'saida'
+  fluxo              Float    // saldo acumulado após a movimentação
+
+  // Relacionamento com a conta original
+  contaId            Int?     @unique
+  conta              Conta?   @relation(fields: [contaId], references: [id])
+
+  // Centro de custo relacionado (pela sigla)
+  centroCustoSigla   String?
+
+  // Banco utilizado para o pagamento/recebimento
+  bancoId            Int?
+  banco              Banco?   @relation(fields: [bancoId], references: [id])
+
+  // Cartão de crédito utilizado
+  cartaoId           Int?
+  cartao             CartaoCredito? @relation(fields: [cartaoId], references: [id])
+
+  // Relacionamento com usuário
+  userId             Int
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Relacionamento com empresa
+  empresaId          Int?
+  empresa            Empresa? @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  criadoEm           DateTime @default(now())
+  atualizadoEm       DateTime @updatedAt
+
+  @@index([dia])
+  @@index([tipo])
+  @@index([centroCustoSigla])
+  @@index([bancoId])
+  @@index([cartaoId])
+  @@index([userId])
+  @@index([empresaId])
+}
+
+model CartaoCredito {
+  id              Int       @id @default(autoincrement())
+  nome            String    // Nome identificador (ex: "Nubank Pessoal")
+  bandeira        String    // visa, mastercard, elo, amex, hipercard
+  ultimos4Digitos String    // Últimos 4 dígitos do cartão
+  diaVencimento   Int       // Dia do mês que vence a fatura (1-31)
+  diaFechamento   Int       // Dia do mês que fecha a fatura (1-31)
+  limite          Float     // Limite total do cartão
+  ativo           Boolean   @default(true)
+
+  // Relacionamento opcional com banco
+  bancoId         Int?
+  banco           Banco?    @relation(fields: [bancoId], references: [id])
+
+  // Relacionamentos
+  faturas         Fatura[]
+  contas          Conta[]
+  fluxoCaixa      FluxoCaixa[]
+
+  // Relacionamento com usuário
+  userId          Int
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Relacionamento com empresa
+  empresaId       Int?
+  empresa         Empresa?  @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  criadoEm        DateTime  @default(now())
+  atualizadoEm    DateTime  @updatedAt
+
+  @@index([ativo])
+  @@index([bancoId])
+  @@index([userId])
+  @@index([empresaId])
+}
+
+model Fatura {
+  id              Int       @id @default(autoincrement())
+  mesReferencia   Int       // Mês da fatura (1-12)
+  anoReferencia   Int       // Ano da fatura (ex: 2026)
+  valorTotal      Float     @default(0) // Soma dos lançamentos
+  pago            Boolean   @default(false)
+  dataPagamento   DateTime?
+  dataVencimento  DateTime  // Data de vencimento calculada
+  dataFechamento  DateTime  // Data de fechamento calculada
+
+  // Relacionamento com cartão
+  cartaoId        Int
+  cartao          CartaoCredito @relation(fields: [cartaoId], references: [id], onDelete: Cascade)
+
+  // Relacionamento com conta gerada ao pagar fatura
+  contaFaturaId   Int?      @unique
+  contaFatura     Conta?    @relation("FaturaConta", fields: [contaFaturaId], references: [id])
+
+  // Relacionamento com usuário
+  userId          Int
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Relacionamento com empresa
+  empresaId       Int?
+  empresa         Empresa?  @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  criadoEm        DateTime  @default(now())
+  atualizadoEm    DateTime  @updatedAt
+
+  @@unique([cartaoId, mesReferencia, anoReferencia])
+  @@index([cartaoId])
+  @@index([pago])
+  @@index([anoReferencia, mesReferencia])
+  @@index([userId])
+  @@index([empresaId])
+}
+
+// Histórico de pró-labore mensal
+model HistoricoProLabore {
+  id              Int       @id @default(autoincrement())
+  mesReferencia   Int       // Mês (1-12)
+  anoReferencia   Int       // Ano (ex: 2026)
+
+  // Sócio relacionado
+  socioId         Int
+  socioNome       String    // Nome do sócio (snapshot)
+  socioCpf        String?   // CPF do sócio (snapshot)
+
+  // Valores do mês
+  proLaboreBase   Float     // Valor base do pró-labore
+  totalDescontos  Float     // Total de descontos do mês
+  proLaboreLiquido Float    // Valor líquido (base - descontos)
+
+  // Detalhes dos descontos (JSON com array de contas)
+  descontosJson   String?   // JSON com detalhes das contas que geraram desconto
+
+  // Conta gerada para pagamento
+  contaGeradaId   Int?      // ID da conta a pagar gerada
+
+  // Status
+  pago            Boolean   @default(false)
+  dataPagamento   DateTime?
+
+  // Relacionamento com usuário
+  userId          Int
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Relacionamento com empresa
+  empresaId       Int?
+  empresa         Empresa?  @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  criadoEm        DateTime  @default(now())
+  atualizadoEm    DateTime  @updatedAt
+
+  @@unique([socioId, mesReferencia, anoReferencia, userId])
+  @@index([socioId])
+  @@index([anoReferencia, mesReferencia])
+  @@index([pago])
+  @@index([userId])
+  @@index([empresaId])
+}
+
+// Usuário do sistema
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  phone     String?
+  company   String?
+  password  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Tokens de recuperação de senha
+  passwordResetTokens PasswordResetToken[]
+
+  // Empresas do usuário
+  empresas          Empresa[]
+
+  // Dados do usuário (mantidos para compatibilidade)
+  pessoas           Pessoa[]
+  contas            Conta[]
+  bancos            Banco[]
+  categorias        Categoria[]
+  centrosCusto      CentroCusto[]
+  fluxoCaixa        FluxoCaixa[]
+  cartoes           CartaoCredito[]
+  faturas           Fatura[]
+  historicoProLabore HistoricoProLabore[]
+  whatsappMessages  WhatsAppMessage[]
+
+  @@index([email])
+}
+
+// Empresa (multi-tenant)
+model Empresa {
+  id           Int      @id @default(autoincrement())
+  nome         String
+  cnpj         String?
+  nomeFantasia String?
+  endereco     String?
+  cidade       String?
+  estado       String?
+  cep          String?
+  telefone     String?
+  email        String?
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  // Dono da empresa
+  userId       Int
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Dados da empresa
+  pessoas            Pessoa[]
+  contas             Conta[]
+  bancos             Banco[]
+  categorias         Categoria[]
+  centrosCusto       CentroCusto[]
+  fluxoCaixa         FluxoCaixa[]
+  cartoes            CartaoCredito[]
+  faturas            Fatura[]
+  historicoProLabore HistoricoProLabore[]
+  whatsappMessages   WhatsAppMessage[]
+
+  @@index([userId])
+}
+
+// Token de recuperação de senha
+model PasswordResetToken {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([token])
+  @@index([userId])
 }

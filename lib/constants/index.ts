@@ -21,6 +21,22 @@ export const PAYMENT_METHODS = [
   { value: 'cheque', label: 'Cheque' },
 ] as const;
 
+// Bandeiras de Cartão de Crédito
+export const BANDEIRAS_CARTAO = [
+  { value: 'visa', label: 'Visa', cor: '#1A1F71' },
+  { value: 'mastercard', label: 'Mastercard', cor: '#EB001B' },
+  { value: 'elo', label: 'Elo', cor: '#FFCB05' },
+  { value: 'amex', label: 'American Express', cor: '#006FCF' },
+  { value: 'hipercard', label: 'Hipercard', cor: '#B61F23' },
+  { value: 'diners', label: 'Diners Club', cor: '#0079BE' },
+] as const;
+
+// Dias do mês (para vencimento/fechamento de cartão)
+export const DIAS_MES = Array.from({ length: 31 }, (_, i) => ({
+  value: i + 1,
+  label: (i + 1).toString().padStart(2, '0')
+}));
+
 // Account types
 export const ACCOUNT_TYPES = [
   { value: 'corrente', label: 'Conta Corrente' },
@@ -122,8 +138,7 @@ export const API_ROUTES = {
 export const MENU_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: 'LayoutDashboard' },
   { href: '/caixa', label: 'Caixa', icon: 'Wallet' },
-  { href: '/pagar', label: 'Contas a Pagar', icon: 'ArrowDownCircle' },
-  { href: '/receber', label: 'Contas a Receber', icon: 'ArrowUpCircle' },
+  { href: '/contas', label: 'Contas', icon: 'FileText' },
   { href: '/contas-bancarias', label: 'Contas Bancárias', icon: 'Building2' },
   { href: '/conciliacao', label: 'Conciliação', icon: 'FileCheck' },
   { href: '/creditos', label: 'Créditos', icon: 'CreditCard' },
@@ -134,7 +149,6 @@ export const MENU_ITEMS = [
   { href: '/relatorios/balancete', label: 'Balancete', icon: 'Scale' },
   { href: '/automacao', label: 'Automação', icon: 'Zap' },
   { href: '/auditoria', label: 'Auditoria', icon: 'Shield' },
-  { href: '/empresas', label: 'Empresas', icon: 'Building' },
   { href: '/socios', label: 'Sócios', icon: 'Users' },
   { href: '/contador', label: 'Contador', icon: 'UserCheck' },
   { href: '/configuracoes', label: 'Configurações', icon: 'Settings' },

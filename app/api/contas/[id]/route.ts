@@ -7,6 +7,17 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { getCurrentUser } from '@/lib/get-user';
+import { getEmpresaIdValidada } from '@/lib/get-empresa';
+
+// Função para criar data sem offset de timezone
+function parseLocalDate(dateStr: string | Date): Date {
+  if (typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return new Date(year, month - 1, day, 12, 0, 0);
+  }
+  return new Date(dateStr);
+}
 
 interface RouteContext {
   params: Promise<{
@@ -19,6 +30,13 @@ interface RouteContext {
  */
 export async function GET(request: NextRequest, context: RouteContext) {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+    }
+
+    const empresaId = await getEmpresaIdValidada(user.id);
+
     const params = await context.params;
     const id = parseInt(params.id);
 
@@ -29,8 +47,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
       );
     }
 
-    const conta = await prisma.conta.findUnique({
-      where: { id },
+    const where: any = { id, userId: user.id };
+    if (empresaId) where.empresaId = empresaId;
+
+    const conta = await prisma.conta.findFirst({
+      where,
       include: {
         pessoa: true,
       },
@@ -58,6 +79,13 @@ export async function GET(request: NextRequest, context: RouteContext) {
  */
 export async function PUT(request: NextRequest, context: RouteContext) {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+    }
+
+    const empresaId = await getEmpresaIdValidada(user.id);
+
     const params = await context.params;
     const id = parseInt(params.id);
 
@@ -68,6 +96,21 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       );
     }
 
+    // Verificar se a conta pertence ao usuário
+    const where: any = { id, userId: user.id };
+    if (empresaId) where.empresaId = empresaId;
+
+    const existingConta = await prisma.conta.findFirst({
+      where,
+    });
+
+    if (!existingConta) {
+      return NextResponse.json(
+        { error: 'Conta não encontrada' },
+        { status: 404 }
+      );
+    }
+
     const data = await request.json();
 
     // Prepare update data
@@ -75,7 +118,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
     if (data.descricao !== undefined) updateData.descricao = data.descricao;
     if (data.valor !== undefined) updateData.valor = Number(data.valor);
-    if (data.vencimento !== undefined) updateData.vencimento = new Date(data.vencimento);
+    if (data.vencimento !== undefined) updateData.vencimento = parseLocalDate(data.vencimento);
     if (data.pago !== undefined) updateData.pago = data.pago;
     if (data.dataPagamento !== undefined) {
       updateData.dataPagamento = data.dataPagamento ? new Date(data.dataPagamento) : null;
@@ -116,6 +159,13 @@ export async function PUT(request: NextRequest, context: RouteContext) {
  */
 export async function DELETE(request: NextRequest, context: RouteContext) {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+    }
+
+    const empresaId = await getEmpresaIdValidada(user.id);
+
     const params = await context.params;
     const id = parseInt(params.id);
 
@@ -123,6 +173,21 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       return NextResponse.json(
         { error: 'ID inválido' },
         { status: 400 }
+      );
+    }
+
+    // Verificar se a conta pertence ao usuário
+    const where: any = { id, userId: user.id };
+    if (empresaId) where.empresaId = empresaId;
+
+    const existingConta = await prisma.conta.findFirst({
+      where,
+    });
+
+    if (!existingConta) {
+      return NextResponse.json(
+        { error: 'Conta não encontrada' },
+        { status: 404 }
       );
     }
 
