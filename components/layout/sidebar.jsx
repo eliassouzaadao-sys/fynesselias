@@ -13,6 +13,7 @@ import {
   ClipboardCheck,
   BarChart3,
   Users,
+  Truck,
 } from "lucide-react"
 import { FynessLogo, FynessIcon } from "@/components/ui/logo"
 import { EmpresaSelector } from "@/components/layout/empresa-selector"
@@ -25,6 +26,7 @@ const menuItems = [
   { href: "/contas", label: "Contas a Pagar e Receber", icon: FileText },
   { href: "/caixa", label: "Fluxo de Caixa", icon: Wallet },
   { href: "/socios", label: "Sócios", icon: Users },
+  { href: "/fornecedores", label: "Fornecedores", icon: Truck },
   { href: "/dre", label: "DRE", icon: BarChart3 },
 ]
 

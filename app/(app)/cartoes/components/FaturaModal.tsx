@@ -1,11 +1,29 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Label } from "@/components/ui/label"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog"
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from "@/components/ui/alert-dialog"
 import { formatCurrency, formatDate } from "@/lib/format"
-import { X, Loader2, Calendar, CheckCircle, CreditCard } from "lucide-react"
+import { Loader2, Calendar, CheckCircle, CreditCard } from "lucide-react"
 
 interface FaturaModalProps {
   fatura: {
@@ -29,7 +47,7 @@ interface FaturaModalProps {
 }
 
 const meses = [
-  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Janeiro", "Fevereiro", "Marco", "Abril", "Maio", "Junho",
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
 ]
 
@@ -44,7 +62,6 @@ export function FaturaModal({ fatura, onClose, onPago }: FaturaModalProps) {
 
   const mesNome = meses[fatura.mesReferencia - 1]
 
-  // Carregar detalhes da fatura
   useEffect(() => {
     const fetchFatura = async () => {
       try {
@@ -62,7 +79,6 @@ export function FaturaModal({ fatura, onClose, onPago }: FaturaModalProps) {
     fetchFatura()
   }, [fatura.id])
 
-  // Carregar bancos quando abrir modal de pagamento
   useEffect(() => {
     if (showPagarModal) {
       const fetchBancos = async () => {
@@ -106,180 +122,170 @@ export function FaturaModal({ fatura, onClose, onPago }: FaturaModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
-      <Card className="w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className={`p-4 border-b border-fyn-border ${fatura.pago ? "bg-green-50" : "bg-yellow-50"}`}>
-          <div className="flex items-start justify-between">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <CreditCard className="h-5 w-5 text-fyn-text" />
-                <h2 className="text-lg font-semibold text-fyn-text">
-                  Fatura {mesNome}/{fatura.anoReferencia}
-                </h2>
-              </div>
-              {fatura.cartao && (
-                <p className="text-sm text-fyn-muted">
-                  {fatura.cartao.nome} (**** {fatura.cartao.ultimos4Digitos})
-                </p>
-              )}
-            </div>
-            <Button variant="ghost" size="sm" onClick={onClose}>
-              <X className="h-5 w-5" />
-            </Button>
-          </div>
-
-          {/* Status e Valor */}
-          <div className="mt-4 flex items-center justify-between">
-            <div>
-              <p className="text-xs text-fyn-muted">Valor Total</p>
-              <p className="text-2xl font-bold text-fyn-text">
-                {formatCurrency(fatura.valorTotal)}
-              </p>
-            </div>
-            <div className="text-right">
-              <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium ${
-                fatura.pago
-                  ? "bg-green-100 text-green-700"
-                  : "bg-yellow-100 text-yellow-700"
-              }`}>
-                {fatura.pago ? (
-                  <>
-                    <CheckCircle className="h-4 w-4" />
-                    Paga
-                  </>
-                ) : (
-                  <>
-                    <Calendar className="h-4 w-4" />
-                    Aberta
-                  </>
-                )}
-              </span>
-              <p className="text-xs text-fyn-muted mt-1">
-                Vencimento: {formatDate(new Date(fatura.dataVencimento))}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Lançamentos */}
-        <div className="p-4 overflow-y-auto flex-1">
-          <h3 className="text-sm font-medium text-fyn-text mb-3">Lançamentos</h3>
-
-          {loading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-fyn-muted" />
-            </div>
-          ) : lancamentos.length === 0 ? (
-            <div className="text-center py-8">
-              <p className="text-sm text-fyn-muted">Nenhum lançamento nesta fatura</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {lancamentos.map((lanc) => (
-                <div
-                  key={lanc.id}
-                  className="flex items-center justify-between p-3 bg-fyn-surface rounded-lg"
-                >
-                  <div>
-                    <p className="text-sm font-medium text-fyn-text">{lanc.descricao}</p>
-                    <p className="text-xs text-fyn-muted">
-                      {lanc.beneficiario && `${lanc.beneficiario} • `}
-                      {lanc.numeroParcela && `Parcela ${lanc.numeroParcela} • `}
-                      {formatDate(new Date(lanc.criadoEm))}
+    <>
+      <Dialog open onOpenChange={onClose}>
+        <DialogContent className="max-w-2xl max-h-[90vh] p-0">
+          {/* Header com cor de status */}
+          <div className={`p-6 ${fatura.pago ? "bg-green-50 dark:bg-green-950/30" : "bg-yellow-50 dark:bg-yellow-950/30"}`}>
+            <DialogHeader className="space-y-0">
+              <div className="flex items-center justify-between">
+                <div>
+                  <DialogTitle className="flex items-center gap-2">
+                    <CreditCard className="h-5 w-5 text-foreground" />
+                    Fatura {mesNome}/{fatura.anoReferencia}
+                  </DialogTitle>
+                  {fatura.cartao && (
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {fatura.cartao.nome} (**** {fatura.cartao.ultimos4Digitos})
                     </p>
-                  </div>
-                  <p className="font-medium text-fyn-text">{formatCurrency(lanc.valor)}</p>
+                  )}
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        {!fatura.pago && (
-          <div className="border-t border-fyn-border p-4">
-            <Button className="w-full" onClick={() => setShowPagarModal(true)}>
-              <CheckCircle className="h-4 w-4 mr-2" />
-              Pagar Fatura
-            </Button>
-          </div>
-        )}
-
-        {fatura.pago && fatura.dataPagamento && (
-          <div className="border-t border-fyn-border p-4 bg-green-50">
-            <p className="text-sm text-center text-green-700">
-              Paga em {formatDate(new Date(fatura.dataPagamento))}
-            </p>
-          </div>
-        )}
-      </Card>
-
-      {/* Modal de Confirmação de Pagamento */}
-      {showPagarModal && (
-        <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4">
-          <Card className="w-full max-w-md p-6">
-            <h3 className="text-lg font-semibold text-fyn-text mb-4">Confirmar Pagamento</h3>
-
-            <p className="text-sm text-fyn-muted mb-4">
-              Você está prestes a pagar a fatura de <strong>{mesNome}/{fatura.anoReferencia}</strong> no valor de{" "}
-              <strong>{formatCurrency(fatura.valorTotal)}</strong>.
-            </p>
-
-            <div className="space-y-4 mb-6">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-fyn-text">
-                  Banco de Pagamento (opcional)
-                </label>
-                <Select value={bancoSelecionado} onValueChange={setBancoSelecionado}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione o banco" />
-                  </SelectTrigger>
-                  <SelectContent className="z-[80]">
-                    <SelectItem value="none">Nao informar</SelectItem>
-                    {bancos.map((banco) => (
-                      <SelectItem key={banco.id} value={banco.id.toString()}>
-                        {banco.nome}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               </div>
+            </DialogHeader>
 
-              {error && (
-                <div className="rounded-lg bg-red-50 border border-red-200 p-3">
-                  <p className="text-sm text-red-900">{error}</p>
+            {/* Status e Valor */}
+            <div className="mt-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground">Valor Total</p>
+                <p className="text-2xl font-bold text-foreground">
+                  {formatCurrency(fatura.valorTotal)}
+                </p>
+              </div>
+              <div className="text-right">
+                <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium ${
+                  fatura.pago
+                    ? "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300"
+                    : "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-300"
+                }`}>
+                  {fatura.pago ? (
+                    <>
+                      <CheckCircle className="h-4 w-4" />
+                      Paga
+                    </>
+                  ) : (
+                    <>
+                      <Calendar className="h-4 w-4" />
+                      Aberta
+                    </>
+                  )}
+                </span>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Vencimento: {formatDate(new Date(fatura.dataVencimento))}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Lancamentos */}
+          <div className="flex-1 overflow-hidden">
+            <div className="px-6 pt-4 pb-2">
+              <h3 className="text-sm font-medium text-foreground">Lancamentos</h3>
+            </div>
+
+            <ScrollArea className="h-[300px] px-6">
+              {loading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : lancamentos.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-sm text-muted-foreground">Nenhum lancamento nesta fatura</p>
+                </div>
+              ) : (
+                <div className="space-y-2 pb-4">
+                  {lancamentos.map((lanc) => (
+                    <div
+                      key={lanc.id}
+                      className="flex items-center justify-between p-3 bg-muted rounded-lg"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-foreground">{lanc.descricao}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {lanc.beneficiario && `${lanc.beneficiario} - `}
+                          {lanc.numeroParcela && `Parcela ${lanc.numeroParcela} - `}
+                          {formatDate(new Date(lanc.criadoEm))}
+                        </p>
+                      </div>
+                      <p className="font-medium text-foreground">{formatCurrency(lanc.valor)}</p>
+                    </div>
+                  ))}
                 </div>
               )}
+            </ScrollArea>
+          </div>
+
+          {/* Footer */}
+          {!fatura.pago ? (
+            <DialogFooter className="border-t border-border p-4">
+              <Button variant="outline" onClick={onClose}>
+                Fechar
+              </Button>
+              <Button onClick={() => setShowPagarModal(true)}>
+                <CheckCircle className="h-4 w-4 mr-2" />
+                Pagar Fatura
+              </Button>
+            </DialogFooter>
+          ) : fatura.dataPagamento ? (
+            <div className="border-t border-border p-4 bg-green-50 dark:bg-green-950/30">
+              <p className="text-sm text-center text-green-700 dark:text-green-300">
+                Paga em {formatDate(new Date(fatura.dataPagamento))}
+              </p>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de Confirmacao de Pagamento */}
+      <AlertDialog open={showPagarModal} onOpenChange={setShowPagarModal}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar Pagamento</AlertDialogTitle>
+            <AlertDialogDescription>
+              Voce esta prestes a pagar a fatura de <strong>{mesNome}/{fatura.anoReferencia}</strong> no valor de{" "}
+              <strong>{formatCurrency(fatura.valorTotal)}</strong>.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="banco">Banco de Pagamento (opcional)</Label>
+              <Select value={bancoSelecionado} onValueChange={setBancoSelecionado}>
+                <SelectTrigger id="banco">
+                  <SelectValue placeholder="Selecione o banco" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Nao informar</SelectItem>
+                  {bancos.map((banco) => (
+                    <SelectItem key={banco.id} value={banco.id.toString()}>
+                      {banco.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
-            <div className="flex gap-3">
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={() => setShowPagarModal(false)}
-                disabled={isPaying}
-              >
-                Cancelar
-              </Button>
-              <Button
-                className="flex-1"
-                onClick={handlePagar}
-                disabled={isPaying}
-              >
-                {isPaying ? (
-                  <>
-                    <Loader2 className="animate-spin h-4 w-4 mr-2" />
-                    Pagando...
-                  </>
-                ) : (
-                  "Confirmar Pagamento"
-                )}
-              </Button>
-            </div>
-          </Card>
-        </div>
-      )}
-    </div>
+            {error && (
+              <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3">
+                <p className="text-sm text-destructive">{error}</p>
+              </div>
+            )}
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isPaying}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handlePagar} disabled={isPaying}>
+              {isPaying ? (
+                <>
+                  <Loader2 className="animate-spin h-4 w-4 mr-2" />
+                  Pagando...
+                </>
+              ) : (
+                "Confirmar Pagamento"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 }

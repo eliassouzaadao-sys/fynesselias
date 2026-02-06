@@ -36,7 +36,21 @@ export async function GET(
     const primeiroDiaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1, 0, 0, 0);
     const ultimoDiaMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0, 23, 59, 59);
 
-    // Buscar contas pagas no mês vinculadas a este sócio (pelo socioResponsavelId)
+    // 1. Buscar descontos recorrentes (previstos)
+    const whereDescontosRecorrentes: any = {
+      socioId: socioId,
+      userId: user.id,
+      ativo: true,
+    };
+    if (empresaId) whereDescontosRecorrentes.empresaId = empresaId;
+
+    const descontosRecorrentes = await prisma.descontoRecorrente.findMany({
+      where: whereDescontosRecorrentes,
+    });
+
+    const descontosPrevistos = descontosRecorrentes.reduce((acc, d) => acc + Number(d.valor), 0);
+
+    // 2. Buscar contas pagas no mês vinculadas a este sócio (descontos reais)
     const whereContas: any = {
       userId: user.id,
       socioResponsavelId: socioId,
@@ -59,15 +73,18 @@ export async function GET(
       return false;
     });
 
-    const gastosMes = contasValidas.reduce((acc, c) => acc + Number(c.valor), 0);
+    const descontosReais = contasValidas.reduce((acc, c) => acc + Number(c.valor), 0);
+    const totalDescontos = descontosPrevistos + descontosReais;
 
     // Retornar dados do mês atual
     const faturasPorMes = [{
       mes: hoje.getMonth() + 1,
       ano: hoje.getFullYear(),
       proLaboreBase: socio.previsto,
-      descontoCartao: gastosMes,
-      proLaboreLiquido: socio.previsto - gastosMes,
+      descontosPrevistos,
+      descontosReais,
+      descontoCartao: totalDescontos, // Total para compatibilidade
+      proLaboreLiquido: socio.previsto - totalDescontos,
       faturaPaga: false,
       faturaId: null,
       dataVencimento: null,
@@ -82,6 +99,11 @@ export async function GET(
         proLaboreBase: socio.previsto,
       },
       historico: faturasPorMes,
+      descontosRecorrentes: descontosRecorrentes.map(d => ({
+        id: d.id,
+        nome: d.nome,
+        valor: d.valor,
+      })),
     });
   } catch (error) {
     console.error("❌ Error fetching pró-labore:", error);

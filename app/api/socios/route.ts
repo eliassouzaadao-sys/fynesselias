@@ -50,6 +50,7 @@ export async function GET() {
           where: {
             pago: true,
             proLaboreProcessado: false,
+            status: { not: "cancelado" }, // Excluir contas canceladas
           },
           select: {
             id: true,
@@ -64,52 +65,122 @@ export async function GET() {
       orderBy: { nome: "asc" },
     });
 
-    // Calcular os gastos de cada sócio
-    const sociosComProLabore = await Promise.all(
-      socios.map(async (socio) => {
-        try {
-          const whereContas: any = {
-              socioResponsavelId: socio.id,
-              pago: true,
-              proLaboreProcessado: false,
-              userId: user.id,
-            };
-          if (empresaId) whereContas.empresaId = empresaId;
+    console.log(`📊 Sócios encontrados: ${socios.length}`);
 
-          const contasPagasMes = await prisma.conta.findMany({
-            where: whereContas,
+    // Calcular os gastos de cada sócio MÊS A MÊS
+    const hoje = new Date();
+    const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+    const fimMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0, 23, 59, 59);
+
+    const sociosComProLabore = await Promise.all(
+      socios.map(async (socio: any) => {
+        try {
+          // 1. Buscar descontos recorrentes ativos (previstos fixos mensais)
+          const whereDescontosRecorrentes: any = {
+            socioId: socio.id,
+            userId: user.id,
+            ativo: true,
+          };
+          if (empresaId) whereDescontosRecorrentes.empresaId = empresaId;
+
+          const descontosRecorrentes = await prisma.descontoRecorrente.findMany({
+            where: whereDescontosRecorrentes,
           });
 
-          const contasValidas = contasPagasMes.filter(c => {
+          // Soma dos descontos recorrentes (fixos mensais)
+          const descontosRecorrentesTotal = descontosRecorrentes.reduce(
+            (acc: number, d: any) => acc + Number(d.valor), 0
+          );
+
+          // 2. Buscar contas pendentes do sócio com vencimento no mês atual (previstos variáveis)
+          const whereContasPendentes: any = {
+            userId: user.id,
+            socioResponsavelId: socio.id,
+            pago: false,
+            status: { not: "cancelado" },
+            vencimento: {
+              gte: inicioMes,
+              lte: fimMes,
+            },
+          };
+          if (empresaId) whereContasPendentes.empresaId = empresaId;
+
+          const contasPendentesMes = await prisma.conta.findMany({
+            where: whereContasPendentes,
+            select: { id: true, valor: true, parentId: true, totalParcelas: true },
+          });
+
+          // Filtrar: excluir contas pai de parcelamento (só contar as parcelas)
+          const contasValidasPendentes = contasPendentesMes.filter((c: any) => {
             if (c.parentId !== null) return true;
             if (c.parentId === null && c.totalParcelas === null) return true;
             return false;
           });
 
-          const gastosMes = contasValidas.reduce((acc, c) => acc + Number(c.valor), 0);
+          const descontosVariaveisMes = contasValidasPendentes.reduce(
+            (acc: number, c: any) => acc + Number(c.valor), 0
+          );
 
-          if (socio.realizado !== gastosMes) {
-            await prisma.centroCusto.update({
-              where: { id: socio.id },
-              data: { realizado: gastosMes },
-            });
-          }
+          // Total de descontos previstos = recorrentes + variáveis do mês
+          const descontosPrevistos = descontosRecorrentesTotal + descontosVariaveisMes;
+
+          // 3. Buscar contas pagas do sócio que ainda não foram processadas (descontos reais)
+          const whereContasPagas: any = {
+            userId: user.id,
+            socioResponsavelId: socio.id,
+            pago: true,
+            proLaboreProcessado: false,
+            status: { not: "cancelado" },
+          };
+          if (empresaId) whereContasPagas.empresaId = empresaId;
+
+          const contasPagas = await prisma.conta.findMany({
+            where: whereContasPagas,
+            select: { id: true, valor: true, parentId: true, totalParcelas: true },
+          });
+
+          // Filtrar: excluir contas pai de parcelamento
+          const contasValidasPagas = contasPagas.filter((c: any) => {
+            if (c.parentId !== null) return true;
+            if (c.parentId === null && c.totalParcelas === null) return true;
+            return false;
+          });
+
+          const descontosReaisContas = contasValidasPagas.reduce(
+            (acc: number, c: any) => acc + Number(c.valor), 0
+          );
+
+          // 4. Adicionar descontos do fluxo de caixa (campo descontoReal do banco)
+          // O fluxo de caixa atualiza este campo quando lançamentos são feitos diretamente
+          const descontosReaisFluxo = socio.descontoReal || 0;
+
+          // Total de descontos reais = contas pagas + lançamentos do fluxo de caixa
+          const descontosReais = descontosReaisContas + descontosReaisFluxo;
+
+          // Total de descontos = previstos + reais
+          const totalDescontos = descontosPrevistos + descontosReais;
 
           return {
             ...socio,
             proLaboreBase: socio.previsto,
-            gastosCartao: gastosMes,
-            proLaboreLiquido: socio.previsto - gastosMes,
+            descontosPrevistos,
+            descontosReais,
+            gastosCartao: totalDescontos, // Total para manter compatibilidade
+            proLaboreLiquido: socio.previsto - totalDescontos,
             ultimosGastos: socio.contasResponsavel,
+            descontosRecorrentes,
           };
         } catch (err) {
           console.error(`Erro ao calcular gastos do sócio ${socio.nome}:`, err);
           return {
             ...socio,
             proLaboreBase: socio.previsto,
-            gastosCartao: socio.realizado,
-            proLaboreLiquido: socio.previsto - socio.realizado,
+            descontosPrevistos: 0,
+            descontosReais: 0,
+            gastosCartao: 0,
+            proLaboreLiquido: socio.previsto,
             ultimosGastos: socio.contasResponsavel,
+            descontosRecorrentes: [],
           };
         }
       })
@@ -133,7 +204,7 @@ export async function POST(request: Request) {
     const empresaId = await getEmpresaIdValidada(user.id);
 
     const data = await request.json();
-    const { nome, cpf, proLaboreBase } = data;
+    const { nome, cpf, proLaboreBase, sigla: siglaInput } = data;
 
     if (!nome || !cpf || !proLaboreBase) {
       return NextResponse.json(
@@ -164,20 +235,42 @@ export async function POST(request: Request) {
       });
     }
 
-    // Gerar sigla única para o sócio
-    const primeiroNome = nome.split(" ")[0].toUpperCase();
-    const siglaBase = `SOCIO-${primeiroNome}`;
+    // Usar sigla fornecida ou gerar uma automática
+    let sigla: string;
 
-    let sigla = siglaBase;
-    let contador = 1;
-    const buildWhereSigla = (s: string) => {
-      const w: any = { sigla: s, userId: user.id };
-      if (empresaId) w.empresaId = empresaId;
-      return w;
-    };
-    while (await prisma.centroCusto.findFirst({ where: buildWhereSigla(sigla) })) {
-      sigla = `${siglaBase}-${contador}`;
-      contador++;
+    if (siglaInput && siglaInput.trim()) {
+      // Usar a sigla fornecida pelo usuário
+      sigla = siglaInput.trim().toUpperCase();
+
+      // Verificar se já existe
+      const buildWhereSigla = (s: string) => {
+        const w: any = { sigla: s, userId: user.id };
+        if (empresaId) w.empresaId = empresaId;
+        return w;
+      };
+
+      if (await prisma.centroCusto.findFirst({ where: buildWhereSigla(sigla) })) {
+        return NextResponse.json(
+          { error: `Já existe um registro com a sigla "${sigla}"` },
+          { status: 400 }
+        );
+      }
+    } else {
+      // Gerar sigla automática baseada no nome
+      const primeiroNome = nome.split(" ")[0].toUpperCase();
+      const siglaBase = `PL-${primeiroNome}`;
+
+      sigla = siglaBase;
+      let contador = 1;
+      const buildWhereSigla = (s: string) => {
+        const w: any = { sigla: s, userId: user.id };
+        if (empresaId) w.empresaId = empresaId;
+        return w;
+      };
+      while (await prisma.centroCusto.findFirst({ where: buildWhereSigla(sigla) })) {
+        sigla = `${siglaBase}-${contador}`;
+        contador++;
+      }
     }
 
     const socio = await prisma.centroCusto.create({
@@ -222,7 +315,7 @@ export async function PUT(request: Request) {
     const empresaId = await getEmpresaIdValidada(user.id);
 
     const data = await request.json();
-    const { id, nome, cpf, proLaboreBase } = data;
+    const { id, nome, cpf, proLaboreBase, sigla: siglaInput } = data;
 
     if (!id) {
       return NextResponse.json({ error: "ID é obrigatório" }, { status: 400 });
@@ -242,10 +335,40 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "Sócio não encontrado" }, { status: 404 });
     }
 
+    // Se a sigla foi fornecida e é diferente da atual, verificar se já existe
+    let siglaToUpdate = undefined;
+    if (siglaInput && siglaInput.trim()) {
+      const novaSigla = siglaInput.trim().toUpperCase();
+
+      if (novaSigla !== existing.sigla) {
+        // Verificar se já existe outra com esta sigla
+        const whereSigla: any = {
+          sigla: novaSigla,
+          userId: user.id,
+          id: { not: idNum },
+        };
+        if (empresaId) whereSigla.empresaId = empresaId;
+
+        const siglaExistente = await prisma.centroCusto.findFirst({
+          where: whereSigla,
+        });
+
+        if (siglaExistente) {
+          return NextResponse.json(
+            { error: `Já existe um registro com a sigla "${novaSigla}"` },
+            { status: 400 }
+          );
+        }
+
+        siglaToUpdate = novaSigla;
+      }
+    }
+
     const socio = await prisma.centroCusto.update({
       where: { id: idNum },
       data: {
         nome,
+        sigla: siglaToUpdate,
         cpfSocio: cpf,
         previsto: proLaboreBase ? (typeof proLaboreBase === 'number' ? proLaboreBase : parseFloat(proLaboreBase)) : undefined,
       },

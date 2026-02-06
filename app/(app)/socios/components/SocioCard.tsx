@@ -5,12 +5,20 @@ import { Button } from "@/components/ui/button"
 import { formatCurrency } from "@/lib/format"
 import { User, Edit, Trash2, Eye, TrendingDown, Wallet, Receipt } from "lucide-react"
 
+interface DescontoRecorrente {
+  id: number
+  nome: string
+  valor: number
+}
+
 interface Socio {
   id: number
   nome: string
   sigla: string
   cpfSocio: string
   proLaboreBase: number
+  descontosPrevistos?: number
+  descontosReais?: number
   gastosCartao: number
   proLaboreLiquido: number
   ultimosGastos?: {
@@ -19,6 +27,7 @@ interface Socio {
     valor: number
     dataPagamento: string
   }[]
+  descontosRecorrentes?: DescontoRecorrente[]
 }
 
 interface SocioCardProps {
@@ -50,7 +59,12 @@ export function SocioCard({ socio, onEdit, onDelete, onViewProLabore }: SocioCar
               <User className="h-6 w-6 text-primary" />
             </div>
             <div>
-              <h3 className="font-semibold text-foreground">{socio.nome}</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold text-foreground">{socio.nome}</h3>
+                <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded font-mono">
+                  {socio.sigla}
+                </span>
+              </div>
               <p className="text-xs text-muted-foreground">CPF: {formatCPF(socio.cpfSocio)}</p>
             </div>
           </div>
@@ -91,11 +105,31 @@ export function SocioCard({ socio, onEdit, onDelete, onViewProLabore }: SocioCar
           </div>
         </div>
 
+        {/* Detalhamento dos descontos */}
+        <div className="text-xs space-y-1 px-2 py-2 bg-gray-50 rounded-lg">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Desconto previsto</span>
+            <span className="text-orange-600 font-medium">
+              {(socio.descontosPrevistos || 0) > 0
+                ? `-${formatCurrency(socio.descontosPrevistos || 0)}`
+                : formatCurrency(0)}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Desconto real</span>
+            <span className="text-red-600 font-medium">
+              {(socio.descontosReais || 0) > 0
+                ? `-${formatCurrency(socio.descontosReais || 0)}`
+                : formatCurrency(0)}
+            </span>
+          </div>
+        </div>
+
         {/* Barra de progresso de desconto */}
         {socio.gastosCartao > 0 && (
           <div className="space-y-1">
             <div className="flex justify-between text-xs text-muted-foreground">
-              <span>Desconto aplicado</span>
+              <span>Desconto total</span>
               <span>{percentDesconto.toFixed(1)}%</span>
             </div>
             <div className="h-2 bg-gray-100 rounded-full overflow-hidden">

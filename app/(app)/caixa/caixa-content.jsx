@@ -7,7 +7,12 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { formatCurrency, formatDate } from "@/lib/format"
 import { CurrencyInput } from "@/components/ui/currency-input"
-import { TrendingUp, TrendingDown, Building2, Plus, X, Trash2, Edit, Copy, ChevronDown, Calendar, Clock, CheckCircle2, ArrowDownCircle, ArrowUpCircle, Filter, Search, CreditCard, Wallet, Loader2, Eye } from "lucide-react"
+import { TrendingUp, TrendingDown, Building2, Plus, X, Trash2, Edit, Copy, ChevronDown, Calendar, Clock, CheckCircle2, ArrowDownCircle, ArrowUpCircle, Filter, Search, CreditCard, Wallet, Loader2, Eye, Truck, Check, UserPlus } from "lucide-react"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { Badge } from "@/components/ui/badge"
 import { NovoCartaoModal } from "@/app/(app)/cartoes/components/NovoCartaoModal"
 import { CartaoCard } from "@/app/(app)/cartoes/components/CartaoCard"
@@ -69,10 +74,23 @@ export function FluxoCaixaContent() {
     dia: new Date().toISOString().split('T')[0],
     codigoTipo: "",
     fornecedorCliente: "",
+    descricao: "",
     valor: 0,
     bancoId: "",
     cartaoId: ""
   })
+
+  // Estados para fornecedores/clientes no modal de movimentação
+  const [fornecedores, setFornecedores] = useState([])
+  const [loadingFornecedores, setLoadingFornecedores] = useState(false)
+  const [fornecedorSelecionado, setFornecedorSelecionado] = useState(null)
+  const [searchFornecedor, setSearchFornecedor] = useState("")
+  const [openFornecedorPopover, setOpenFornecedorPopover] = useState(false)
+
+  // Estados para cadastro inline de fornecedor/cliente
+  const [showCadastroInline, setShowCadastroInline] = useState(false)
+  const [novoNome, setNovoNome] = useState("")
+  const [savingNovo, setSavingNovo] = useState(false)
 
   // Estados para aba de contas pendentes
   const [contasPendentes, setContasPendentes] = useState([])
@@ -376,16 +394,82 @@ export function FluxoCaixaContent() {
   const limiteDisponivel = limiteTotal - limiteUtilizado
   const percentUtilizado = limiteTotal > 0 ? (limiteUtilizado / limiteTotal) * 100 : 0
 
-  // Buscar centros de custo filtrados por tipo
+  // Buscar centros de custo filtrados por tipo (com hierarquia)
   async function fetchCentrosByTipo(tipoMovimentacao) {
     try {
       const tipoCentro = tipoMovimentacao === "entrada" ? "faturamento" : "despesa"
-      const res = await fetch(`/api/centros?tipo=${tipoCentro}`)
+      const res = await fetch(`/api/centros?tipo=${tipoCentro}&hierarquico=true`)
       const data = await res.json()
       setCentros(Array.isArray(data) ? data : [])
     } catch (error) {
       console.error('Erro ao buscar centros:', error)
       setCentros([])
+    }
+  }
+
+  // Buscar fornecedores/clientes baseado no tipo
+  async function fetchFornecedoresByTipo(tipoMovimentacao) {
+    try {
+      setLoadingFornecedores(true)
+      const tipoPessoa = tipoMovimentacao === "entrada" ? "cliente" : "fornecedor"
+      const res = await fetch(`/api/fornecedores?status=ativo&tipo=${tipoPessoa}`)
+      const data = await res.json()
+      setFornecedores(Array.isArray(data) ? data : [])
+    } catch (error) {
+      console.error('Erro ao buscar fornecedores:', error)
+      setFornecedores([])
+    } finally {
+      setLoadingFornecedores(false)
+    }
+  }
+
+  // Filtrar fornecedores baseado na busca
+  const fornecedoresFiltrados = searchFornecedor.trim()
+    ? fornecedores.filter(f =>
+        f.nome.toLowerCase().includes(searchFornecedor.toLowerCase()) ||
+        f.documento?.includes(searchFornecedor)
+      )
+    : fornecedores
+
+  // Selecionar fornecedor
+  function handleSelectFornecedor(fornecedor) {
+    setFornecedorSelecionado(fornecedor)
+    setMovimentacaoForm(prev => ({ ...prev, fornecedorCliente: fornecedor.nome }))
+    setSearchFornecedor("")
+    setOpenFornecedorPopover(false)
+  }
+
+  // Cadastrar novo fornecedor/cliente inline
+  async function handleCadastrarNovo() {
+    if (!novoNome.trim()) return
+
+    setSavingNovo(true)
+    try {
+      const tipoPessoa = movimentacaoForm.tipo === "entrada" ? "cliente" : "fornecedor"
+      const res = await fetch("/api/fornecedores", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nome: novoNome.trim(),
+          tipo: tipoPessoa,
+        }),
+      })
+
+      if (res.ok) {
+        const novaPessoa = await res.json()
+        // Adicionar à lista e selecionar
+        setFornecedores(prev => [...prev, novaPessoa])
+        setFornecedorSelecionado(novaPessoa)
+        setMovimentacaoForm(prev => ({ ...prev, fornecedorCliente: novaPessoa.nome }))
+        // Limpar form inline
+        setNovoNome("")
+        setShowCadastroInline(false)
+        setOpenFornecedorPopover(false)
+      }
+    } catch (err) {
+      console.error("Erro ao cadastrar:", err)
+    } finally {
+      setSavingNovo(false)
     }
   }
 
@@ -404,8 +488,16 @@ export function FluxoCaixaContent() {
     setShowTipoSelector(false)
     setShowMovimentacaoModal(true)
 
+    // Limpar seleção de fornecedor
+    setFornecedorSelecionado(null)
+    setSearchFornecedor("")
+    setShowCadastroInline(false)
+
     // Buscar centros de custo filtrados pelo tipo inicial
     fetchCentrosByTipo(tipoInicial)
+
+    // Buscar fornecedores/clientes filtrados pelo tipo inicial
+    fetchFornecedoresByTipo(tipoInicial)
 
     // Buscar bancos e cartões se ainda não carregados
     if (bancos.length === 0) {
@@ -416,19 +508,27 @@ export function FluxoCaixaContent() {
     }
   }
 
-  // Atualizar centros quando tipo de movimentação mudar
+  // Atualizar centros e fornecedores quando tipo de movimentação mudar
   function handleTipoMovimentacaoChange(novoTipo) {
     setMovimentacaoForm(prev => ({
       ...prev,
       tipo: novoTipo,
-      codigoTipo: "" // Limpa o centro selecionado ao mudar o tipo
+      codigoTipo: "", // Limpa o centro selecionado ao mudar o tipo
+      fornecedorCliente: "" // Limpa fornecedor ao mudar o tipo
     }))
+    setFornecedorSelecionado(null)
+    setSearchFornecedor("")
     fetchCentrosByTipo(novoTipo)
+    fetchFornecedoresByTipo(novoTipo)
   }
 
-  // Excluir movimentação (apenas lançamentos diretos)
-  async function handleDeleteMovimentacao(id) {
-    if (!confirm('Tem certeza que deseja excluir esta movimentacao?')) return
+  // Excluir movimentação (permite excluir lançamentos pagos, revertendo para pendente)
+  async function handleDeleteMovimentacao(id, contaId) {
+    const mensagem = contaId
+      ? 'Tem certeza que deseja excluir esta movimentação?\n\nA conta vinculada será revertida para status PENDENTE.'
+      : 'Tem certeza que deseja excluir esta movimentacao?'
+
+    if (!confirm(mensagem)) return
 
     try {
       const response = await fetch('/api/fluxo-caixa', {
@@ -442,15 +542,29 @@ export function FluxoCaixaContent() {
         throw new Error(errorData.error || 'Erro ao excluir movimentação')
       }
 
-      // Recarregar dados
-      const fluxoRes = await fetch('/api/fluxo-caixa')
+      // Recarregar dados do fluxo e contas pendentes
+      const [fluxoRes, contasRes] = await Promise.all([
+        fetch('/api/fluxo-caixa'),
+        fetch('/api/contas?modo=individual')
+      ])
       const fluxoData = await fluxoRes.json()
+      const contasData = await contasRes.json()
       setFluxoCaixa(Array.isArray(fluxoData) ? fluxoData : [])
+      setContasPendentes(Array.isArray(contasData) ? contasData.filter(c => !c.pago) : [])
       setSelectedRow(null)
     } catch (error) {
       console.error('Erro ao excluir movimentação:', error)
       alert(error.message || 'Erro ao excluir movimentação')
     }
+  }
+
+  // Editar movimentação paga (abre modal de edição)
+  const [showEditFluxoModal, setShowEditFluxoModal] = useState(false)
+  const [fluxoToEdit, setFluxoToEdit] = useState(null)
+
+  function handleEditMovimentacao(item) {
+    setFluxoToEdit(item)
+    setShowEditFluxoModal(true)
   }
 
   // Salvar nova movimentação
@@ -470,6 +584,7 @@ export function FluxoCaixaContent() {
         codigoTipo: movimentacaoForm.codigoTipo || null,
         centroCustoSigla: movimentacaoForm.codigoTipo || null,
         fornecedorCliente: movimentacaoForm.fornecedorCliente || 'Movimentação manual',
+        descricao: movimentacaoForm.descricao || null,
         valor: movimentacaoForm.valor,
         bancoId: movimentacaoForm.bancoId ? Number(movimentacaoForm.bancoId) : null,
         cartaoId: movimentacaoForm.cartaoId ? Number(movimentacaoForm.cartaoId) : null,
@@ -928,6 +1043,9 @@ export function FluxoCaixaContent() {
                     <th className="py-3 px-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                       Fornecedor/Cliente
                     </th>
+                    <th className="py-3 px-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Descrição
+                    </th>
                     <th className="py-3 px-4 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
                       Valor
                     </th>
@@ -969,6 +1087,9 @@ export function FluxoCaixaContent() {
                         <td className="py-3 px-4 text-sm text-foreground">
                           {conta.beneficiario || conta.pessoa?.nome || "-"}
                         </td>
+                        <td className="py-3 px-4 text-sm text-foreground">
+                          {conta.descricao || "-"}
+                        </td>
                         <td className="py-3 px-4 text-sm font-medium text-right">
                           <span className={conta.tipo === 'receber' ? 'text-emerald-600' : 'text-red-600'}>
                             {conta.tipo === 'receber' ? '+' : '-'} {formatCurrency(conta.valor)}
@@ -998,7 +1119,7 @@ export function FluxoCaixaContent() {
                   {/* Movimentações já realizadas */}
                   {fluxoFiltrado.length === 0 && contasPendentesFiltradas.length === 0 ? (
                     <tr>
-                      <td colSpan="8" className="py-8 text-center text-sm text-muted-foreground">
+                      <td colSpan="9" className="py-8 text-center text-sm text-muted-foreground">
                         {temFiltro ? "Nenhuma movimentacao no periodo selecionado" : "Nenhuma movimentacao registrada"}
                       </td>
                     </tr>
@@ -1024,6 +1145,9 @@ export function FluxoCaixaContent() {
                       </td>
                       <td className="py-3 px-4 text-sm text-foreground">
                         {item.fornecedorCliente}
+                      </td>
+                      <td className="py-3 px-4 text-sm text-foreground">
+                        {item.conta?.descricao || "-"}
                       </td>
                       <td className="py-3 px-4 text-sm font-medium text-right">
                         <span className={item.tipo === 'entrada' ? 'text-emerald-600' : 'text-red-600'}>
@@ -1060,18 +1184,32 @@ export function FluxoCaixaContent() {
                         </button>
                       </td>
                       <td className="py-3 px-4 text-right">
-                        {!item.contaId && (
+                        <div className="flex items-center justify-end gap-2">
+                          {/* Botão Editar - apenas para lançamentos com conta vinculada */}
+                          {item.contaId && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleEditMovimentacao(item)
+                              }}
+                              className="text-muted-foreground hover:text-primary transition-colors"
+                              title="Editar lançamento"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </button>
+                          )}
+                          {/* Botão Excluir */}
                           <button
                             onClick={(e) => {
                               e.stopPropagation()
-                              handleDeleteMovimentacao(item.id)
+                              handleDeleteMovimentacao(item.id, item.contaId)
                             }}
                             className="text-muted-foreground hover:text-red-600 transition-colors"
-                            title="Excluir movimentacao"
+                            title={item.contaId ? "Excluir e reverter para pendente" : "Excluir movimentação"}
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
-                        )}
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -1656,6 +1794,17 @@ export function FluxoCaixaContent() {
                 </div>
               </div>
 
+              {/* Descrição */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Descrição</label>
+                <Input
+                  placeholder="Ex: Tarifa de manutenção, Taxa DOC, etc."
+                  value={movimentacaoForm.descricao}
+                  onChange={(e) => setMovimentacaoForm({ ...movimentacaoForm, descricao: e.target.value })}
+                  disabled={savingMovimentacao}
+                />
+              </div>
+
               {/* Centro de Custo/Receita */}
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">
@@ -1669,8 +1818,12 @@ export function FluxoCaixaContent() {
                 >
                   <option value="">Selecione...</option>
                   {centros.map((centro) => (
-                    <option key={centro.id} value={centro.sigla}>
-                      {centro.sigla} - {centro.nome}
+                    <option
+                      key={centro.id}
+                      value={centro.sigla}
+                      className={centro.level === 1 ? "pl-4" : "font-medium"}
+                    >
+                      {centro.level === 1 ? "  └ " : ""}{centro.sigla} - {centro.nome}{centro.isSocio ? " (Sócio)" : centro.level === 1 ? " (Sub)" : ""}
                     </option>
                   ))}
                 </select>
@@ -1720,17 +1873,142 @@ export function FluxoCaixaContent() {
                 </div>
               </div>
 
-              {/* Fornecedor/Cliente */}
+              {/* Fornecedor/Cliente com dropdown */}
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">
                   {movimentacaoForm.tipo === "entrada" ? "Cliente" : "Fornecedor"}
                 </label>
-                <Input
-                  placeholder={movimentacaoForm.tipo === "entrada" ? "Nome do cliente" : "Nome do fornecedor"}
-                  value={movimentacaoForm.fornecedorCliente}
-                  onChange={(e) => setMovimentacaoForm({ ...movimentacaoForm, fornecedorCliente: e.target.value })}
-                  disabled={savingMovimentacao}
-                />
+                <Popover open={openFornecedorPopover} onOpenChange={setOpenFornecedorPopover}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={openFornecedorPopover}
+                      className="w-full justify-between font-normal"
+                      disabled={savingMovimentacao}
+                      type="button"
+                    >
+                      {fornecedorSelecionado ? (
+                        <span className="flex items-center gap-2">
+                          <Truck className="h-4 w-4 text-muted-foreground" />
+                          {fornecedorSelecionado.nome}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">
+                          Selecione um {movimentacaoForm.tipo === "entrada" ? "cliente" : "fornecedor"}...
+                        </span>
+                      )}
+                      <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[300px] p-0" align="start">
+                    <div className="p-2 border-b">
+                      <Input
+                        placeholder={`Buscar ${movimentacaoForm.tipo === "entrada" ? "cliente" : "fornecedor"}...`}
+                        value={searchFornecedor}
+                        onChange={(e) => setSearchFornecedor(e.target.value)}
+                        className="h-8"
+                      />
+                    </div>
+                    <div className="max-h-[200px] overflow-y-auto">
+                      {loadingFornecedores ? (
+                        <div className="p-4 text-center text-sm text-muted-foreground">
+                          <Loader2 className="h-4 w-4 animate-spin mx-auto mb-2" />
+                          Carregando...
+                        </div>
+                      ) : fornecedoresFiltrados.length === 0 ? (
+                        <div className="p-4 text-center text-sm text-muted-foreground">
+                          Nenhum {movimentacaoForm.tipo === "entrada" ? "cliente" : "fornecedor"} encontrado
+                        </div>
+                      ) : (
+                        fornecedoresFiltrados.map((f) => (
+                          <button
+                            key={f.id}
+                            type="button"
+                            onClick={() => handleSelectFornecedor(f)}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent text-left"
+                          >
+                            {fornecedorSelecionado?.id === f.id && (
+                              <Check className="h-4 w-4 text-primary" />
+                            )}
+                            <Truck className="h-4 w-4 text-muted-foreground" />
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium truncate">{f.nome}</p>
+                              {f.documento && (
+                                <p className="text-xs text-muted-foreground">{f.documento}</p>
+                              )}
+                            </div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                    {fornecedores.length > 0 && !searchFornecedor && !showCadastroInline && (
+                      <div className="p-2 border-t text-xs text-center text-muted-foreground">
+                        {fornecedores.length} {movimentacaoForm.tipo === "entrada" ? "cliente" : "fornecedor"}(s) cadastrado(s)
+                      </div>
+                    )}
+
+                    {/* Botão para abrir cadastro inline */}
+                    {!showCadastroInline && (
+                      <div className="p-2 border-t">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNovoNome(searchFornecedor)
+                            setShowCadastroInline(true)
+                          }}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent rounded-md text-left text-primary"
+                        >
+                          <UserPlus className="h-4 w-4" />
+                          <span>Cadastrar novo {movimentacaoForm.tipo === "entrada" ? "cliente" : "fornecedor"}</span>
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Mini formulário de cadastro inline - apenas nome */}
+                    {showCadastroInline && (
+                      <div className="p-3 border-t space-y-3 bg-muted/30">
+                        <p className="text-xs font-medium text-muted-foreground">
+                          Novo {movimentacaoForm.tipo === "entrada" ? "Cliente" : "Fornecedor"}
+                        </p>
+                        <Input
+                          placeholder="Nome *"
+                          value={novoNome}
+                          onChange={(e) => setNovoNome(e.target.value)}
+                          className="h-8 text-sm"
+                          autoFocus
+                        />
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="flex-1"
+                            onClick={() => {
+                              setShowCadastroInline(false)
+                              setNovoNome("")
+                            }}
+                          >
+                            Cancelar
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="flex-1"
+                            onClick={handleCadastrarNovo}
+                            disabled={!novoNome.trim() || savingNovo}
+                          >
+                            {savingNovo ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              "Salvar"
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </PopoverContent>
+                </Popover>
               </div>
 
               <div className="flex gap-3 pt-4">
@@ -1849,6 +2127,271 @@ export function FluxoCaixaContent() {
           }}
         />
       )}
+
+      {/* Modal Editar Lançamento Pago */}
+      {showEditFluxoModal && fluxoToEdit && (
+        <EditFluxoModal
+          fluxo={fluxoToEdit}
+          onClose={() => {
+            setShowEditFluxoModal(false)
+            setFluxoToEdit(null)
+          }}
+          onSuccess={async () => {
+            setShowEditFluxoModal(false)
+            setFluxoToEdit(null)
+            // Recarregar dados
+            const [fluxoRes, contasRes] = await Promise.all([
+              fetch('/api/fluxo-caixa'),
+              fetch('/api/contas?modo=individual')
+            ])
+            const fluxoData = await fluxoRes.json()
+            const contasData = await contasRes.json()
+            setFluxoCaixa(Array.isArray(fluxoData) ? fluxoData : [])
+            setContasPendentes(Array.isArray(contasData) ? contasData.filter(c => !c.pago) : [])
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+// Modal para editar lançamento já pago no fluxo de caixa
+function EditFluxoModal({ fluxo, onClose, onSuccess }) {
+  const [descricao, setDescricao] = useState(fluxo.conta?.descricao || "")
+  const [valor, setValor] = useState(fluxo.valor || 0)
+  const [dataPagamento, setDataPagamento] = useState(
+    fluxo.dia ? new Date(fluxo.dia).toISOString().split('T')[0] : ""
+  )
+  const [fornecedorCliente, setFornecedorCliente] = useState(fluxo.fornecedorCliente || "")
+  const [codigoTipo, setCodigoTipo] = useState(fluxo.codigoTipo || "")
+  const [bancoId, setBancoId] = useState(fluxo.bancoId?.toString() || "")
+  const [isSaving, setIsSaving] = useState(false)
+  const [error, setError] = useState(null)
+
+  // Estados para centros e bancos
+  const [centros, setCentros] = useState([])
+  const [bancos, setBancos] = useState([])
+  const [loadingCentros, setLoadingCentros] = useState(false)
+  const [loadingBancos, setLoadingBancos] = useState(false)
+
+  const tipo = fluxo.tipo === 'entrada' ? 'receber' : 'pagar'
+
+  // Carregar centros e bancos (com hierarquia)
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoadingCentros(true)
+      setLoadingBancos(true)
+      try {
+        const tipoCentro = tipo === 'pagar' ? 'despesa' : 'faturamento'
+        const [centrosRes, bancosRes] = await Promise.all([
+          fetch(`/api/centros?tipo=${tipoCentro}&hierarquico=true`),
+          fetch('/api/bancos')
+        ])
+        const centrosData = await centrosRes.json()
+        const bancosData = await bancosRes.json()
+        setCentros(Array.isArray(centrosData) ? centrosData : [])
+        setBancos(Array.isArray(bancosData) ? bancosData : [])
+      } catch (err) {
+        console.error("Erro ao carregar dados:", err)
+      } finally {
+        setLoadingCentros(false)
+        setLoadingBancos(false)
+      }
+    }
+    fetchData()
+  }, [tipo])
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    setError(null)
+
+    if (!valor || valor <= 0) {
+      setError("Valor deve ser maior que zero")
+      return
+    }
+
+    if (!dataPagamento) {
+      setError("Data de pagamento é obrigatória")
+      return
+    }
+
+    setIsSaving(true)
+
+    try {
+      // Atualizar a conta vinculada
+      if (fluxo.contaId) {
+        const contaResponse = await fetch(`/api/contas/${fluxo.contaId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            descricao: descricao.trim(),
+            valor: Number(valor),
+            dataPagamento,
+            beneficiario: fornecedorCliente.trim() || null,
+            codigoTipo: codigoTipo.trim() || null,
+          }),
+        })
+
+        if (!contaResponse.ok) {
+          const errorData = await contaResponse.json()
+          throw new Error(errorData.error || "Erro ao atualizar conta")
+        }
+      }
+
+      // Atualizar o registro do fluxo de caixa
+      const fluxoResponse = await fetch('/api/fluxo-caixa', {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: fluxo.id,
+          bancoId: bancoId ? Number(bancoId) : null,
+          fornecedorCliente: fornecedorCliente.trim() || null,
+          codigoTipo: codigoTipo.trim() || null,
+          valor: Number(valor),
+          dia: dataPagamento,
+        }),
+      })
+
+      if (!fluxoResponse.ok) {
+        const errorData = await fluxoResponse.json()
+        throw new Error(errorData.error || "Erro ao atualizar fluxo")
+      }
+
+      onSuccess()
+    } catch (err) {
+      setError(err.message || "Erro ao atualizar")
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <Card className="w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-border">
+          <h2 className="text-lg font-semibold text-foreground">
+            Editar Lançamento {tipo === 'pagar' ? 'Pago' : 'Recebido'}
+          </h2>
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={isSaving}>
+            <X className="h-5 w-5" />
+          </Button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+          <div className="p-6 overflow-y-auto flex-1 space-y-4">
+            {/* Descrição */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">Descrição</label>
+              <Input
+                placeholder="Descrição do lançamento"
+                value={descricao}
+                onChange={(e) => setDescricao(e.target.value)}
+                disabled={isSaving}
+              />
+            </div>
+
+            {/* Fornecedor/Cliente */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">
+                {tipo === 'pagar' ? 'Fornecedor' : 'Cliente'}
+              </label>
+              <Input
+                placeholder={tipo === 'pagar' ? 'Nome do fornecedor' : 'Nome do cliente'}
+                value={fornecedorCliente}
+                onChange={(e) => setFornecedorCliente(e.target.value)}
+                disabled={isSaving}
+              />
+            </div>
+
+            {/* Valor */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">Valor</label>
+              <CurrencyInput
+                value={valor}
+                onValueChange={setValor}
+                disabled={isSaving}
+              />
+            </div>
+
+            {/* Data de Pagamento */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">Data do Pagamento</label>
+              <Input
+                type="date"
+                value={dataPagamento}
+                onChange={(e) => setDataPagamento(e.target.value)}
+                disabled={isSaving}
+              />
+            </div>
+
+            {/* Centro de Custo */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">
+                Centro de {tipo === 'pagar' ? 'Custo' : 'Receita'}
+              </label>
+              <select
+                value={codigoTipo}
+                onChange={(e) => setCodigoTipo(e.target.value)}
+                disabled={isSaving || loadingCentros}
+                className="w-full h-10 px-3 rounded-md border border-border bg-white text-sm"
+              >
+                <option value="">{loadingCentros ? 'Carregando...' : 'Selecione...'}</option>
+                {centros.map((centro) => (
+                  <option key={centro.id} value={centro.sigla}>
+                    {centro.level === 1 ? "  └ " : ""}{centro.sigla} - {centro.nome}{centro.isSocio ? " (Sócio)" : centro.level === 1 ? " (Sub)" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Banco */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">Banco</label>
+              <select
+                value={bancoId}
+                onChange={(e) => setBancoId(e.target.value)}
+                disabled={isSaving || loadingBancos}
+                className="w-full h-10 px-3 rounded-md border border-border bg-white text-sm"
+              >
+                <option value="">{loadingBancos ? 'Carregando...' : 'Selecione...'}</option>
+                {bancos.map((banco) => (
+                  <option key={banco.id} value={banco.id}>
+                    {banco.nome} - Ag: {banco.agencia} / Cc: {banco.conta}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {error && (
+              <div className="rounded-lg bg-red-50 border border-red-200 p-3">
+                <p className="text-sm text-red-900">{error}</p>
+              </div>
+            )}
+          </div>
+
+          <div className="border-t border-border p-4 flex gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1"
+              onClick={onClose}
+              disabled={isSaving}
+            >
+              Cancelar
+            </Button>
+            <Button type="submit" className="flex-1" disabled={isSaving}>
+              {isSaving ? (
+                <>
+                  <Loader2 className="animate-spin h-4 w-4 mr-2" />
+                  Salvando...
+                </>
+              ) : (
+                "Salvar Alterações"
+              )}
+            </Button>
+          </div>
+        </form>
+      </Card>
     </div>
   )
 }

@@ -13,8 +13,17 @@ datasource db {
 model Pessoa {
   id            Int      @id @default(autoincrement())
   nome          String
+  documento     String?  // CNPJ ou CPF
+  tipo          String   @default("fornecedor") // 'fornecedor' ou 'cliente'
+  status        String   @default("ativo") // 'ativo' ou 'inativo'
   contato       String?
+  email         String?
+  endereco      String?
+  cidade        String?
+  estado        String?
+  cep           String?
   chavePix      String?
+  tipoChavePix  String?  // celular, email, cpf, cnpj, aleatoria
   banco         String?
   agencia       String?
   contaBancaria String?
@@ -34,6 +43,8 @@ model Pessoa {
 
   @@index([userId])
   @@index([empresaId])
+  @@index([tipo])
+  @@index([status])
 }
 
 model Conta {
@@ -75,6 +86,10 @@ model Conta {
   cartao              CartaoCredito?      @relation(fields: [cartaoId], references: [id])
   faturaOrigem        Fatura?             @relation("FaturaConta")
 
+  // Conta Bancária vinculada
+  bancoContaId        Int?
+  bancoConta          Banco?              @relation("ContaBanco", fields: [bancoContaId], references: [id])
+
   // Sócio responsável pelo gasto (para desconto no pró-labore)
   socioResponsavelId  Int?
   socioResponsavel    CentroCusto?        @relation("ContasSocio", fields: [socioResponsavelId], references: [id])
@@ -88,6 +103,20 @@ model Conta {
   parcelas            Conta[]             @relation("ContaParcelas")
   valorTotal          Float?              // valor total quando é conta pai de parcelamento
   totalParcelas       Int?                // total de parcelas quando é conta pai
+
+  // Recorrência (para despesas fixas como aluguel, luz, água)
+  isRecorrente        Boolean             @default(false) // se é conta recorrente
+  frequencia          String?             // 'semanal', 'quinzenal', 'mensal', 'anual'
+  recorrenciaInicio   Int?                // DEPRECATED - mês inicial da recorrência (1-12)
+  recorrenciaFim      Int?                // DEPRECATED - mês final da recorrência (1-12)
+  recorrenciaAno      Int?                // DEPRECATED - ano de referência para a recorrência
+  recorrenciaDataInicio DateTime?         // data de início da recorrência
+  recorrenciaDataFim    DateTime?         // data de fim da recorrência
+
+  // Hierarquia para recorrências (template pai agrupa instâncias)
+  recorrenciaParentId Int?
+  recorrenciaParent   Conta?              @relation("ContaRecorrencia", fields: [recorrenciaParentId], references: [id])
+  recorrencias        Conta[]             @relation("ContaRecorrencia")
 
   // Relacionamento com usuário
   userId              Int
@@ -108,6 +137,9 @@ model Conta {
   @@index([cartaoId])
   @@index([socioResponsavelId])
   @@index([parentId])
+  @@index([isRecorrente])
+  @@index([recorrenciaParentId])
+  @@index([bancoContaId])
   @@index([userId])
   @@index([empresaId])
 }
@@ -130,6 +162,9 @@ model Banco {
 
   // Relacionamento com Cartões de Crédito
   cartoes       CartaoCredito[]
+
+  // Relacionamento com Contas (lançamentos vinculados)
+  contas        Conta[]  @relation("ContaBanco")
 
   // Relacionamento com usuário
   userId        Int
@@ -236,11 +271,16 @@ model CentroCusto {
   subcentros  CentroCusto[] @relation("SubCentros")
 
   // Campos para Sócio (quando isSocio = true)
-  isSocio     Boolean  @default(false)
-  cpfSocio    String?  // CPF do sócio
+  isSocio           Boolean  @default(false)
+  cpfSocio          String?  // CPF do sócio
+  descontoPrevisto  Float    @default(0) // Desconto previsto (de lançamentos recorrentes)
+  descontoReal      Float    @default(0) // Desconto real (de lançamentos diretos no fluxo de caixa)
 
   // Contas onde este sócio é responsável (gastos pessoais)
   contasResponsavel Conta[] @relation("ContasSocio")
+
+  // Descontos recorrentes do sócio (INSS, plano de saúde, etc.)
+  descontosRecorrentes DescontoRecorrente[]
 
   // Relacionamento com usuário
   userId      Int
@@ -262,11 +302,40 @@ model CentroCusto {
   @@index([empresaId])
 }
 
+// Descontos recorrentes (previstos) do sócio
+model DescontoRecorrente {
+  id          Int      @id @default(autoincrement())
+  nome        String   // Ex: "INSS", "Plano de Saúde", "Previdência Privada"
+  valor       Float    // Valor mensal do desconto
+  ativo       Boolean  @default(true)
+
+  // Relacionamento com sócio (CentroCusto com isSocio=true)
+  socioId     Int
+  socio       CentroCusto @relation(fields: [socioId], references: [id], onDelete: Cascade)
+
+  // Relacionamento com usuário
+  userId      Int
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Relacionamento com empresa
+  empresaId   Int?
+  empresa     Empresa? @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  criadoEm    DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@index([socioId])
+  @@index([ativo])
+  @@index([userId])
+  @@index([empresaId])
+}
+
 model FluxoCaixa {
   id                 Int      @id @default(autoincrement())
   dia                DateTime // data da movimentação
   codigoTipo         String   // código do tipo (ex: REC-001, PAG-045)
   fornecedorCliente  String   // nome do fornecedor ou cliente
+  descricao          String?  // descrição opcional (ex: Tarifa de manutenção, Taxa DOC)
   valor              Float    // valor da movimentação
   tipo               String   // 'entrada' ou 'saida'
   fluxo              Float    // saldo acumulado após a movimentação
@@ -392,11 +461,19 @@ model HistoricoProLabore {
 
   // Valores do mês
   proLaboreBase   Float     // Valor base do pró-labore
-  totalDescontos  Float     // Total de descontos do mês
+  totalDescontos  Float     // Total de descontos do mês (previstos + reais)
   proLaboreLiquido Float    // Valor líquido (base - descontos)
 
-  // Detalhes dos descontos (JSON com array de contas)
-  descontosJson   String?   // JSON com detalhes das contas que geraram desconto
+  // Descontos previstos (recorrentes - INSS, plano de saúde, etc.)
+  descontosPrevistos     Float   @default(0)  // Total de descontos recorrentes
+  descontosPrevistosJson String? // JSON com detalhes dos descontos recorrentes
+
+  // Descontos reais (manuais via fluxo de caixa ou contas)
+  descontosReais         Float   @default(0)  // Total de descontos manuais
+  descontosReaisJson     String? // JSON com detalhes das contas que geraram desconto
+
+  // Detalhes dos descontos (DEPRECATED - manter para retrocompatibilidade)
+  descontosJson   String?   // JSON com detalhes das contas que geraram desconto (old)
 
   // Conta gerada para pagamento
   contaGeradaId   Int?      // ID da conta a pagar gerada
@@ -452,6 +529,7 @@ model User {
   faturas           Fatura[]
   historicoProLabore HistoricoProLabore[]
   whatsappMessages  WhatsAppMessage[]
+  descontosRecorrentes DescontoRecorrente[]
 
   @@index([email])
 }
@@ -487,6 +565,7 @@ model Empresa {
   faturas            Fatura[]
   historicoProLabore HistoricoProLabore[]
   whatsappMessages   WhatsAppMessage[]
+  descontosRecorrentes DescontoRecorrente[]
 
   @@index([userId])
 }

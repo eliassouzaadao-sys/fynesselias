@@ -1,12 +1,21 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { CurrencyInput } from "@/components/ui/currency-input"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
-import { X, Loader2, CreditCard } from "lucide-react"
+import { Separator } from "@/components/ui/separator"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Loader2, CreditCard } from "lucide-react"
 import { BANDEIRAS_CARTAO, DIAS_MES } from "@/lib/constants"
 
 interface NovoCartaoModalProps {
@@ -39,7 +48,6 @@ export function NovoCartaoModal({ cartao, onClose, onSuccess }: NovoCartaoModalP
   const [bancos, setBancos] = useState<any[]>([])
   const [loadingBancos, setLoadingBancos] = useState(false)
 
-  // Carregar bancos
   useEffect(() => {
     const fetchBancos = async () => {
       setLoadingBancos(true)
@@ -61,19 +69,18 @@ export function NovoCartaoModal({ cartao, onClose, onSuccess }: NovoCartaoModalP
     e.preventDefault()
     setError(null)
 
-    // Validações
     if (!nome.trim()) {
-      setError("Nome do cartão é obrigatório")
+      setError("Nome do cartao e obrigatorio")
       return
     }
 
     if (!bandeira) {
-      setError("Selecione a bandeira do cartão")
+      setError("Selecione a bandeira do cartao")
       return
     }
 
     if (!ultimos4Digitos || ultimos4Digitos.length !== 4) {
-      setError("Informe os últimos 4 dígitos do cartão")
+      setError("Informe os ultimos 4 digitos do cartao")
       return
     }
 
@@ -88,7 +95,7 @@ export function NovoCartaoModal({ cartao, onClose, onSuccess }: NovoCartaoModalP
     }
 
     if (!limite || limite <= 0) {
-      setError("Informe o limite do cartão")
+      setError("Informe o limite do cartao")
       return
     }
 
@@ -114,54 +121,53 @@ export function NovoCartaoModal({ cartao, onClose, onSuccess }: NovoCartaoModalP
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || "Erro ao salvar cartão")
+        throw new Error(errorData.error || "Erro ao salvar cartao")
       }
 
       onSuccess()
     } catch (err: any) {
-      setError(err.message || "Erro ao salvar cartão")
+      setError(err.message || "Erro ao salvar cartao")
     } finally {
       setIsSaving(false)
     }
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <Card className="w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-fyn-border">
-          <div className="flex items-center gap-2">
-            <CreditCard className="h-5 w-5 text-fyn-accent" />
-            <h2 className="text-lg font-semibold text-fyn-text">
-              {isEditing ? "Editar Cartão" : "Novo Cartão de Crédito"}
-            </h2>
-          </div>
-          <Button variant="ghost" size="sm" onClick={onClose} disabled={isSaving}>
-            <X className="h-5 w-5" />
-          </Button>
-        </div>
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-lg max-h-[90vh] p-0">
+        <DialogHeader className="px-6 pt-6 pb-4">
+          <DialogTitle className="flex items-center gap-2">
+            <CreditCard className="h-5 w-5 text-primary" />
+            {isEditing ? "Editar Cartao" : "Novo Cartao de Credito"}
+          </DialogTitle>
+        </DialogHeader>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
-          <div className="p-6 overflow-y-auto flex-1 space-y-4">
-            {/* Nome */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-fyn-text">Nome do Cartão *</label>
+        <form onSubmit={handleSubmit}>
+          <ScrollArea className="h-[50vh] px-6">
+            <div className="space-y-6 pb-4">
+              {/* Secao: Identificacao do Cartao */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-muted-foreground">Identificacao</span>
+              <Separator className="flex-1" />
+            </div>
+
+            <div>
+              <Label htmlFor="nome">Nome do Cartao *</Label>
               <Input
+                id="nome"
                 placeholder="Ex: Nubank Pessoal"
                 value={nome}
                 onChange={(e) => setNome(e.target.value)}
                 disabled={isSaving}
-                required
               />
             </div>
 
-            {/* Bandeira e Últimos 4 Dígitos */}
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-fyn-text">Bandeira *</label>
+              <div>
+                <Label htmlFor="bandeira">Bandeira *</Label>
                 <Select value={bandeira} onValueChange={setBandeira} disabled={isSaving}>
-                  <SelectTrigger>
+                  <SelectTrigger id="bandeira">
                     <SelectValue placeholder="Selecione" />
                   </SelectTrigger>
                   <SelectContent>
@@ -174,9 +180,10 @@ export function NovoCartaoModal({ cartao, onClose, onSuccess }: NovoCartaoModalP
                 </Select>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-fyn-text">Últimos 4 Dígitos *</label>
+              <div>
+                <Label htmlFor="digitos">Ultimos 4 Digitos *</Label>
                 <Input
+                  id="digitos"
                   placeholder="1234"
                   value={ultimos4Digitos}
                   onChange={(e) => {
@@ -185,64 +192,75 @@ export function NovoCartaoModal({ cartao, onClose, onSuccess }: NovoCartaoModalP
                   }}
                   disabled={isSaving}
                   maxLength={4}
-                  required
                 />
               </div>
             </div>
+          </div>
 
-            {/* Dias de Fechamento e Vencimento */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-fyn-text">Dia de Fechamento *</label>
-                <Select value={diaFechamento} onValueChange={setDiaFechamento} disabled={isSaving}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Dia" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {DIAS_MES.map((d) => (
-                      <SelectItem key={d.value} value={d.value.toString()}>
-                        Dia {d.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-fyn-muted">Dia que a fatura fecha</p>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-fyn-text">Dia de Vencimento *</label>
-                <Select value={diaVencimento} onValueChange={setDiaVencimento} disabled={isSaving}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Dia" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {DIAS_MES.map((d) => (
-                      <SelectItem key={d.value} value={d.value.toString()}>
-                        Dia {d.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-fyn-muted">Dia que a fatura vence</p>
-              </div>
+          {/* Secao: Ciclo de Fatura */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-muted-foreground">Ciclo de Fatura</span>
+              <Separator className="flex-1" />
             </div>
 
-            {/* Limite */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-fyn-text">Limite do Cartão *</label>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="fechamento">Dia de Fechamento *</Label>
+                <Select value={diaFechamento} onValueChange={setDiaFechamento} disabled={isSaving}>
+                  <SelectTrigger id="fechamento">
+                    <SelectValue placeholder="Dia" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DIAS_MES.map((d) => (
+                      <SelectItem key={d.value} value={d.value.toString()}>
+                        Dia {d.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">Dia que a fatura fecha</p>
+              </div>
+
+              <div>
+                <Label htmlFor="vencimento">Dia de Vencimento *</Label>
+                <Select value={diaVencimento} onValueChange={setDiaVencimento} disabled={isSaving}>
+                  <SelectTrigger id="vencimento">
+                    <SelectValue placeholder="Dia" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DIAS_MES.map((d) => (
+                      <SelectItem key={d.value} value={d.value.toString()}>
+                        Dia {d.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">Dia que a fatura vence</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Secao: Limite e Banco */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-muted-foreground">Limite e Banco</span>
+              <Separator className="flex-1" />
+            </div>
+
+            <div>
+              <Label htmlFor="limite">Limite do Cartao *</Label>
               <CurrencyInput
                 value={limite}
                 onValueChange={setLimite}
                 disabled={isSaving}
-                required
               />
             </div>
 
-            {/* Banco */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-fyn-text">Banco (opcional)</label>
+            <div>
+              <Label htmlFor="banco">Banco (opcional)</Label>
               <Select value={bancoId} onValueChange={setBancoId} disabled={isSaving || loadingBancos}>
-                <SelectTrigger>
+                <SelectTrigger id="banco">
                   <SelectValue placeholder={loadingBancos ? "Carregando..." : "Selecione o banco"} />
                 </SelectTrigger>
                 <SelectContent>
@@ -255,41 +273,41 @@ export function NovoCartaoModal({ cartao, onClose, onSuccess }: NovoCartaoModalP
                 </SelectContent>
               </Select>
             </div>
-
-            {/* Error */}
-            {error && (
-              <div className="rounded-lg bg-red-50 border border-red-200 p-3">
-                <p className="text-sm text-red-900">{error}</p>
-              </div>
-            )}
           </div>
 
-          {/* Footer */}
-          <div className="border-t border-fyn-border p-4 flex gap-3">
+              {/* Erro */}
+              {error && (
+                <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3">
+                  <p className="text-sm text-destructive">{error}</p>
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+
+          <DialogFooter className="px-6 py-4 border-t">
             <Button
               type="button"
               variant="outline"
-              className="flex-1"
               onClick={onClose}
               disabled={isSaving}
             >
               Cancelar
             </Button>
-            <Button type="submit" className="flex-1" disabled={isSaving}>
+            <Button type="submit" disabled={isSaving}>
               {isSaving ? (
                 <>
                   <Loader2 className="animate-spin h-4 w-4 mr-2" />
                   Salvando...
                 </>
               ) : isEditing ? (
-                "Salvar Alterações"
+                "Salvar Alteracoes"
               ) : (
-                "Criar Cartão"
+                "Criar Cartao"
               )}
             </Button>
-          </div>
+          </DialogFooter>
         </form>
-      </Card>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

@@ -135,6 +135,15 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     if (data.pessoaId !== undefined) {
       updateData.pessoaId = data.pessoaId ? Number(data.pessoaId) : null;
     }
+    if (data.cartaoId !== undefined) {
+      updateData.cartaoId = data.cartaoId ? Number(data.cartaoId) : null;
+    }
+    if (data.fonte !== undefined) updateData.fonte = data.fonte;
+    if (data.subcategoria !== undefined) updateData.subcategoria = data.subcategoria;
+    if (data.codigoTipo !== undefined) updateData.codigoTipo = data.codigoTipo;
+    if (data.bancoContaId !== undefined) {
+      updateData.bancoContaId = data.bancoContaId ? Number(data.bancoContaId) : null;
+    }
 
     const contaAtualizada = await prisma.conta.update({
       where: { id },

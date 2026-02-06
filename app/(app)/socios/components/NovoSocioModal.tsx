@@ -1,16 +1,26 @@
 "use client"
 
 import { useState } from "react"
-import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { CurrencyInput } from "@/components/ui/currency-input"
-import { X, Loader2, User } from "lucide-react"
+import { Separator } from "@/components/ui/separator"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Loader2, User } from "lucide-react"
 
 interface NovoSocioModalProps {
   socio?: {
     id: number
     nome: string
+    sigla: string
     cpfSocio: string
     previsto: number
   } | null
@@ -22,6 +32,7 @@ export function NovoSocioModal({ socio, onClose, onSuccess }: NovoSocioModalProp
   const isEditing = !!socio
 
   const [nome, setNome] = useState(socio?.nome || "")
+  const [sigla, setSigla] = useState(socio?.sigla || "")
   const [cpf, setCpf] = useState(socio?.cpfSocio || "")
   const [proLaboreBase, setProLaboreBase] = useState(socio?.previsto || 0)
   const [isSaving, setIsSaving] = useState(false)
@@ -46,20 +57,19 @@ export function NovoSocioModal({ socio, onClose, onSuccess }: NovoSocioModalProp
     e.preventDefault()
     setError(null)
 
-    // Validações
     if (!nome.trim()) {
-      setError("Nome do sócio é obrigatório")
+      setError("Nome do socio e obrigatorio")
       return
     }
 
     const cpfClean = cpf.replace(/\D/g, "")
     if (!cpfClean || cpfClean.length !== 11) {
-      setError("CPF deve ter 11 dígitos")
+      setError("CPF deve ter 11 digitos")
       return
     }
 
     if (!proLaboreBase || proLaboreBase <= 0) {
-      setError("Informe o valor do pró-labore base")
+      setError("Informe o valor do pro-labore base")
       return
     }
 
@@ -69,6 +79,7 @@ export function NovoSocioModal({ socio, onClose, onSuccess }: NovoSocioModalProp
       const payload = {
         id: socio?.id,
         nome: nome.trim(),
+        sigla: sigla.trim() || undefined,
         cpf: cpfClean,
         proLaboreBase,
       }
@@ -81,117 +92,130 @@ export function NovoSocioModal({ socio, onClose, onSuccess }: NovoSocioModalProp
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.error || "Erro ao salvar sócio")
+        throw new Error(errorData.error || "Erro ao salvar socio")
       }
 
       onSuccess()
     } catch (err: any) {
-      setError(err.message || "Erro ao salvar sócio")
+      setError(err.message || "Erro ao salvar socio")
     } finally {
       setIsSaving(false)
     }
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <Card className="w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-border">
-          <div className="flex items-center gap-2">
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-md max-h-[90vh] p-0">
+        <DialogHeader className="px-6 pt-6 pb-4">
+          <DialogTitle className="flex items-center gap-2">
             <User className="h-5 w-5 text-primary" />
-            <h2 className="text-lg font-semibold text-foreground">
-              {isEditing ? "Editar Sócio" : "Novo Sócio"}
-            </h2>
-          </div>
-          <Button variant="ghost" size="sm" onClick={onClose} disabled={isSaving}>
-            <X className="h-5 w-5" />
-          </Button>
-        </div>
+            {isEditing ? "Editar Socio" : "Novo Socio"}
+          </DialogTitle>
+        </DialogHeader>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
-          <div className="p-6 overflow-y-auto flex-1 space-y-4">
-            {/* Nome */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground">Nome do Sócio *</label>
-              <Input
-                placeholder="Ex: João Silva"
-                value={nome}
-                onChange={(e) => setNome(e.target.value)}
-                disabled={isSaving}
-                required
-              />
+        <form onSubmit={handleSubmit}>
+          <ScrollArea className="h-[50vh] px-6">
+            <div className="space-y-6 pb-4">
+              {/* Secao: Dados Pessoais */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-muted-foreground">Dados Pessoais</span>
+              <Separator className="flex-1" />
             </div>
 
-            {/* CPF */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground">CPF *</label>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="col-span-2">
+                <Label htmlFor="nome">Nome do Socio *</Label>
+                <Input
+                  id="nome"
+                  placeholder="Ex: Joao Silva"
+                  value={nome}
+                  onChange={(e) => setNome(e.target.value)}
+                  disabled={isSaving}
+                />
+              </div>
+              <div>
+                <Label htmlFor="sigla">Sigla</Label>
+                <Input
+                  id="sigla"
+                  placeholder="PL"
+                  value={sigla}
+                  onChange={(e) => setSigla(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ""))}
+                  disabled={isSaving}
+                  maxLength={15}
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Codigo do pro-labore
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="cpf">CPF *</Label>
               <Input
+                id="cpf"
                 placeholder="000.000.000-00"
                 value={cpf}
                 onChange={(e) => setCpf(formatCPF(e.target.value))}
                 disabled={isSaving}
                 maxLength={14}
-                required
               />
             </div>
+          </div>
 
-            {/* Pró-labore Base */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground">Pró-labore Base Mensal *</label>
+          {/* Secao: Remuneracao */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-muted-foreground">Remuneracao</span>
+              <Separator className="flex-1" />
+            </div>
+
+            <div>
+              <Label htmlFor="prolabore">Pro-labore Base Mensal *</Label>
               <CurrencyInput
                 value={proLaboreBase}
                 onValueChange={setProLaboreBase}
                 disabled={isSaving}
-                required
               />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground mt-1">
                 Valor fixo mensal antes dos descontos
               </p>
             </div>
-
-            {/* Info sobre descontos */}
-            <div className="rounded-lg bg-blue-50 border border-blue-200 p-3">
-              <p className="text-sm text-blue-900">
-                <strong>Como funciona:</strong> Ao lançar uma conta a pagar, você pode marcar qual sócio é responsável pelo gasto.
-                O valor será automaticamente descontado do pró-labore dele.
-              </p>
-            </div>
-
-            {/* Error */}
-            {error && (
-              <div className="rounded-lg bg-red-50 border border-red-200 p-3">
-                <p className="text-sm text-red-900">{error}</p>
-              </div>
-            )}
           </div>
 
-          {/* Footer */}
-          <div className="border-t border-border p-4 flex gap-3">
+              {/* Erro */}
+              {error && (
+                <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3">
+                  <p className="text-sm text-destructive">{error}</p>
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+
+          <DialogFooter className="px-6 py-4 border-t">
             <Button
               type="button"
               variant="outline"
-              className="flex-1"
               onClick={onClose}
               disabled={isSaving}
             >
               Cancelar
             </Button>
-            <Button type="submit" className="flex-1" disabled={isSaving}>
+            <Button type="submit" disabled={isSaving}>
               {isSaving ? (
                 <>
                   <Loader2 className="animate-spin h-4 w-4 mr-2" />
                   Salvando...
                 </>
               ) : isEditing ? (
-                "Salvar Alterações"
+                "Salvar Alteracoes"
               ) : (
-                "Criar Sócio"
+                "Criar Socio"
               )}
             </Button>
-          </div>
+          </DialogFooter>
         </form>
-      </Card>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

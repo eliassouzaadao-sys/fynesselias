@@ -4,12 +4,15 @@ import { getCurrentUser } from '@/lib/get-user';
 import { getEmpresaIdValidada } from '@/lib/get-empresa';
 
 // Função auxiliar para buscar socioResponsavelId pelo centro de custo
-async function getSocioIdByCentroCusto(sigla, userId) {
+async function getSocioIdByCentroCusto(sigla, userId, empresaId = null) {
   if (!sigla || !userId) return null;
 
   try {
+    const where = { sigla, userId };
+    if (empresaId) where.empresaId = empresaId;
+
     const centro = await prisma.centroCusto.findFirst({
-      where: { sigla, userId },
+      where,
       select: { id: true, isSocio: true }
     });
 
@@ -122,34 +125,8 @@ export async function POST(request) {
       : saldoAnterior - Number(data.valor);
 
     // Verificar se o centro de custo é um sócio
-    const socioId = await getSocioIdByCentroCusto(data.centroCustoSigla, user.id);
-    let contaId = data.contaId || null;
-
-    // Se o centro de custo for um sócio e não há conta vinculada, criar uma conta para rastrear o desconto
-    if (socioId && !contaId && data.tipo === 'saida') {
-      console.log('💰 Centro é sócio, criando conta para rastrear desconto...');
-
-      const novaConta = await prisma.conta.create({
-        data: {
-          descricao: data.fornecedorCliente || 'Lançamento direto no fluxo',
-          valor: Number(data.valor),
-          vencimento: new Date(data.dia),
-          pago: true,
-          dataPagamento: new Date(data.dia),
-          tipo: 'pagar',
-          status: 'pago',
-          noFluxoCaixa: true,
-          codigoTipo: data.centroCustoSigla,
-          socioResponsavelId: socioId,
-          cartaoId: data.cartaoId || null,
-          userId: user.id,
-          empresaId: empresaId || undefined,
-        },
-      });
-
-      contaId = novaConta.id;
-      console.log(`✅ Conta criada para desconto do sócio: ${novaConta.id}`);
-    }
+    const socioId = await getSocioIdByCentroCusto(data.centroCustoSigla, user.id, empresaId);
+    const contaId = data.contaId || null;
 
     // Criar registro no fluxo de caixa
     const novoRegistro = await prisma.fluxoCaixa.create({
@@ -157,6 +134,7 @@ export async function POST(request) {
         dia: new Date(data.dia),
         codigoTipo: data.codigoTipo,
         fornecedorCliente: data.fornecedorCliente,
+        descricao: data.descricao || null,
         valor: Number(data.valor),
         tipo: data.tipo,
         fluxo: novoFluxo,
@@ -169,8 +147,20 @@ export async function POST(request) {
       },
     });
 
-    // Se tiver centro de custo, atualizar o realizado do centro e do pai
-    if (data.centroCustoSigla) {
+    // Se for sócio e for saída, atualizar descontoReal
+    if (socioId && data.tipo === 'saida') {
+      await prisma.centroCusto.update({
+        where: { id: socioId },
+        data: {
+          descontoReal: {
+            increment: Number(data.valor),
+          },
+        },
+      });
+      console.log(`💰 Desconto real do sócio ${socioId} atualizado: +${data.valor}`);
+    }
+    // Se não for sócio e tiver centro de custo, atualizar o realizado do centro
+    else if (data.centroCustoSigla) {
       await updateCentroAndParent(data.centroCustoSigla, 'realizado', Number(data.valor), user.id);
     }
 
@@ -184,7 +174,7 @@ export async function POST(request) {
   }
 }
 
-// PUT - Atualizar movimentacao (banco)
+// PUT - Atualizar movimentação (banco, fornecedor, valor, data, etc)
 export async function PUT(request) {
   try {
     const user = await getCurrentUser();
@@ -218,15 +208,50 @@ export async function PUT(request) {
       );
     }
 
+    // Construir objeto de atualização
+    const updateData = {};
+    if (data.bancoId !== undefined) updateData.bancoId = data.bancoId || null;
+    if (data.fornecedorCliente !== undefined) updateData.fornecedorCliente = data.fornecedorCliente;
+    if (data.descricao !== undefined) updateData.descricao = data.descricao || null;
+    if (data.codigoTipo !== undefined) {
+      updateData.codigoTipo = data.codigoTipo;
+      updateData.centroCustoSigla = data.codigoTipo;
+    }
+    if (data.valor !== undefined) updateData.valor = Number(data.valor);
+    if (data.dia !== undefined) updateData.dia = new Date(data.dia);
+
     const fluxoAtualizado = await prisma.fluxoCaixa.update({
       where: { id: data.id },
-      data: {
-        bancoId: data.bancoId || null,
-      },
+      data: updateData,
       include: {
         banco: true,
+        conta: true,
       },
     });
+
+    // Se o valor mudou, recalcular todos os saldos
+    if (data.valor !== undefined && data.valor !== existing.valor) {
+      const whereTodosFluxos = { userId: user.id };
+      if (empresaId) whereTodosFluxos.empresaId = empresaId;
+
+      const todosFluxos = await prisma.fluxoCaixa.findMany({
+        where: whereTodosFluxos,
+        orderBy: { dia: 'asc' },
+      });
+
+      let saldoAcumulado = 0;
+      for (const f of todosFluxos) {
+        if (f.tipo === 'entrada') {
+          saldoAcumulado += Number(f.valor);
+        } else {
+          saldoAcumulado -= Number(f.valor);
+        }
+        await prisma.fluxoCaixa.update({
+          where: { id: f.id },
+          data: { fluxo: saldoAcumulado },
+        });
+      }
+    }
 
     return NextResponse.json(fluxoAtualizado);
   } catch (error) {
@@ -238,7 +263,7 @@ export async function PUT(request) {
   }
 }
 
-// DELETE - Excluir movimentação (apenas lançamentos diretos, sem conta vinculada)
+// DELETE - Excluir movimentação (permite excluir lançamentos pagos, revertendo a conta)
 export async function DELETE(request) {
   try {
     const user = await getCurrentUser();
@@ -263,6 +288,7 @@ export async function DELETE(request) {
 
     const fluxo = await prisma.fluxoCaixa.findFirst({
       where: whereFluxo,
+      include: { conta: true },
     });
 
     if (!fluxo) {
@@ -272,17 +298,40 @@ export async function DELETE(request) {
       );
     }
 
-    // Não permitir excluir movimentações vinculadas a contas
-    if (fluxo.contaId) {
-      return NextResponse.json(
-        { error: 'Nao e possivel excluir movimentacoes vinculadas a contas. Exclua a conta correspondente.' },
-        { status: 400 }
-      );
+    // Se tiver conta vinculada, reverter o status da conta para pendente
+    if (fluxo.contaId && fluxo.conta) {
+      console.log(`🔄 Revertendo conta ${fluxo.contaId} para status pendente...`);
+      await prisma.conta.update({
+        where: { id: fluxo.contaId },
+        data: {
+          pago: false,
+          dataPagamento: null,
+          noFluxoCaixa: false,
+          status: 'pendente',
+        },
+      });
+      console.log(`✅ Conta ${fluxo.contaId} revertida para pendente`);
     }
 
-    // Se tiver centro de custo, reverter o realizado (subtrair o valor)
+    // Se tiver centro de custo, verificar se é sócio
     if (fluxo.centroCustoSigla) {
-      await updateCentroAndParent(fluxo.centroCustoSigla, 'realizado', -Number(fluxo.valor), user.id);
+      const socioId = await getSocioIdByCentroCusto(fluxo.centroCustoSigla, user.id, empresaId);
+
+      if (socioId && fluxo.tipo === 'saida') {
+        // Se for sócio e saída, reverter o descontoReal
+        await prisma.centroCusto.update({
+          where: { id: socioId },
+          data: {
+            descontoReal: {
+              decrement: Number(fluxo.valor),
+            },
+          },
+        });
+        console.log(`💰 Desconto real do sócio ${socioId} revertido: -${fluxo.valor}`);
+      } else {
+        // Se não for sócio, reverter o realizado
+        await updateCentroAndParent(fluxo.centroCustoSigla, 'realizado', -Number(fluxo.valor), user.id);
+      }
     }
 
     // Excluir a movimentação

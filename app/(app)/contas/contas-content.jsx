@@ -6,7 +6,9 @@ import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { formatCurrency, formatDate } from "@/lib/format"
-import { Plus, Download, Search, ArrowUpCircle, ArrowDownCircle, X, Trash2, Calendar, Edit, Loader2, ChevronRight, ChevronDown, Layers } from "lucide-react"
+import { Plus, Download, Search, ArrowUpCircle, ArrowDownCircle, X, Trash2, Calendar, Edit, Loader2, ChevronRight, ChevronDown, Layers, RefreshCw, CreditCard, Truck, Check, UserPlus, Building2 } from "lucide-react"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Textarea } from "@/components/ui/textarea"
 import { CurrencyInput } from "@/components/ui/currency-input"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { SimpleContaModal } from "./components/SimpleContaModal"
@@ -22,6 +24,8 @@ export function ContasContent() {
   const [showDetail, setShowDetail] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [contaToEdit, setContaToEdit] = useState(null)
+  const [showEditParceladaModal, setShowEditParceladaModal] = useState(false)
+  const [contaParceladaToEdit, setContaParceladaToEdit] = useState(null)
   const [expandedContas, setExpandedContas] = useState({}) // {contaId: true/false}
 
   // Estados para filtros
@@ -141,6 +145,28 @@ export function ContasContent() {
     return { pagas, total, todasPagas: pagas === total }
   }
 
+  // Helper para verificar se é conta recorrente (template)
+  const isContaRecorrente = (conta) => conta.isRecorrente && !conta.recorrenciaParentId
+
+  // Helper para calcular status de conta recorrente
+  const getRecorrenciaStatus = (conta) => {
+    if (!conta.recorrencias || conta.recorrencias.length === 0) return null
+    const pagas = conta.recorrencias.filter(r => r.pago).length
+    const total = conta.recorrencias.length
+    return { pagas, total, todasPagas: pagas === total }
+  }
+
+  // Helper para obter label da frequência
+  const getFrequenciaLabel = (frequencia) => {
+    const labels = {
+      semanal: "Semanal",
+      quinzenal: "Quinzenal",
+      mensal: "Mensal",
+      anual: "Anual"
+    }
+    return labels[frequencia] || frequencia
+  }
+
   // Toggle expansão de conta parcelada
   const toggleExpand = (contaId) => {
     setExpandedContas(prev => ({
@@ -240,10 +266,25 @@ export function ContasContent() {
         return <Badge variant="success" className="bg-blue-100 text-blue-700">Quitada</Badge>
       }
       return (
-        <Badge variant="outline" className="bg-purple-100 text-purple-700 border-purple-300">
+        <Badge variant="outline" className="bg-gray-100 text-gray-700 border-gray-300">
           {pagas}/{total} pagas
         </Badge>
       )
+    }
+
+    // Para contas recorrentes (template)
+    if (isContaRecorrente(conta)) {
+      const status = getRecorrenciaStatus(conta)
+      if (status) {
+        if (status.todasPagas) {
+          return <Badge variant="success" className="bg-blue-100 text-blue-700">Quitada</Badge>
+        }
+        return (
+          <Badge variant="outline" className="bg-green-100 text-green-700 border-green-300">
+            {status.pagas}/{status.total} pagas
+          </Badge>
+        )
+      }
     }
 
     // Para contas simples
@@ -266,7 +307,16 @@ export function ContasContent() {
       if (todasPagas) {
         return "bg-blue-50 hover:bg-blue-100/80"
       }
-      return "bg-purple-50 hover:bg-purple-100/80"
+      return "bg-gray-50 hover:bg-gray-100/80"
+    }
+
+    // Para contas recorrentes (template)
+    if (isContaRecorrente(conta)) {
+      const status = getRecorrenciaStatus(conta)
+      if (status?.todasPagas) {
+        return "bg-blue-50 hover:bg-blue-100/80"
+      }
+      return "bg-green-50 hover:bg-green-100/80"
     }
 
     // Para contas simples
@@ -461,7 +511,7 @@ export function ContasContent() {
                     <tr
                       className={`border-b border-border transition-colors cursor-pointer ${getRowClassName(conta)}`}
                       onClick={() => {
-                        if (isContaParcelada(conta)) {
+                        if (isContaParcelada(conta) || isContaRecorrente(conta)) {
                           toggleExpand(conta.id)
                         } else {
                           setSelectedConta(conta)
@@ -471,7 +521,7 @@ export function ContasContent() {
                     >
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2">
-                          {isContaParcelada(conta) && (
+                          {(isContaParcelada(conta) || isContaRecorrente(conta)) && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation()
@@ -480,9 +530,9 @@ export function ContasContent() {
                               className="p-0.5 hover:bg-muted rounded"
                             >
                               {expandedContas[conta.id] ? (
-                                <ChevronDown className="h-4 w-4 text-purple-600" />
+                                <ChevronDown className={`h-4 w-4 ${isContaRecorrente(conta) ? 'text-green-600' : 'text-muted-foreground'}`} />
                               ) : (
-                                <ChevronRight className="h-4 w-4 text-purple-600" />
+                                <ChevronRight className={`h-4 w-4 ${isContaRecorrente(conta) ? 'text-green-600' : 'text-muted-foreground'}`} />
                               )}
                             </button>
                           )}
@@ -498,7 +548,10 @@ export function ContasContent() {
                             </>
                           )}
                           {isContaParcelada(conta) && (
-                            <Layers className="h-3.5 w-3.5 text-purple-500" title="Conta parcelada" />
+                            <Layers className="h-3.5 w-3.5 text-muted-foreground" title="Conta parcelada" />
+                          )}
+                          {isContaRecorrente(conta) && (
+                            <RefreshCw className="h-3.5 w-3.5 text-green-500" title={`Conta recorrente (${getFrequenciaLabel(conta.frequencia)})`} />
                           )}
                         </div>
                       </td>
@@ -507,9 +560,14 @@ export function ContasContent() {
                       <td className="py-3 px-4 text-sm text-foreground">
                         {conta.descricao || "-"}
                         {isContaParcelada(conta) && (
-                          <span className="text-xs text-purple-600 ml-2">
+                          <span className="text-xs text-muted-foreground ml-2">
                             ({conta.totalParcelas || conta.parcelas?.length}x)
                           </span>
+                        )}
+                        {isContaRecorrente(conta) && (
+                          <Badge variant="outline" className="ml-2 text-xs bg-green-100 text-green-700 border-green-300">
+                            {getFrequenciaLabel(conta.frequencia)}
+                          </Badge>
                         )}
                       </td>
                       <td className="py-3 px-4 text-sm text-foreground">
@@ -528,7 +586,19 @@ export function ContasContent() {
                       <td className="py-3 px-4">{getStatusBadge(conta)}</td>
                       <td className="py-3 px-4">
                         <div className="flex items-center justify-center gap-1">
-                          {!isContaParcelada(conta) && (
+                          {isContaParcelada(conta) ? (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setContaParceladaToEdit(conta)
+                                setShowEditParceladaModal(true)
+                              }}
+                              className="rounded p-1.5 text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
+                              title="Editar lançamento parcelado"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </button>
+                          ) : !isContaRecorrente(conta) && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation()
@@ -607,6 +677,62 @@ export function ContasContent() {
                               }}
                               className="rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
                               title="Editar parcela"
+                            >
+                              <Edit className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {/* Linhas das recorrências (quando expandido) */}
+                    {isContaRecorrente(conta) && expandedContas[conta.id] && conta.recorrencias?.map((recorrencia) => (
+                      <tr
+                        key={`recorrencia-${recorrencia.id}`}
+                        className={`border-b border-border transition-colors cursor-pointer ${getRowClassName(recorrencia)} bg-opacity-50`}
+                        onClick={() => {
+                          setSelectedConta(recorrencia)
+                          setShowDetail(true)
+                        }}
+                      >
+                        <td className="py-2 px-4 pl-12">
+                          <div className="flex items-center gap-2 text-muted-foreground">
+                            <span className="text-xs">└</span>
+                            <RefreshCw className="h-3.5 w-3.5 text-green-400" />
+                          </div>
+                        </td>
+                        <td className="py-2 px-4 text-xs text-muted-foreground">{recorrencia.codigoTipo || "-"}</td>
+                        <td className="py-2 px-4 text-xs text-muted-foreground">{recorrencia.beneficiario || "-"}</td>
+                        <td className="py-2 px-4 text-xs text-muted-foreground">
+                          {recorrencia.descricao}
+                        </td>
+                        <td className="py-2 px-4 text-xs text-muted-foreground">
+                          -
+                        </td>
+                        <td className="py-2 px-4 text-xs font-medium text-foreground text-right">
+                          {formatCurrency(recorrencia.valor)}
+                        </td>
+                        <td className="py-2 px-4 text-xs text-foreground">
+                          {formatDate(recorrencia.vencimento)}
+                        </td>
+                        <td className="py-2 px-4">
+                          {recorrencia.pago ? (
+                            <Badge variant="success" className="bg-blue-100 text-blue-700 text-xs">Paga</Badge>
+                          ) : getContaStatus(recorrencia) === "vencida" ? (
+                            <Badge variant="destructive" className="bg-red-100 text-red-700 text-xs">Vencida</Badge>
+                          ) : (
+                            <Badge variant="warning" className="bg-yellow-100 text-yellow-700 text-xs">Pendente</Badge>
+                          )}
+                        </td>
+                        <td className="py-2 px-4">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setContaToEdit(recorrencia)
+                                setShowEditModal(true)
+                              }}
+                              className="rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
+                              title="Editar recorrência"
                             >
                               <Edit className="h-3.5 w-3.5" />
                             </button>
@@ -777,11 +903,27 @@ export function ContasContent() {
         />
       )}
 
+      {/* Modal de Edição de Conta Parcelada */}
+      {showEditParceladaModal && contaParceladaToEdit && (
+        <EditContaParceladaModal
+          conta={contaParceladaToEdit}
+          onClose={() => {
+            setShowEditParceladaModal(false)
+            setContaParceladaToEdit(null)
+          }}
+          onSuccess={() => {
+            loadContas()
+            setShowEditParceladaModal(false)
+            setContaParceladaToEdit(null)
+          }}
+        />
+      )}
+
     </div>
   )
 }
 
-// Componente de Modal de Edição
+// Componente de Modal de Edição Expandido
 function EditContaModal({ conta, onClose, onSuccess }) {
   // Parse parcela existente (formato "1/12" ou apenas "1")
   const parseParcela = (numeroParcela) => {
@@ -795,6 +937,7 @@ function EditContaModal({ conta, onClose, onSuccess }) {
 
   const parcelaInicial = parseParcela(conta.numeroParcela)
 
+  // Estados básicos
   const [beneficiario, setBeneficiario] = useState(conta.beneficiario || conta.pessoa?.nome || "")
   const [descricao, setDescricao] = useState(conta.descricao || "")
   const [codigoTipo, setCodigoTipo] = useState(conta.codigoTipo || "")
@@ -808,15 +951,43 @@ function EditContaModal({ conta, onClose, onSuccess }) {
   const [centros, setCentros] = useState([])
   const [loadingCentros, setLoadingCentros] = useState(false)
 
+  // Estados novos para campos adicionais
+  const [cartaoId, setCartaoId] = useState(conta.cartaoId?.toString() || "")
+  const [cartoes, setCartoes] = useState([])
+  const [loadingCartoes, setLoadingCartoes] = useState(false)
+  const [bancoContaId, setBancoContaId] = useState(conta.bancoContaId?.toString() || "")
+  const [bancos, setBancos] = useState([])
+  const [loadingBancos, setLoadingBancos] = useState(false)
+  const [formaPagamento, setFormaPagamento] = useState(conta.formaPagamento || "")
+  const [observacoes, setObservacoes] = useState(conta.observacoes || "")
+  const [banco, setBanco] = useState(conta.banco || "")
+  const [categoria, setCategoria] = useState(conta.categoria || "")
+  const [fonte, setFonte] = useState(conta.fonte || "")
+
+  // Estados para fornecedores/clientes
+  const [fornecedores, setFornecedores] = useState([])
+  const [loadingFornecedores, setLoadingFornecedores] = useState(false)
+  const [fornecedorSelecionado, setFornecedorSelecionado] = useState(conta.pessoa || null)
+  const [searchFornecedor, setSearchFornecedor] = useState("")
+  const [openFornecedorPopover, setOpenFornecedorPopover] = useState(false)
+
   const labelPessoa = conta.tipo === "pagar" ? "Fornecedor" : "Cliente"
 
-  // Fetch centros based on tipo
+  // Filtrar fornecedores baseado na busca
+  const fornecedoresFiltrados = searchFornecedor.trim()
+    ? fornecedores.filter(f =>
+        f.nome.toLowerCase().includes(searchFornecedor.toLowerCase()) ||
+        f.documento?.includes(searchFornecedor)
+      )
+    : fornecedores
+
+  // Fetch centros based on tipo (com hierarquia)
   useEffect(() => {
     const fetchCentros = async () => {
       setLoadingCentros(true)
       try {
         const tipoCentro = conta.tipo === "pagar" ? "despesa" : "faturamento"
-        const res = await fetch(`/api/centros?tipo=${tipoCentro}`)
+        const res = await fetch(`/api/centros?tipo=${tipoCentro}&hierarquico=true`)
         const data = await res.json()
         setCentros(Array.isArray(data) ? data : [])
       } catch (err) {
@@ -826,9 +997,72 @@ function EditContaModal({ conta, onClose, onSuccess }) {
         setLoadingCentros(false)
       }
     }
-
     fetchCentros()
   }, [conta.tipo])
+
+  // Fetch cartões de crédito (apenas para tipo "pagar")
+  useEffect(() => {
+    if (conta.tipo !== "pagar") return
+    const fetchCartoes = async () => {
+      setLoadingCartoes(true)
+      try {
+        const res = await fetch("/api/cartoes")
+        const data = await res.json()
+        setCartoes(Array.isArray(data) ? data : [])
+      } catch (err) {
+        console.error("Error fetching cartoes:", err)
+        setCartoes([])
+      } finally {
+        setLoadingCartoes(false)
+      }
+    }
+    fetchCartoes()
+  }, [conta.tipo])
+
+  // Fetch contas bancárias
+  useEffect(() => {
+    const fetchBancos = async () => {
+      setLoadingBancos(true)
+      try {
+        const res = await fetch("/api/bancos")
+        const data = await res.json()
+        setBancos(Array.isArray(data) ? data : [])
+      } catch (err) {
+        console.error("Error fetching bancos:", err)
+        setBancos([])
+      } finally {
+        setLoadingBancos(false)
+      }
+    }
+    fetchBancos()
+  }, [])
+
+  // Fetch fornecedores/clientes
+  useEffect(() => {
+    const fetchPessoas = async () => {
+      setLoadingFornecedores(true)
+      try {
+        const tipoPessoa = conta.tipo === "pagar" ? "fornecedor" : "cliente"
+        const res = await fetch(`/api/fornecedores?status=ativo&tipo=${tipoPessoa}`)
+        const data = await res.json()
+        setFornecedores(Array.isArray(data) ? data : [])
+      } catch (err) {
+        console.error("Error fetching pessoas:", err)
+        setFornecedores([])
+      } finally {
+        setLoadingFornecedores(false)
+      }
+    }
+    fetchPessoas()
+  }, [conta.tipo])
+
+  // Selecionar fornecedor
+  const handleSelectFornecedor = (fornecedor) => {
+    setFornecedorSelecionado(fornecedor)
+    setBeneficiario(fornecedor.nome)
+    setSearchFornecedor("")
+    setOpenFornecedorPopover(false)
+  }
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -862,11 +1096,10 @@ function EditContaModal({ conta, onClose, onSuccess }) {
         ? `${parcelaAtual}/${totalParcelas}`
         : parcelaAtual || null
 
-      const response = await fetch("/api/contas", {
+      const response = await fetch(`/api/contas/${conta.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          id: conta.id,
           descricao: descricao.trim(),
           valor: Number(valor),
           vencimento,
@@ -875,6 +1108,14 @@ function EditContaModal({ conta, onClose, onSuccess }) {
           numeroDocumento: numeroDocumento.trim() || null,
           numeroParcela,
           totalParcelas: totalParcelas ? parseInt(totalParcelas) : null,
+          cartaoId: cartaoId && cartaoId !== "none" ? parseInt(cartaoId) : null,
+          bancoContaId: bancoContaId && bancoContaId !== "none" ? parseInt(bancoContaId) : null,
+          formaPagamento: formaPagamento || null,
+          observacoes: observacoes.trim() || null,
+          banco: banco.trim() || null,
+          categoria: categoria.trim() || null,
+          fonte: fonte.trim() || null,
+          pessoaId: fornecedorSelecionado?.id || null,
         }),
       })
 
@@ -893,7 +1134,7 @@ function EditContaModal({ conta, onClose, onSuccess }) {
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <Card className="w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+      <Card className="w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-border">
           <h2 className="text-lg font-semibold text-foreground">
             Editar Conta {conta.tipo === "pagar" ? "a Pagar" : "a Receber"}
@@ -906,18 +1147,91 @@ function EditContaModal({ conta, onClose, onSuccess }) {
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
           <div className="p-6 overflow-y-auto flex-1 space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
-              {/* Fornecedor/Cliente */}
+              {/* Fornecedor/Cliente com busca */}
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">
                   {labelPessoa} *
                 </label>
-                <Input
-                  placeholder={conta.tipo === "pagar" ? "Ex: Fornecedor XYZ" : "Ex: Cliente ABC"}
-                  value={beneficiario}
-                  onChange={(e) => setBeneficiario(e.target.value)}
-                  disabled={isSaving}
-                  required
-                />
+                <Popover open={openFornecedorPopover} onOpenChange={setOpenFornecedorPopover}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={openFornecedorPopover}
+                      className="w-full justify-between font-normal"
+                      disabled={isSaving}
+                    >
+                      {fornecedorSelecionado ? (
+                        <span className="flex items-center gap-2">
+                          <Truck className="h-4 w-4 text-muted-foreground" />
+                          {fornecedorSelecionado.nome}
+                        </span>
+                      ) : beneficiario ? (
+                        <span className="flex items-center gap-2">
+                          <Truck className="h-4 w-4 text-muted-foreground" />
+                          {beneficiario}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">Selecione um {labelPessoa.toLowerCase()}...</span>
+                      )}
+                      <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[300px] p-0" align="start">
+                    <div className="p-2 border-b">
+                      <Input
+                        placeholder={`Buscar ${labelPessoa.toLowerCase()}...`}
+                        value={searchFornecedor}
+                        onChange={(e) => setSearchFornecedor(e.target.value)}
+                        className="h-8"
+                      />
+                    </div>
+                    <div className="max-h-[200px] overflow-y-auto">
+                      {loadingFornecedores ? (
+                        <div className="p-4 text-center text-sm text-muted-foreground">
+                          <Loader2 className="h-4 w-4 animate-spin mx-auto mb-2" />
+                          Carregando...
+                        </div>
+                      ) : fornecedoresFiltrados.length === 0 ? (
+                        <div className="p-4 text-center text-sm text-muted-foreground">
+                          Nenhum {labelPessoa.toLowerCase()} encontrado
+                        </div>
+                      ) : (
+                        fornecedoresFiltrados.map((f) => (
+                          <button
+                            key={f.id}
+                            type="button"
+                            onClick={() => handleSelectFornecedor(f)}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent text-left"
+                          >
+                            {fornecedorSelecionado?.id === f.id && (
+                              <Check className="h-4 w-4 text-primary" />
+                            )}
+                            <Truck className="h-4 w-4 text-muted-foreground" />
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium truncate">{f.nome}</p>
+                              {f.documento && (
+                                <p className="text-xs text-muted-foreground">{f.documento}</p>
+                              )}
+                            </div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                    {/* Opção para digitar manualmente */}
+                    <div className="p-2 border-t">
+                      <Input
+                        placeholder={`Ou digite o nome do ${labelPessoa.toLowerCase()}...`}
+                        value={beneficiario}
+                        onChange={(e) => {
+                          setBeneficiario(e.target.value)
+                          setFornecedorSelecionado(null)
+                        }}
+                        className="h-8"
+                      />
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
 
               {/* Descrição */}
@@ -937,22 +1251,41 @@ function EditContaModal({ conta, onClose, onSuccess }) {
                 <label className="text-sm font-medium text-foreground">
                   Centro de {conta.tipo === "pagar" ? "Custo" : "Receita"}
                 </label>
-                <Select value={codigoTipo} onValueChange={setCodigoTipo} disabled={isSaving || loadingCentros}>
+                <Select value={codigoTipo || "none"} onValueChange={(v) => setCodigoTipo(v === "none" ? "" : v)} disabled={isSaving || loadingCentros}>
                   <SelectTrigger>
                     <SelectValue placeholder={loadingCentros ? "Carregando..." : "Selecione um centro"} />
                   </SelectTrigger>
                   <SelectContent>
-                    {centros.length === 0 ? (
-                      <div className="px-2 py-6 text-center text-sm text-muted-foreground">
-                        Nenhum centro cadastrado
-                      </div>
-                    ) : (
-                      centros.map((centro) => (
-                        <SelectItem key={centro.id} value={centro.sigla}>
-                          {centro.sigla} - {centro.nome}
-                        </SelectItem>
-                      ))
-                    )}
+                    <SelectItem value="none">Nenhum</SelectItem>
+                    {centros.map((centro) => (
+                      <SelectItem
+                        key={centro.id}
+                        value={centro.sigla}
+                        className={centro.level === 1 ? "pl-6" : ""}
+                      >
+                        <span className="flex items-center gap-2">
+                          {centro.level === 1 && (
+                            <span className="text-muted-foreground">└</span>
+                          )}
+                          <span className={centro.isParent ? "font-medium" : ""}>
+                            {centro.sigla}
+                          </span>
+                          <span className="text-muted-foreground">-</span>
+                          <span className={centro.isSocio ? "text-primary" : ""}>
+                            {centro.nome}
+                          </span>
+                          {centro.isSocio ? (
+                            <span className="text-xs px-1.5 py-0.5 bg-primary/10 text-primary rounded">
+                              Sócio
+                            </span>
+                          ) : centro.level === 1 && (
+                            <span className="text-xs px-1.5 py-0.5 bg-muted text-muted-foreground rounded">
+                              Sub
+                            </span>
+                          )}
+                        </span>
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -966,6 +1299,70 @@ function EditContaModal({ conta, onClose, onSuccess }) {
                   onChange={(e) => setNumeroDocumento(e.target.value)}
                   disabled={isSaving}
                 />
+              </div>
+
+              {/* Cartão de Crédito (apenas para tipo pagar) */}
+              {conta.tipo === "pagar" && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground flex items-center gap-2">
+                    <CreditCard className="h-4 w-4" />
+                    Cartão de Crédito
+                  </label>
+                  <Select value={cartaoId} onValueChange={setCartaoId} disabled={isSaving || loadingCartoes}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={loadingCartoes ? "Carregando..." : "Selecione um cartão (opcional)"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Nenhum (pagamento normal)</SelectItem>
+                      {cartoes.map((cartao) => (
+                        <SelectItem key={cartao.id} value={cartao.id.toString()}>
+                          {cartao.nome} (**** {cartao.ultimos4Digitos})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {/* Conta Bancária */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground flex items-center gap-2">
+                  <Building2 className="h-4 w-4" />
+                  Conta Bancária
+                </label>
+                <Select value={bancoContaId} onValueChange={setBancoContaId} disabled={isSaving || loadingBancos}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={loadingBancos ? "Carregando..." : "Selecione uma conta (opcional)"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Nenhuma</SelectItem>
+                    {bancos.map((b) => (
+                      <SelectItem key={b.id} value={b.id.toString()}>
+                        {b.nome} - Ag: {b.agencia} / Cc: {b.conta}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Forma de Pagamento */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Forma de Pagamento</label>
+                <Select value={formaPagamento || "none"} onValueChange={(v) => setFormaPagamento(v === "none" ? "" : v)} disabled={isSaving}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Nenhuma</SelectItem>
+                    <SelectItem value="dinheiro">Dinheiro</SelectItem>
+                    <SelectItem value="pix">PIX</SelectItem>
+                    <SelectItem value="cartao_credito">Cartão de Crédito</SelectItem>
+                    <SelectItem value="cartao_debito">Cartão de Débito</SelectItem>
+                    <SelectItem value="boleto">Boleto</SelectItem>
+                    <SelectItem value="transferencia">Transferência</SelectItem>
+                    <SelectItem value="cheque">Cheque</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* Parcelas */}
@@ -1009,7 +1406,7 @@ function EditContaModal({ conta, onClose, onSuccess }) {
               </div>
 
               {/* Data de Vencimento */}
-              <div className="space-y-2 md:col-span-2">
+              <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">Vencimento *</label>
                 <Input
                   type="date"
@@ -1018,6 +1415,53 @@ function EditContaModal({ conta, onClose, onSuccess }) {
                   required
                   disabled={isSaving}
                   className="w-48"
+                />
+              </div>
+
+              {/* Banco */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Banco</label>
+                <Input
+                  placeholder="Ex: Bradesco, Itaú..."
+                  value={banco}
+                  onChange={(e) => setBanco(e.target.value)}
+                  disabled={isSaving}
+                />
+              </div>
+
+              {/* Fonte (apenas para receber) */}
+              {conta.tipo === "receber" && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Fonte da Receita</label>
+                  <Input
+                    placeholder="Ex: Vendas, Serviços..."
+                    value={fonte}
+                    onChange={(e) => setFonte(e.target.value)}
+                    disabled={isSaving}
+                  />
+                </div>
+              )}
+
+              {/* Categoria */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Categoria</label>
+                <Input
+                  placeholder="Ex: Manutenção, Aluguel..."
+                  value={categoria}
+                  onChange={(e) => setCategoria(e.target.value)}
+                  disabled={isSaving}
+                />
+              </div>
+
+              {/* Observações */}
+              <div className="space-y-2 md:col-span-2">
+                <label className="text-sm font-medium text-foreground">Observações</label>
+                <Textarea
+                  placeholder="Observações adicionais..."
+                  value={observacoes}
+                  onChange={(e) => setObservacoes(e.target.value)}
+                  disabled={isSaving}
+                  rows={3}
                 />
               </div>
             </div>
@@ -1047,6 +1491,453 @@ function EditContaModal({ conta, onClose, onSuccess }) {
                 </>
               ) : (
                 "Salvar Alterações"
+              )}
+            </Button>
+          </div>
+        </form>
+      </Card>
+    </div>
+  )
+}
+
+// Componente de Modal de Edição de Conta Parcelada
+function EditContaParceladaModal({ conta, onClose, onSuccess }) {
+  const [descricao, setDescricao] = useState(conta.descricao || "")
+  const [beneficiario, setBeneficiario] = useState(conta.beneficiario || conta.pessoa?.nome || "")
+  const [codigoTipo, setCodigoTipo] = useState(conta.codigoTipo || "")
+  const [numeroDocumento, setNumeroDocumento] = useState(conta.numeroDocumento || "")
+  const [valorTotal, setValorTotal] = useState(conta.valorTotal || conta.valor || 0)
+  const [totalParcelas, setTotalParcelas] = useState(conta.totalParcelas || conta.parcelas?.length || 1)
+  const [isSaving, setIsSaving] = useState(false)
+  const [error, setError] = useState(null)
+  const [successMessage, setSuccessMessage] = useState(null)
+  const [centros, setCentros] = useState([])
+  const [loadingCentros, setLoadingCentros] = useState(false)
+
+  // Estados adicionais para edição completa
+  const [cartaoId, setCartaoId] = useState(conta.cartaoId?.toString() || "")
+  const [cartoes, setCartoes] = useState([])
+  const [loadingCartoes, setLoadingCartoes] = useState(false)
+  const [bancoContaId, setBancoContaId] = useState(conta.bancoContaId?.toString() || "")
+  const [bancos, setBancos] = useState([])
+  const [loadingBancos, setLoadingBancos] = useState(false)
+  const [formaPagamento, setFormaPagamento] = useState(conta.formaPagamento || "")
+  const [observacoes, setObservacoes] = useState(conta.observacoes || "")
+
+  const labelPessoa = conta.tipo === "pagar" ? "Fornecedor" : "Cliente"
+
+  // Calcular parcelas pagas e não pagas
+  const parcelasPagas = conta.parcelas?.filter(p => p.pago) || []
+  const parcelasNaoPagas = conta.parcelas?.filter(p => !p.pago) || []
+
+  // Calcular valor por parcela
+  const valorParcela = totalParcelas > 0 ? valorTotal / totalParcelas : 0
+
+  // Verificar se pode reduzir parcelas (mínimo = parcelas já pagas)
+  const minParcelas = parcelasPagas.length || 1
+
+  // Fetch centros based on tipo
+  // Fetch centros based on tipo (com hierarquia)
+  useEffect(() => {
+    const fetchCentros = async () => {
+      setLoadingCentros(true)
+      try {
+        const tipoCentro = conta.tipo === "pagar" ? "despesa" : "faturamento"
+        const res = await fetch(`/api/centros?tipo=${tipoCentro}&hierarquico=true`)
+        const data = await res.json()
+        setCentros(Array.isArray(data) ? data : [])
+      } catch (err) {
+        console.error("Error fetching centros:", err)
+        setCentros([])
+      } finally {
+        setLoadingCentros(false)
+      }
+    }
+    fetchCentros()
+  }, [conta.tipo])
+
+  // Fetch cartões de crédito (apenas para tipo "pagar")
+  useEffect(() => {
+    if (conta.tipo !== "pagar") return
+    const fetchCartoes = async () => {
+      setLoadingCartoes(true)
+      try {
+        const res = await fetch("/api/cartoes")
+        const data = await res.json()
+        setCartoes(Array.isArray(data) ? data : [])
+      } catch (err) {
+        console.error("Error fetching cartoes:", err)
+        setCartoes([])
+      } finally {
+        setLoadingCartoes(false)
+      }
+    }
+    fetchCartoes()
+  }, [conta.tipo])
+
+  // Fetch contas bancárias
+  useEffect(() => {
+    const fetchBancos = async () => {
+      setLoadingBancos(true)
+      try {
+        const res = await fetch("/api/bancos")
+        const data = await res.json()
+        setBancos(Array.isArray(data) ? data : [])
+      } catch (err) {
+        console.error("Error fetching bancos:", err)
+        setBancos([])
+      } finally {
+        setLoadingBancos(false)
+      }
+    }
+    fetchBancos()
+  }, [])
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    setError(null)
+    setSuccessMessage(null)
+
+    if (!descricao.trim()) {
+      setError("Descrição é obrigatória")
+      return
+    }
+
+    if (!valorTotal || valorTotal <= 0) {
+      setError("Valor total deve ser maior que zero")
+      return
+    }
+
+    if (!totalParcelas || totalParcelas < minParcelas) {
+      setError(`Total de parcelas deve ser no mínimo ${minParcelas} (parcelas já pagas)`)
+      return
+    }
+
+    setIsSaving(true)
+
+    try {
+      const response = await fetch(`/api/contas/${conta.id}/parcelas`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          descricao: descricao.trim(),
+          valorTotal: Number(valorTotal),
+          totalParcelas: parseInt(totalParcelas),
+          beneficiario: beneficiario.trim() || null,
+          codigoTipo: codigoTipo.trim() || null,
+          numeroDocumento: numeroDocumento.trim() || null,
+          cartaoId: cartaoId && cartaoId !== "none" ? parseInt(cartaoId) : null,
+          bancoContaId: bancoContaId && bancoContaId !== "none" ? parseInt(bancoContaId) : null,
+          formaPagamento: formaPagamento || null,
+          observacoes: observacoes.trim() || null,
+          propagarParaFuturas: true,
+        }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || "Erro ao atualizar conta parcelada")
+      }
+
+      setSuccessMessage(result.message)
+
+      // Aguardar um pouco para mostrar a mensagem de sucesso
+      setTimeout(() => {
+        onSuccess()
+      }, 1500)
+    } catch (err) {
+      setError(err.message || "Erro ao atualizar conta parcelada")
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <Card className="w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-border">
+          <div className="flex items-center gap-2">
+            <Layers className="h-5 w-5 text-foreground" />
+            <h2 className="text-lg font-semibold text-foreground">
+              Editar Lançamento Parcelado
+            </h2>
+          </div>
+          <Button variant="ghost" size="sm" onClick={onClose} disabled={isSaving}>
+            <X className="h-5 w-5" />
+          </Button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+          <div className="p-6 overflow-y-auto flex-1 space-y-4">
+            {/* Info do parcelamento */}
+            <div className="rounded-lg bg-muted/50 border border-border p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-foreground">Status do Parcelamento</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {parcelasPagas.length} de {conta.parcelas?.length || 0} parcelas pagas
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm text-muted-foreground">Valor atual por parcela</p>
+                  <p className="text-lg font-bold text-foreground">
+                    {formatCurrency(conta.valorTotal / (conta.totalParcelas || 1))}
+                  </p>
+                </div>
+              </div>
+              {parcelasPagas.length > 0 && (
+                <p className="text-xs text-muted-foreground mt-2 border-t border-border pt-2">
+                  As alterações serão aplicadas apenas às {parcelasNaoPagas.length} parcelas não pagas
+                </p>
+              )}
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              {/* Descrição */}
+              <div className="space-y-2 md:col-span-2">
+                <label className="text-sm font-medium text-foreground">Descrição *</label>
+                <Input
+                  placeholder="Ex: Compra parcelada"
+                  value={descricao}
+                  onChange={(e) => setDescricao(e.target.value)}
+                  disabled={isSaving}
+                  required
+                />
+              </div>
+
+              {/* Fornecedor/Cliente */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">{labelPessoa}</label>
+                <Input
+                  placeholder={conta.tipo === "pagar" ? "Ex: Fornecedor XYZ" : "Ex: Cliente ABC"}
+                  value={beneficiario}
+                  onChange={(e) => setBeneficiario(e.target.value)}
+                  disabled={isSaving}
+                />
+              </div>
+
+              {/* Centro de Custo/Receita */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">
+                  Centro de {conta.tipo === "pagar" ? "Custo" : "Receita"}
+                </label>
+                <Select value={codigoTipo || "none"} onValueChange={(v) => setCodigoTipo(v === "none" ? "" : v)} disabled={isSaving || loadingCentros}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={loadingCentros ? "Carregando..." : "Selecione um centro"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Nenhum</SelectItem>
+                    {centros.map((centro) => (
+                      <SelectItem
+                        key={centro.id}
+                        value={centro.sigla}
+                        className={centro.level === 1 ? "pl-6" : ""}
+                      >
+                        <span className="flex items-center gap-2">
+                          {centro.level === 1 && (
+                            <span className="text-muted-foreground">└</span>
+                          )}
+                          <span className={centro.isParent ? "font-medium" : ""}>
+                            {centro.sigla}
+                          </span>
+                          <span className="text-muted-foreground">-</span>
+                          <span className={centro.isSocio ? "text-primary" : ""}>
+                            {centro.nome}
+                          </span>
+                          {centro.isSocio ? (
+                            <span className="text-xs px-1.5 py-0.5 bg-primary/10 text-primary rounded">
+                              Sócio
+                            </span>
+                          ) : centro.level === 1 && (
+                            <span className="text-xs px-1.5 py-0.5 bg-muted text-muted-foreground rounded">
+                              Sub
+                            </span>
+                          )}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Número do Documento */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">NF</label>
+                <Input
+                  placeholder="Ex: NF-12345"
+                  value={numeroDocumento}
+                  onChange={(e) => setNumeroDocumento(e.target.value)}
+                  disabled={isSaving}
+                />
+              </div>
+
+              {/* Valor Total */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Valor Total *</label>
+                <CurrencyInput
+                  value={valorTotal}
+                  onValueChange={setValorTotal}
+                  required
+                  disabled={isSaving}
+                />
+              </div>
+
+              {/* Total de Parcelas */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Total de Parcelas *</label>
+                <Input
+                  type="number"
+                  min={minParcelas}
+                  max="48"
+                  value={totalParcelas}
+                  onChange={(e) => setTotalParcelas(e.target.value)}
+                  disabled={isSaving}
+                  className="w-24"
+                />
+                {minParcelas > 1 && (
+                  <p className="text-xs text-muted-foreground">
+                    Mínimo: {minParcelas} (parcelas já pagas)
+                  </p>
+                )}
+              </div>
+
+              {/* Cartão de Crédito (apenas para tipo pagar) */}
+              {conta.tipo === "pagar" && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground flex items-center gap-2">
+                    <CreditCard className="h-4 w-4" />
+                    Cartão de Crédito
+                  </label>
+                  <Select value={cartaoId} onValueChange={setCartaoId} disabled={isSaving || loadingCartoes}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={loadingCartoes ? "Carregando..." : "Selecione um cartão (opcional)"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Nenhum (pagamento normal)</SelectItem>
+                      {cartoes.map((cartao) => (
+                        <SelectItem key={cartao.id} value={cartao.id.toString()}>
+                          {cartao.nome} (**** {cartao.ultimos4Digitos})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {/* Conta Bancária */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground flex items-center gap-2">
+                  <Building2 className="h-4 w-4" />
+                  Conta Bancária
+                </label>
+                <Select value={bancoContaId} onValueChange={setBancoContaId} disabled={isSaving || loadingBancos}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={loadingBancos ? "Carregando..." : "Selecione uma conta (opcional)"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Nenhuma</SelectItem>
+                    {bancos.map((b) => (
+                      <SelectItem key={b.id} value={b.id.toString()}>
+                        {b.nome} - Ag: {b.agencia} / Cc: {b.conta}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Forma de Pagamento */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Forma de Pagamento</label>
+                <Select value={formaPagamento || "none"} onValueChange={(v) => setFormaPagamento(v === "none" ? "" : v)} disabled={isSaving}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Nenhuma</SelectItem>
+                    <SelectItem value="dinheiro">Dinheiro</SelectItem>
+                    <SelectItem value="pix">PIX</SelectItem>
+                    <SelectItem value="cartao_credito">Cartão de Crédito</SelectItem>
+                    <SelectItem value="cartao_debito">Cartão de Débito</SelectItem>
+                    <SelectItem value="boleto">Boleto</SelectItem>
+                    <SelectItem value="transferencia">Transferência</SelectItem>
+                    <SelectItem value="cheque">Cheque</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Observações */}
+              <div className="space-y-2 md:col-span-2">
+                <label className="text-sm font-medium text-foreground">Observações</label>
+                <Textarea
+                  placeholder="Observações adicionais..."
+                  value={observacoes}
+                  onChange={(e) => setObservacoes(e.target.value)}
+                  disabled={isSaving}
+                  rows={3}
+                />
+              </div>
+
+              {/* Preview do novo valor por parcela */}
+              <div className="space-y-2 md:col-span-2">
+                <div className="rounded-lg bg-primary/5 border border-primary/20 p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-primary">Novo valor por parcela</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {formatCurrency(valorTotal)} ÷ {totalParcelas} parcelas
+                      </p>
+                    </div>
+                    <p className="text-2xl font-bold text-primary">
+                      {formatCurrency(valorParcela)}
+                    </p>
+                  </div>
+                  {totalParcelas != conta.totalParcelas && (
+                    <p className="text-xs text-muted-foreground mt-2 pt-2 border-t border-primary/20">
+                      {totalParcelas > conta.totalParcelas
+                        ? `Serão criadas ${totalParcelas - conta.totalParcelas} novas parcelas`
+                        : `Serão removidas ${conta.totalParcelas - totalParcelas} parcelas não pagas`
+                      }
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {error && (
+              <div className="rounded-lg bg-red-50 border border-red-200 p-3">
+                <p className="text-sm text-red-900">{error}</p>
+              </div>
+            )}
+
+            {successMessage && (
+              <div className="rounded-lg bg-green-50 border border-green-200 p-3">
+                <p className="text-sm text-green-900">{successMessage}</p>
+              </div>
+            )}
+          </div>
+
+          <div className="border-t border-border p-4 flex gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1"
+              onClick={onClose}
+              disabled={isSaving}
+            >
+              Cancelar
+            </Button>
+            <Button type="submit" className="flex-1" disabled={isSaving}>
+              {isSaving ? (
+                <>
+                  <Loader2 className="animate-spin h-4 w-4 mr-2" />
+                  Salvando...
+                </>
+              ) : (
+                <>
+                  <Layers className="h-4 w-4 mr-2" />
+                  Salvar e Propagar
+                </>
               )}
             </Button>
           </div>

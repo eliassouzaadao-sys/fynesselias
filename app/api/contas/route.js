@@ -76,12 +76,15 @@ async function propagateToAncestors(parentId, field, increment, userId) {
 }
 
 // Função auxiliar para buscar socioResponsavelId pelo centro de custo
-async function getSocioIdByCentroCusto(sigla, userId) {
+async function getSocioIdByCentroCusto(sigla, userId, empresaId = null) {
   if (!sigla || !userId) return null;
 
   try {
+    const where = { sigla, userId };
+    if (empresaId) where.empresaId = empresaId;
+
     const centro = await prisma.centroCusto.findFirst({
-      where: { sigla, userId },
+      where,
       select: { id: true, isSocio: true }
     });
 
@@ -213,18 +216,25 @@ export async function GET(request) {
     }
 
     // Modo padrão: agrupado (para contas a pagar/receber)
-    // Buscar todas as contas que NÃO são subcontas (parentId = null)
-    // Incluir as parcelas (subcontas) dentro de cada conta pai
+    // Buscar todas as contas que NÃO são subcontas (parentId = null) E NÃO são instâncias de recorrência
+    // Incluir as parcelas (subcontas) e recorrências dentro de cada conta pai
     const contas = await prisma.conta.findMany({
       where: {
         ...whereBase,
         parentId: null, // Apenas contas principais (não parcelas)
+        recorrenciaParentId: null, // Não incluir instâncias de recorrência (elas aparecem dentro do template)
       },
       include: {
         pessoa: true,
         cartao: true,
         socioResponsavel: true,
         parcelas: {
+          orderBy: { vencimento: 'asc' },
+          include: {
+            pessoa: true,
+          }
+        },
+        recorrencias: {
           orderBy: { vencimento: 'asc' },
           include: {
             pessoa: true,
@@ -316,9 +326,10 @@ export async function POST(request) {
       if (data.codigoTipo) contaPaiData.codigoTipo = data.codigoTipo;
       if (data.observacoes) contaPaiData.observacoes = data.observacoes;
       if (data.cartaoId) contaPaiData.cartaoId = Number(data.cartaoId);
+      if (data.bancoContaId) contaPaiData.bancoContaId = Number(data.bancoContaId);
 
       // Buscar socioResponsavelId automaticamente pelo centro de custo
-      const socioIdFromCentro = await getSocioIdByCentroCusto(data.codigoTipo, user.id);
+      const socioIdFromCentro = await getSocioIdByCentroCusto(data.codigoTipo, user.id, empresaId);
       if (socioIdFromCentro) contaPaiData.socioResponsavelId = socioIdFromCentro;
 
       const contaPai = await prisma.conta.create({
@@ -333,17 +344,30 @@ export async function POST(request) {
         await atualizarFaturaCartao(contaPai, data.cartaoId);
       }
 
-      // Atualizar previsto do centro de custo com valor total
+      // Atualizar previsto/descontoPrevisto do centro de custo com valor total
       if (data.codigoTipo) {
+        const whereCentroCusto = { sigla: data.codigoTipo, userId: user.id };
+        if (empresaId) whereCentroCusto.empresaId = empresaId;
+
         const centro = await prisma.centroCusto.findFirst({
-          where: { sigla: data.codigoTipo, userId: user.id },
-          select: { isSocio: true }
+          where: whereCentroCusto,
+          select: { id: true, isSocio: true, descontoPrevisto: true }
         });
 
-        if (centro && !centro.isSocio) {
-          console.log('📊 Atualizando previsto do centro:', data.codigoTipo);
-          await updateCentroAndParent(data.codigoTipo, 'previsto', valorTotal, user.id);
-          console.log('✅ Previsto atualizado com valor total');
+        if (centro) {
+          if (centro.isSocio) {
+            // Se for sócio, atualizar descontoPrevisto
+            await prisma.centroCusto.update({
+              where: { id: centro.id },
+              data: { descontoPrevisto: centro.descontoPrevisto + valorTotal },
+            });
+            console.log('📊 Desconto previsto do sócio atualizado:', valorTotal);
+          } else {
+            // Se não for sócio, atualizar previsto normal
+            console.log('📊 Atualizando previsto do centro:', data.codigoTipo);
+            await updateCentroAndParent(data.codigoTipo, 'previsto', valorTotal, user.id);
+            console.log('✅ Previsto atualizado com valor total');
+          }
         }
       }
 
@@ -481,9 +505,10 @@ export async function POST(request) {
     if (data.codigoTipo) contaData.codigoTipo = data.codigoTipo;
     if (data.observacoes) contaData.observacoes = data.observacoes;
     if (data.cartaoId) contaData.cartaoId = Number(data.cartaoId);
+    if (data.bancoContaId) contaData.bancoContaId = Number(data.bancoContaId);
 
     // Buscar socioResponsavelId automaticamente pelo centro de custo
-    const socioIdFromCentroSimples = await getSocioIdByCentroCusto(data.codigoTipo, user.id);
+    const socioIdFromCentroSimples = await getSocioIdByCentroCusto(data.codigoTipo, user.id, empresaId);
     if (socioIdFromCentroSimples) contaData.socioResponsavelId = socioIdFromCentroSimples;
 
     const novaConta = await prisma.conta.create({
@@ -498,14 +523,25 @@ export async function POST(request) {
       await atualizarFaturaCartao(novaConta, data.cartaoId);
     }
 
-    // Atualizar previsto do centro de custo
-    if (data.codigoTipo) {
-      const centro = await prisma.centroCusto.findFirst({
-        where: { sigla: data.codigoTipo, userId: user.id },
-        select: { isSocio: true }
-      });
+    // Atualizar previsto/descontoPrevisto do centro de custo
+    const whereCentroSimples = { sigla: data.codigoTipo, userId: user.id };
+    if (empresaId) whereCentroSimples.empresaId = empresaId;
 
-      if (centro && !centro.isSocio) {
+    const centroSimples = data.codigoTipo ? await prisma.centroCusto.findFirst({
+      where: whereCentroSimples,
+      select: { id: true, isSocio: true, descontoPrevisto: true }
+    }) : null;
+
+    if (data.codigoTipo && centroSimples) {
+      if (centroSimples.isSocio) {
+        // Se for sócio, atualizar descontoPrevisto
+        await prisma.centroCusto.update({
+          where: { id: centroSimples.id },
+          data: { descontoPrevisto: centroSimples.descontoPrevisto + valorParcela },
+        });
+        console.log('📊 Desconto previsto do sócio atualizado:', valorParcela);
+      } else {
+        // Se não for sócio, atualizar previsto normal
         await updateCentroAndParent(data.codigoTipo, 'previsto', valorParcela, user.id);
       }
     }
@@ -547,8 +583,19 @@ export async function POST(request) {
         data: fluxoData,
       });
 
-      if (novaConta.codigoTipo) {
-        await updateCentroAndParent(novaConta.codigoTipo, 'realizado', Number(novaConta.valor), user.id);
+      // Atualizar realizado/descontoReal do centro de custo
+      if (novaConta.codigoTipo && centroSimples) {
+        if (centroSimples.isSocio && tipoFluxo === 'saida') {
+          // Se for sócio e saída, atualizar descontoReal
+          await prisma.centroCusto.update({
+            where: { id: centroSimples.id },
+            data: { descontoReal: { increment: Number(novaConta.valor) } },
+          });
+          console.log('💰 Desconto real do sócio atualizado:', novaConta.valor);
+        } else if (!centroSimples.isSocio) {
+          // Se não for sócio, atualizar realizado
+          await updateCentroAndParent(novaConta.codigoTipo, 'realizado', Number(novaConta.valor), user.id);
+        }
       }
     }
 
@@ -707,11 +754,31 @@ export async function PUT(request) {
 
       console.log('✅ Fluxo criado:', fluxoCriado.id);
 
-      // Atualizar o campo "realizado" do centro de custo e do pai
+      // Atualizar o campo "realizado" ou "descontoReal" do centro de custo
       if (contaAtualizada.codigoTipo) {
-        console.log('📊 Atualizando centro de custo:', contaAtualizada.codigoTipo);
-        await updateCentroAndParent(contaAtualizada.codigoTipo, 'realizado', Number(contaAtualizada.valor), user.id);
-        console.log('✅ Centro de custo atualizado');
+        const whereCentroPagamento = { sigla: contaAtualizada.codigoTipo, userId: user.id };
+        if (empresaId) whereCentroPagamento.empresaId = empresaId;
+
+        const centroPagamento = await prisma.centroCusto.findFirst({
+          where: whereCentroPagamento,
+          select: { id: true, isSocio: true }
+        });
+
+        if (centroPagamento) {
+          if (centroPagamento.isSocio && tipoFluxo === 'saida') {
+            // Se for sócio e saída, atualizar descontoReal
+            await prisma.centroCusto.update({
+              where: { id: centroPagamento.id },
+              data: { descontoReal: { increment: Number(contaAtualizada.valor) } },
+            });
+            console.log('💰 Desconto real do sócio atualizado:', contaAtualizada.valor);
+          } else if (!centroPagamento.isSocio) {
+            // Se não for sócio, atualizar realizado
+            console.log('📊 Atualizando centro de custo:', contaAtualizada.codigoTipo);
+            await updateCentroAndParent(contaAtualizada.codigoTipo, 'realizado', Number(contaAtualizada.valor), user.id);
+            console.log('✅ Centro de custo atualizado');
+          }
+        }
       } else {
         console.log('⚠️ Conta sem codigoTipo, não atualiza centro de custo');
       }
@@ -729,7 +796,7 @@ export async function PUT(request) {
 }
 
 // Função auxiliar para deletar uma conta individual (usada no delete principal e para parcelas)
-async function deletarContaIndividual(conta, userId) {
+async function deletarContaIndividual(conta, userId, empresaId = null) {
   console.log('📊 Deletando conta:', {
     id: conta.id,
     tipo: conta.tipo,
@@ -740,25 +807,44 @@ async function deletarContaIndividual(conta, userId) {
 
   // Se tem codigoTipo, precisa atualizar os centros de custo
   if (conta.codigoTipo) {
+    const whereCentro = { sigla: conta.codigoTipo, userId };
+    if (empresaId) whereCentro.empresaId = empresaId;
+
     const centro = await prisma.centroCusto.findFirst({
-      where: { sigla: conta.codigoTipo, userId },
-      select: { isSocio: true }
+      where: whereCentro,
+      select: { id: true, isSocio: true }
     });
 
-    // Decrementar previsto apenas se NÃO for sócio
-    if (centro && !centro.isSocio) {
-      console.log('📊 Decrementando previsto do centro:', conta.codigoTipo);
-      await updateCentroAndParent(conta.codigoTipo, 'previsto', -Number(conta.valor), userId);
-      console.log('✅ Previsto decrementado');
-    } else if (centro && centro.isSocio) {
-      console.log('👤 Centro é sócio, não decrementa previsto (pró-labore base fixo)');
-    }
+    if (centro) {
+      if (centro.isSocio) {
+        // Se for sócio, decrementar descontoPrevisto
+        await prisma.centroCusto.update({
+          where: { id: centro.id },
+          data: { descontoPrevisto: { decrement: Number(conta.valor) } },
+        });
+        console.log('📊 Desconto previsto do sócio decrementado:', conta.valor);
 
-    // Se estava paga, decrementar do realizado (independente de ser sócio ou não)
-    if (conta.pago) {
-      console.log('📊 Conta estava paga, decrementando realizado também');
-      await updateCentroAndParent(conta.codigoTipo, 'realizado', -Number(conta.valor), userId);
-      console.log('✅ Realizado decrementado');
+        // Se estava paga, decrementar descontoReal também
+        if (conta.pago) {
+          await prisma.centroCusto.update({
+            where: { id: centro.id },
+            data: { descontoReal: { decrement: Number(conta.valor) } },
+          });
+          console.log('💰 Desconto real do sócio decrementado:', conta.valor);
+        }
+      } else {
+        // Se não for sócio, decrementar previsto normal
+        console.log('📊 Decrementando previsto do centro:', conta.codigoTipo);
+        await updateCentroAndParent(conta.codigoTipo, 'previsto', -Number(conta.valor), userId);
+        console.log('✅ Previsto decrementado');
+
+        // Se estava paga, decrementar do realizado
+        if (conta.pago) {
+          console.log('📊 Conta estava paga, decrementando realizado também');
+          await updateCentroAndParent(conta.codigoTipo, 'realizado', -Number(conta.valor), userId);
+          console.log('✅ Realizado decrementado');
+        }
+      }
     }
   } else {
     console.log('⚠️ Conta sem codigoTipo, não atualiza centros');
@@ -819,14 +905,14 @@ export async function DELETE(request) {
       console.log(`📦 Conta pai com ${conta.parcelas.length} parcelas, deletando todas...`);
 
       for (const parcela of conta.parcelas) {
-        await deletarContaIndividual(parcela, user.id);
+        await deletarContaIndividual(parcela, user.id, empresaId);
       }
 
       console.log('✅ Todas as parcelas deletadas');
     }
 
     // Agora deletar a conta principal (ou a conta simples sem parcelas)
-    await deletarContaIndividual(conta, user.id);
+    await deletarContaIndividual(conta, user.id, empresaId);
 
     // Recalcular saldos do fluxo de caixa se alguma conta estava paga
     const precisaRecalcular = conta.pago || (conta.parcelas && conta.parcelas.some(p => p.pago));

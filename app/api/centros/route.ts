@@ -16,6 +16,7 @@ export async function GET(request: Request) {
     const tipo = searchParams.get("tipo");
     const dataInicio = searchParams.get("dataInicio");
     const dataFim = searchParams.get("dataFim");
+    const hierarquico = searchParams.get("hierarquico"); // Novo parâmetro
 
     const where: any = {
       ativo: true,
@@ -30,8 +31,61 @@ export async function GET(request: Request) {
 
     const centros = await prisma.centroCusto.findMany({
       where,
+      include: {
+        subcentros: {
+          where: { ativo: true },
+          orderBy: { nome: "asc" },
+        },
+      },
       orderBy: { sigla: "asc" },
     });
+
+    // Se hierarquico=true, retorna estrutura plana com indicação de hierarquia
+    if (hierarquico === "true") {
+      const centrosHierarquicos: any[] = [];
+
+      // Primeiro, centros sem parent (principais)
+      const centrosPrincipais = centros.filter((c) => !c.parentId && !c.isSocio);
+
+      for (const centro of centrosPrincipais) {
+        // Adiciona o centro principal
+        centrosHierarquicos.push({
+          ...centro,
+          level: 0,
+          isParent: centro.subcentros && centro.subcentros.length > 0,
+        });
+
+        // Adiciona subcentros (incluindo sócios se for PRO-LABORE)
+        if (centro.subcentros && centro.subcentros.length > 0) {
+          for (const sub of centro.subcentros) {
+            centrosHierarquicos.push({
+              ...sub,
+              level: 1,
+              isParent: false,
+              parentNome: centro.nome,
+              parentSigla: centro.sigla,
+            });
+          }
+        }
+      }
+
+      // Adiciona centros sem parent que são sócios (para o caso de estarem órfãos)
+      const sociosOrfaos = centros.filter((c) => c.isSocio && !c.parentId);
+      for (const socio of sociosOrfaos) {
+        // Verifica se já não foi adicionado
+        if (!centrosHierarquicos.find((ch) => ch.id === socio.id)) {
+          centrosHierarquicos.push({
+            ...socio,
+            level: 1,
+            isParent: false,
+            parentNome: "Pró-labore",
+            parentSigla: "PRO-LABORE",
+          });
+        }
+      }
+
+      return NextResponse.json(centrosHierarquicos);
+    }
 
     // Se há filtro de data, calcular previsto e realizado dinamicamente
     if (dataInicio && dataFim) {

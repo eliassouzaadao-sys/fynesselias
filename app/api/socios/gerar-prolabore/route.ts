@@ -65,7 +65,26 @@ export async function POST(request: Request) {
     // Para cada sócio, calcular os descontos e criar conta de pró-labore
     for (const socio of socios) {
       try {
-        // Buscar contas pagas vinculadas a este sócio que ainda NÃO foram processadas
+        // 1. Buscar descontos recorrentes (previstos) ativos do sócio
+        const whereDescontosRecorrentes: any = {
+          socioId: socio.id,
+          userId: user.id,
+          ativo: true,
+        };
+        if (empresaId) whereDescontosRecorrentes.empresaId = empresaId;
+
+        const descontosRecorrentes = await prisma.descontoRecorrente.findMany({
+          where: whereDescontosRecorrentes,
+          select: {
+            id: true,
+            nome: true,
+            valor: true,
+          },
+        });
+
+        const descontosPrevistos = descontosRecorrentes.reduce((acc, d) => acc + Number(d.valor), 0);
+
+        // 2. Buscar contas pagas vinculadas a este sócio que ainda NÃO foram processadas (descontos reais)
         const whereContas: any = {
           userId: user.id,
           socioResponsavelId: socio.id,
@@ -93,9 +112,12 @@ export async function POST(request: Request) {
           return false;
         });
 
-        const descontos = contasValidas.reduce((acc, c) => acc + Number(c.valor), 0);
+        const descontosReais = contasValidas.reduce((acc, c) => acc + Number(c.valor), 0);
+
+        // Total de descontos = previstos + reais
+        const totalDescontos = descontosPrevistos + descontosReais;
         const proLaboreBase = socio.previsto || 0;
-        const proLaboreLiquido = proLaboreBase - descontos;
+        const proLaboreLiquido = proLaboreBase - totalDescontos;
 
         // Criar conta a pagar do pró-labore
         const contaProLabore = await prisma.conta.create({
@@ -107,7 +129,7 @@ export async function POST(request: Request) {
             categoria: "Pró-labore",
             subcategoria: socio.nome,
             codigoTipo: "PRO-LABORE",
-            observacoes: `Pró-labore Base: R$ ${proLaboreBase.toFixed(2)} | Descontos: R$ ${descontos.toFixed(2)} | Líquido: R$ ${proLaboreLiquido.toFixed(2)}`,
+            observacoes: `Pró-labore Base: R$ ${proLaboreBase.toFixed(2)} | Descontos Previstos: R$ ${descontosPrevistos.toFixed(2)} | Descontos Reais: R$ ${descontosReais.toFixed(2)} | Total Descontos: R$ ${totalDescontos.toFixed(2)} | Líquido: R$ ${proLaboreLiquido.toFixed(2)}`,
             pago: false,
             status: "pendente",
             userId: user.id,
@@ -115,8 +137,15 @@ export async function POST(request: Request) {
           },
         });
 
-        // Preparar detalhes dos descontos para o histórico
-        const descontosDetalhes = contasValidas.map(c => ({
+        // Preparar detalhes dos descontos previstos (recorrentes)
+        const descontosPrevistosDetalhes = descontosRecorrentes.map(d => ({
+          id: d.id,
+          nome: d.nome,
+          valor: d.valor,
+        }));
+
+        // Preparar detalhes dos descontos reais (contas pagas)
+        const descontosReaisDetalhes = contasValidas.map(c => ({
           id: c.id,
           descricao: c.descricao,
           valor: c.valor,
@@ -132,9 +161,15 @@ export async function POST(request: Request) {
             socioNome: socio.nome,
             socioCpf: socio.cpfSocio,
             proLaboreBase,
-            totalDescontos: descontos,
+            totalDescontos,
             proLaboreLiquido,
-            descontosJson: JSON.stringify(descontosDetalhes),
+            // Novos campos para separar descontos
+            descontosPrevistos,
+            descontosPrevistosJson: JSON.stringify(descontosPrevistosDetalhes),
+            descontosReais,
+            descontosReaisJson: JSON.stringify(descontosReaisDetalhes),
+            // Campo antigo para retrocompatibilidade
+            descontosJson: JSON.stringify([...descontosPrevistosDetalhes, ...descontosReaisDetalhes]),
             contaGeradaId: contaProLabore.id,
             pago: false,
             userId: user.id,
@@ -157,10 +192,13 @@ export async function POST(request: Request) {
         contasCriadas.push({
           socio: socio.nome,
           proLaboreBase,
-          descontos,
+          descontosPrevistos,
+          descontosReais,
+          totalDescontos,
           proLaboreLiquido,
           contaId: contaProLabore.id,
           contasProcessadas: contasValidas.length,
+          descontosRecorrentesCount: descontosRecorrentes.length,
         });
 
         historicoCriado.push({

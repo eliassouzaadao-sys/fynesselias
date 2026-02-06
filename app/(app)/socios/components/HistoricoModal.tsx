@@ -3,8 +3,20 @@
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { Label } from "@/components/ui/label"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog"
 import { formatCurrency } from "@/lib/format"
-import { X, Loader2, Calendar, TrendingDown, Wallet, CheckCircle, Clock, ChevronDown, ChevronUp } from "lucide-react"
+import { Loader2, Calendar, TrendingDown, Wallet, CheckCircle, Clock, ChevronDown, ChevronUp, History } from "lucide-react"
 
 interface HistoricoItem {
   id: number
@@ -34,7 +46,7 @@ interface HistoricoModalProps {
 }
 
 const meses = [
-  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Janeiro", "Fevereiro", "Marco", "Abril", "Maio", "Junho",
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
 ]
 
@@ -48,7 +60,7 @@ export function HistoricoModal({ onClose }: HistoricoModalProps) {
     totalLiquido: 0,
     quantidadeRegistros: 0,
   })
-  const [anoSelecionado, setAnoSelecionado] = useState(new Date().getFullYear())
+  const [anoSelecionado, setAnoSelecionado] = useState(new Date().getFullYear().toString())
   const [expandido, setExpandido] = useState<string | null>(null)
 
   const loadHistorico = async () => {
@@ -61,7 +73,7 @@ export function HistoricoModal({ onClose }: HistoricoModalProps) {
       setPorMes(data.porMes || {})
       setTotais(data.totais || { totalBase: 0, totalDescontos: 0, totalLiquido: 0, quantidadeRegistros: 0 })
     } catch (e) {
-      console.error("Erro ao carregar histórico:", e)
+      console.error("Erro ao carregar historico:", e)
     } finally {
       setLoading(false)
     }
@@ -76,40 +88,36 @@ export function HistoricoModal({ onClose }: HistoricoModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <Card className="w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-4xl max-h-[90vh] p-0">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-border">
-          <div className="flex items-center gap-3">
-            <Calendar className="h-5 w-5 text-primary" />
-            <div>
-              <h2 className="text-lg font-semibold text-foreground">Histórico de Pró-labore</h2>
-              <p className="text-sm text-muted-foreground">Pagamentos gerados por mês</p>
-            </div>
-          </div>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            <X className="h-5 w-5" />
-          </Button>
-        </div>
+        <DialogHeader className="p-6 pb-4">
+          <DialogTitle className="flex items-center gap-2">
+            <History className="h-5 w-5 text-primary" />
+            Historico de Pro-labore
+          </DialogTitle>
+          <DialogDescription>
+            Pagamentos gerados por mes
+          </DialogDescription>
+        </DialogHeader>
 
         {/* Filtros */}
-        <div className="p-4 border-b border-border bg-muted/30">
-          <div className="flex items-center gap-4">
-            <label className="text-sm font-medium text-foreground">Ano:</label>
-            <select
-              value={anoSelecionado}
-              onChange={(e) => setAnoSelecionado(parseInt(e.target.value))}
-              className="px-3 py-1.5 border border-border rounded-md bg-background text-sm"
-            >
+        <div className="px-6 py-3 border-y bg-muted/30 flex items-center gap-4">
+          <Label htmlFor="ano" className="text-sm">Ano:</Label>
+          <Select value={anoSelecionado} onValueChange={setAnoSelecionado}>
+            <SelectTrigger id="ano" className="w-[120px]">
+              <SelectValue placeholder="Ano" />
+            </SelectTrigger>
+            <SelectContent>
               {[2024, 2025, 2026, 2027].map(ano => (
-                <option key={ano} value={ano}>{ano}</option>
+                <SelectItem key={ano} value={ano.toString()}>{ano}</SelectItem>
               ))}
-            </select>
-          </div>
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto p-4">
+        <ScrollArea className="h-[50vh] px-6">
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -117,45 +125,45 @@ export function HistoricoModal({ onClose }: HistoricoModalProps) {
           ) : Object.keys(porMes).length === 0 ? (
             <div className="text-center py-12">
               <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-foreground mb-2">Nenhum histórico encontrado</h3>
+              <h3 className="text-lg font-medium text-foreground mb-2">Nenhum historico encontrado</h3>
               <p className="text-sm text-muted-foreground">
-                Não há registros de pró-labore para {anoSelecionado}
+                Nao ha registros de pro-labore para {anoSelecionado}
               </p>
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-4 py-4">
               {/* Totais do Ano */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <Card className="p-4 bg-green-50 border-green-200">
+                <Card className="p-4 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800">
                   <div className="flex items-center gap-3">
-                    <Wallet className="h-5 w-5 text-green-600" />
+                    <Wallet className="h-5 w-5 text-green-600 dark:text-green-400" />
                     <div>
-                      <p className="text-xs text-green-600/80">Total Bruto</p>
-                      <p className="text-lg font-bold text-green-700">{formatCurrency(totais.totalBase)}</p>
+                      <p className="text-xs text-green-600/80 dark:text-green-400/80">Total Bruto</p>
+                      <p className="text-lg font-bold text-green-700 dark:text-green-400">{formatCurrency(totais.totalBase)}</p>
                     </div>
                   </div>
                 </Card>
-                <Card className="p-4 bg-red-50 border-red-200">
+                <Card className="p-4 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800">
                   <div className="flex items-center gap-3">
-                    <TrendingDown className="h-5 w-5 text-red-600" />
+                    <TrendingDown className="h-5 w-5 text-red-600 dark:text-red-400" />
                     <div>
-                      <p className="text-xs text-red-600/80">Total Descontos</p>
-                      <p className="text-lg font-bold text-red-700">{formatCurrency(totais.totalDescontos)}</p>
+                      <p className="text-xs text-red-600/80 dark:text-red-400/80">Total Descontos</p>
+                      <p className="text-lg font-bold text-red-700 dark:text-red-400">{formatCurrency(totais.totalDescontos)}</p>
                     </div>
                   </div>
                 </Card>
-                <Card className="p-4 bg-blue-50 border-blue-200">
+                <Card className="p-4 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
                   <div className="flex items-center gap-3">
-                    <CheckCircle className="h-5 w-5 text-blue-600" />
+                    <CheckCircle className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                     <div>
-                      <p className="text-xs text-blue-600/80">Total Líquido</p>
-                      <p className="text-lg font-bold text-blue-700">{formatCurrency(totais.totalLiquido)}</p>
+                      <p className="text-xs text-blue-600/80 dark:text-blue-400/80">Total Liquido</p>
+                      <p className="text-lg font-bold text-blue-700 dark:text-blue-400">{formatCurrency(totais.totalLiquido)}</p>
                     </div>
                   </div>
                 </Card>
               </div>
 
-              {/* Lista por Mês */}
+              {/* Lista por Mes */}
               {Object.entries(porMes)
                 .sort(([a], [b]) => {
                   const [mesA, anoA] = a.split('/').map(Number)
@@ -171,117 +179,122 @@ export function HistoricoModal({ onClose }: HistoricoModalProps) {
                   const isExpanded = expandido === periodo
 
                   return (
-                    <Card key={periodo} className="overflow-hidden">
-                      {/* Header do Mês */}
-                      <button
-                        onClick={() => toggleExpandir(periodo)}
-                        className="w-full p-4 flex items-center justify-between hover:bg-muted/50 transition-colors"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 rounded-lg bg-primary/10">
-                            <Calendar className="h-4 w-4 text-primary" />
-                          </div>
-                          <div className="text-left">
-                            <p className="font-semibold text-foreground">{mesNome} {periodo.split('/')[1]}</p>
-                            <p className="text-xs text-muted-foreground">{items.length} sócio(s)</p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-6">
-                          <div className="text-right">
-                            <p className="text-xs text-muted-foreground">Líquido Total</p>
-                            <p className="font-semibold text-foreground">{formatCurrency(totalMesLiquido)}</p>
-                          </div>
-                          {isExpanded ? (
-                            <ChevronUp className="h-5 w-5 text-muted-foreground" />
-                          ) : (
-                            <ChevronDown className="h-5 w-5 text-muted-foreground" />
-                          )}
-                        </div>
-                      </button>
-
-                      {/* Detalhes Expandidos */}
-                      {isExpanded && (
-                        <div className="border-t border-border p-4 bg-muted/20 space-y-3">
-                          {items.map(item => (
-                            <div key={item.id} className="p-3 bg-background rounded-lg border border-border">
-                              <div className="flex items-center justify-between mb-2">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-medium text-foreground">{item.socioNome}</span>
-                                  {item.pago ? (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-green-100 text-green-700 rounded-full">
-                                      <CheckCircle className="h-3 w-3" />
-                                      Pago
-                                    </span>
-                                  ) : (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-700 rounded-full">
-                                      <Clock className="h-3 w-3" />
-                                      Pendente
-                                    </span>
-                                  )}
-                                </div>
-                                <span className="font-semibold text-primary">{formatCurrency(item.proLaboreLiquido)}</span>
+                    <Collapsible
+                      key={periodo}
+                      open={isExpanded}
+                      onOpenChange={() => toggleExpandir(periodo)}
+                    >
+                      <Card className="overflow-hidden">
+                        {/* Header do Mes */}
+                        <CollapsibleTrigger asChild>
+                          <button className="w-full p-4 flex items-center justify-between hover:bg-muted/50 transition-colors">
+                            <div className="flex items-center gap-3">
+                              <div className="p-2 rounded-lg bg-primary/10">
+                                <Calendar className="h-4 w-4 text-primary" />
                               </div>
-
-                              <div className="grid grid-cols-3 gap-4 text-sm">
-                                <div>
-                                  <p className="text-muted-foreground text-xs">Base</p>
-                                  <p className="font-medium">{formatCurrency(item.proLaboreBase)}</p>
-                                </div>
-                                <div>
-                                  <p className="text-muted-foreground text-xs">Descontos</p>
-                                  <p className="font-medium text-red-600">-{formatCurrency(item.totalDescontos)}</p>
-                                </div>
-                                <div>
-                                  <p className="text-muted-foreground text-xs">Líquido</p>
-                                  <p className="font-medium text-green-600">{formatCurrency(item.proLaboreLiquido)}</p>
-                                </div>
+                              <div className="text-left">
+                                <p className="font-semibold text-foreground">{mesNome} {periodo.split('/')[1]}</p>
+                                <p className="text-xs text-muted-foreground">{items.length} socio(s)</p>
                               </div>
+                            </div>
 
-                              {/* Detalhes dos Descontos */}
-                              {item.descontos.length > 0 && (
-                                <div className="mt-3 pt-3 border-t border-border">
-                                  <p className="text-xs font-medium text-muted-foreground mb-2">Detalhes dos Descontos:</p>
-                                  <div className="space-y-1">
-                                    {item.descontos.map((d, idx) => (
-                                      <div key={idx} className="flex justify-between text-xs">
-                                        <span className="text-muted-foreground truncate max-w-[200px]">{d.descricao}</span>
-                                        <span className="text-red-600">-{formatCurrency(d.valor)}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
+                            <div className="flex items-center gap-6">
+                              <div className="text-right">
+                                <p className="text-xs text-muted-foreground">Liquido Total</p>
+                                <p className="font-semibold text-foreground">{formatCurrency(totalMesLiquido)}</p>
+                              </div>
+                              {isExpanded ? (
+                                <ChevronUp className="h-5 w-5 text-muted-foreground" />
+                              ) : (
+                                <ChevronDown className="h-5 w-5 text-muted-foreground" />
                               )}
                             </div>
-                          ))}
+                          </button>
+                        </CollapsibleTrigger>
 
-                          {/* Resumo do Mês */}
-                          <div className="p-3 bg-primary/5 rounded-lg border border-primary/20">
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm font-medium text-foreground">Resumo do Mês</span>
-                              <div className="flex items-center gap-4 text-sm">
-                                <span className="text-muted-foreground">Base: <span className="font-medium text-foreground">{formatCurrency(totalMesBase)}</span></span>
-                                <span className="text-muted-foreground">Desc: <span className="font-medium text-red-600">-{formatCurrency(totalMesDescontos)}</span></span>
-                                <span className="text-muted-foreground">Líquido: <span className="font-semibold text-primary">{formatCurrency(totalMesLiquido)}</span></span>
+                        {/* Detalhes Expandidos */}
+                        <CollapsibleContent>
+                          <div className="border-t border-border p-4 bg-muted/20 space-y-3">
+                            {items.map(item => (
+                              <div key={item.id} className="p-3 bg-background rounded-lg border border-border">
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-medium text-foreground">{item.socioNome}</span>
+                                    {item.pago ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-green-100 text-green-700 dark:bg-green-800/50 dark:text-green-300 rounded-full">
+                                        <CheckCircle className="h-3 w-3" />
+                                        Pago
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-700 dark:bg-yellow-800/50 dark:text-yellow-300 rounded-full">
+                                        <Clock className="h-3 w-3" />
+                                        Pendente
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="font-semibold text-primary">{formatCurrency(item.proLaboreLiquido)}</span>
+                                </div>
+
+                                <div className="grid grid-cols-3 gap-4 text-sm">
+                                  <div>
+                                    <p className="text-muted-foreground text-xs">Base</p>
+                                    <p className="font-medium">{formatCurrency(item.proLaboreBase)}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-muted-foreground text-xs">Descontos</p>
+                                    <p className="font-medium text-red-600 dark:text-red-400">-{formatCurrency(item.totalDescontos)}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-muted-foreground text-xs">Liquido</p>
+                                    <p className="font-medium text-green-600 dark:text-green-400">{formatCurrency(item.proLaboreLiquido)}</p>
+                                  </div>
+                                </div>
+
+                                {/* Detalhes dos Descontos */}
+                                {item.descontos.length > 0 && (
+                                  <div className="mt-3 pt-3 border-t border-border">
+                                    <p className="text-xs font-medium text-muted-foreground mb-2">Detalhes dos Descontos:</p>
+                                    <div className="space-y-1">
+                                      {item.descontos.map((d, idx) => (
+                                        <div key={idx} className="flex justify-between text-xs">
+                                          <span className="text-muted-foreground truncate max-w-[200px]">{d.descricao}</span>
+                                          <span className="text-red-600 dark:text-red-400">-{formatCurrency(d.valor)}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+
+                            {/* Resumo do Mes */}
+                            <div className="p-3 bg-primary/5 rounded-lg border border-primary/20">
+                              <div className="flex justify-between items-center">
+                                <span className="text-sm font-medium text-foreground">Resumo do Mes</span>
+                                <div className="flex items-center gap-4 text-sm">
+                                  <span className="text-muted-foreground">Base: <span className="font-medium text-foreground">{formatCurrency(totalMesBase)}</span></span>
+                                  <span className="text-muted-foreground">Desc: <span className="font-medium text-red-600 dark:text-red-400">-{formatCurrency(totalMesDescontos)}</span></span>
+                                  <span className="text-muted-foreground">Liquido: <span className="font-semibold text-primary">{formatCurrency(totalMesLiquido)}</span></span>
+                                </div>
                               </div>
                             </div>
                           </div>
-                        </div>
-                      )}
-                    </Card>
+                        </CollapsibleContent>
+                      </Card>
+                    </Collapsible>
                   )
                 })}
             </div>
           )}
-        </div>
+        </ScrollArea>
 
         {/* Footer */}
-        <div className="border-t border-border p-4">
+        <DialogFooter className="p-4 border-t">
           <Button variant="outline" onClick={onClose} className="w-full">
             Fechar
           </Button>
-        </div>
-      </Card>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
