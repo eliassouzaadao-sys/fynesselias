@@ -1168,7 +1168,7 @@ export function FluxoCaixaContent() {
                   return (
                     <div
                       key={banco.id}
-                      className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border bg-muted/30 min-w-[180px]"
+                      className={`flex items-center gap-3 px-3 py-2 rounded-lg border min-w-[180px] ${banco.conciliadoEm ? 'bg-amber-100 border-amber-300' : 'bg-muted/30 border-border'}`}
                     >
                       <div className={`p-1.5 rounded-full ${saldo >= 0 ? 'bg-green-100' : 'bg-red-100'}`}>
                         <Building2 className={`h-3.5 w-3.5 ${saldo >= 0 ? 'text-green-600' : 'text-red-600'}`} />
@@ -1457,7 +1457,7 @@ export function FluxoCaixaContent() {
                     bancos.map((banco) => (
                       <tr
                         key={banco.id}
-                        className="border-b border-border hover:bg-muted/50 transition-colors"
+                        className={`border-b border-border transition-colors ${banco.conciliadoEm ? 'bg-amber-100 hover:bg-amber-200' : 'hover:bg-muted/50'}`}
                       >
                         <td className="py-3 px-4 text-sm text-foreground">
                           <span className="font-medium">{banco.codigo}</span>
