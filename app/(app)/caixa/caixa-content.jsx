@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { formatCurrency, formatDate } from "@/lib/format"
 import { CurrencyInput } from "@/components/ui/currency-input"
-import { TrendingUp, TrendingDown, Building2, Plus, X, Trash2, Edit, Copy, ChevronDown, Calendar, Clock, CheckCircle2, ArrowDownCircle, ArrowUpCircle, Filter, Search, CreditCard, Wallet, Loader2, Eye, Truck, Check, UserPlus } from "lucide-react"
+import { TrendingUp, TrendingDown, Building2, Plus, X, Trash2, Edit, Copy, ChevronDown, Calendar, Clock, CheckCircle2, ArrowDownCircle, ArrowUpCircle, Filter, Search, CreditCard, Wallet, Loader2, Eye, Truck, Check, UserPlus, Circle } from "lucide-react"
 import {
   Popover,
   PopoverContent,
@@ -23,15 +23,62 @@ export function FluxoCaixaContent() {
   const [fluxoCaixa, setFluxoCaixa] = useState([])
   const [activeTab, setActiveTab] = useState("fluxo") // "fluxo", "bancos" ou "cartoes"
 
-  // Estados para filtro de data
-  const [dataInicio, setDataInicio] = useState("")
-  const [dataFim, setDataFim] = useState("")
-  const [filtroAtivo, setFiltroAtivo] = useState("todos") // todos, hoje, amanha, personalizado
+  // Estados para filtro de data - com persistência no localStorage
+  const [dataInicio, setDataInicioState] = useState("")
+  const [dataFim, setDataFimState] = useState("")
+  const [filtroAtivo, setFiltroAtivoState] = useState("todos") // todos, hoje, amanha, personalizado
+
+  // Carregar filtros do localStorage na inicialização
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedDataInicio = localStorage.getItem('filtro_caixa_dataInicio')
+      const savedDataFim = localStorage.getItem('filtro_caixa_dataFim')
+      const savedFiltroAtivo = localStorage.getItem('filtro_caixa_filtroAtivo')
+
+      if (savedDataInicio) setDataInicioState(savedDataInicio)
+      if (savedDataFim) setDataFimState(savedDataFim)
+      if (savedFiltroAtivo) setFiltroAtivoState(savedFiltroAtivo)
+    }
+  }, [])
+
+  // Funções wrapper para salvar no localStorage
+  const setDataInicio = (value) => {
+    setDataInicioState(value)
+    if (typeof window !== 'undefined') {
+      if (value) {
+        localStorage.setItem('filtro_caixa_dataInicio', value)
+      } else {
+        localStorage.removeItem('filtro_caixa_dataInicio')
+      }
+    }
+  }
+
+  const setDataFim = (value) => {
+    setDataFimState(value)
+    if (typeof window !== 'undefined') {
+      if (value) {
+        localStorage.setItem('filtro_caixa_dataFim', value)
+      } else {
+        localStorage.removeItem('filtro_caixa_dataFim')
+      }
+    }
+  }
+
+  const setFiltroAtivo = (value) => {
+    setFiltroAtivoState(value)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('filtro_caixa_filtroAtivo', value)
+    }
+  }
 
   // Estados para filtros avancados
+  const [searchTerm, setSearchTerm] = useState("")
   const [filtroCodigo, setFiltroCodigo] = useState("")
   const [filtroDescricao, setFiltroDescricao] = useState("")
   const [filtroBancoId, setFiltroBancoId] = useState("")
+  const [filtroTipoFluxo, setFiltroTipoFluxo] = useState("") // "", "entrada", "saida"
+  const [filtroValorMin, setFiltroValorMin] = useState("")
+  const [filtroValorMax, setFiltroValorMax] = useState("")
   const [showFiltrosAvancados, setShowFiltrosAvancados] = useState(false)
 
   // Estados para bancos
@@ -55,7 +102,6 @@ export function FluxoCaixaContent() {
   const [showNovoCartaoModal, setShowNovoCartaoModal] = useState(false)
   const [cartaoParaEditar, setCartaoParaEditar] = useState(null)
   const [cartaoParaFaturas, setCartaoParaFaturas] = useState(null)
-  const [faturas, setFaturas] = useState([])
   const [loadingFaturas, setLoadingFaturas] = useState(false)
   const [faturaDetalhe, setFaturaDetalhe] = useState(null)
 
@@ -99,6 +145,8 @@ export function FluxoCaixaContent() {
   const [selectedBancoId, setSelectedBancoId] = useState(null)
   const [contaParaPagar, setContaParaPagar] = useState(null)
   const [processandoPagamento, setProcessandoPagamento] = useState(false)
+  const [dataPagamentoSelecionada, setDataPagamentoSelecionada] = useState(new Date().toISOString().split('T')[0])
+  const [valorPago, setValorPago] = useState(0)
 
   // Buscar dados do fluxo de caixa e bancos
   useEffect(() => {
@@ -160,6 +208,8 @@ export function FluxoCaixaContent() {
     setContaParaPagar(conta)
     fetchBancos()
     setSelectedBancoId(null)
+    setDataPagamentoSelecionada(new Date().toISOString().split('T')[0])
+    setValorPago(conta.valor) // Inicializa com valor original
     setShowBancoSelector(true)
   }
 
@@ -175,13 +225,15 @@ export function FluxoCaixaContent() {
         body: JSON.stringify({
           id: contaParaPagar.id,
           pago: true,
-          dataPagamento: new Date(),
-          bancoId: selectedBancoId
+          dataPagamento: dataPagamentoSelecionada,
+          bancoId: selectedBancoId,
+          valorPago: valorPago
         }),
       })
       setShowBancoSelector(false)
       setContaParaPagar(null)
       setSelectedBancoId(null)
+      setValorPago(0)
       // Recarregar contas pendentes e fluxo
       fetchContasPendentes()
       const fluxoRes = await fetch('/api/fluxo-caixa')
@@ -277,6 +329,17 @@ export function FluxoCaixaContent() {
   async function handleSaveBanco(e) {
     e.preventDefault()
 
+    // Validação de campos obrigatórios
+    if (!bancoForm.nome || !bancoForm.nome.trim()) {
+      alert('Nome do banco é obrigatório')
+      return
+    }
+
+    if (bancoForm.saldoInicial === undefined || bancoForm.saldoInicial === null || bancoForm.saldoInicial === '' || Number(bancoForm.saldoInicial) === 0) {
+      alert('Saldo inicial é obrigatório e deve ser diferente de zero')
+      return
+    }
+
     try {
       const method = editingBanco ? 'PUT' : 'POST'
       const body = editingBanco
@@ -318,6 +381,20 @@ export function FluxoCaixaContent() {
     }
   }
 
+  async function handleToggleConciliacao(bancoId, estaConciliado) {
+    try {
+      await fetch('/api/bancos', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: bancoId, conciliar: !estaConciliado })
+      })
+      fetchBancos()
+    } catch (error) {
+      console.error('Erro ao atualizar conciliacao:', error)
+      alert('Erro ao atualizar conciliacao')
+    }
+  }
+
   function copyToClipboard(text) {
     navigator.clipboard.writeText(text)
   }
@@ -344,23 +421,26 @@ export function FluxoCaixaContent() {
     }
   }, [activeTab, cartoes.length])
 
-  async function loadFaturas(cartaoId) {
+  async function handleVerFaturas(cartao) {
     try {
       setLoadingFaturas(true)
-      const res = await fetch(`/api/cartoes/${cartaoId}/faturas`)
+      const res = await fetch(`/api/cartoes/${cartao.id}/faturas`)
       const data = await res.json()
-      setFaturas(Array.isArray(data) ? data : [])
+      const faturasCarregadas = Array.isArray(data) ? data : []
+
+      if (faturasCarregadas.length > 0) {
+        // Abrir direto a fatura mais recente (primeira da lista)
+        setCartaoParaFaturas(cartao)
+        setFaturaDetalhe(faturasCarregadas[0])
+      } else {
+        alert("Nenhuma fatura encontrada para este cartão")
+      }
     } catch (error) {
       console.error("Erro ao carregar faturas:", error)
-      setFaturas([])
+      alert("Erro ao carregar faturas")
     } finally {
       setLoadingFaturas(false)
     }
-  }
-
-  function handleVerFaturas(cartao) {
-    setCartaoParaFaturas(cartao)
-    loadFaturas(cartao.id)
   }
 
   function handleEditarCartao(cartao) {
@@ -629,6 +709,15 @@ export function FluxoCaixaContent() {
 
   // Filtrar fluxo por período e filtros avancados
   const fluxoFiltrado = fluxoCaixa.filter(item => {
+    // Filtro por busca (searchTerm)
+    if (searchTerm) {
+      const termo = searchTerm.toLowerCase()
+      const matchCodigo = item.codigoTipo?.toLowerCase().includes(termo)
+      const matchFornecedor = item.fornecedorCliente?.toLowerCase().includes(termo)
+      const matchDescricao = item.descricao?.toLowerCase().includes(termo)
+      if (!matchCodigo && !matchFornecedor && !matchDescricao) return false
+    }
+
     const dataItemStr = item.dia.split('T')[0] // Extrai apenas YYYY-MM-DD
     if (dataInicio && dataItemStr < dataInicio) return false
     if (dataFim && dataItemStr > dataFim) return false
@@ -649,6 +738,19 @@ export function FluxoCaixaContent() {
 
     // Filtro por banco
     if (filtroBancoId && item.bancoId !== parseInt(filtroBancoId)) return false
+
+    // Filtro por tipo (entrada/saida)
+    if (filtroTipoFluxo && item.tipo !== filtroTipoFluxo) return false
+
+    // Filtro por valor (range)
+    if (filtroValorMin) {
+      const valorMin = parseFloat(filtroValorMin)
+      if (!isNaN(valorMin) && item.valor < valorMin) return false
+    }
+    if (filtroValorMax) {
+      const valorMax = parseFloat(filtroValorMax)
+      if (!isNaN(valorMax) && item.valor > valorMax) return false
+    }
 
     return true
   })
@@ -704,12 +806,16 @@ export function FluxoCaixaContent() {
 
   // Limpar filtros
   function limparFiltros() {
+    setSearchTerm("")
     setDataInicio("")
     setDataFim("")
     setFiltroAtivo("todos")
     setFiltroCodigo("")
     setFiltroDescricao("")
     setFiltroBancoId("")
+    setFiltroTipoFluxo("")
+    setFiltroValorMin("")
+    setFiltroValorMax("")
   }
 
   // Ao mudar manualmente as datas, marca como personalizado
@@ -723,7 +829,7 @@ export function FluxoCaixaContent() {
     setFiltroAtivo("personalizado")
   }
 
-  const temFiltro = dataInicio || dataFim || filtroCodigo || filtroDescricao || filtroBancoId
+  const temFiltro = searchTerm || dataInicio || dataFim || filtroCodigo || filtroDescricao || filtroBancoId || filtroTipoFluxo || filtroValorMin || filtroValorMax
 
   // Calcular saldo do período filtrado (entradas - saídas)
   const saldoPeriodo = fluxoFiltrado.reduce((acc, item) => {
@@ -843,13 +949,24 @@ export function FluxoCaixaContent() {
                 )}
               </div>
               <div className="flex items-center gap-3 flex-wrap shrink-0">
+                {/* Barra de Pesquisa */}
+                <div className="relative min-w-[180px]">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-9 h-8 text-xs"
+                  />
+                </div>
+
                 {/* Filtros Rápidos */}
-                <div className="flex items-center gap-1 lg:border-r border-border lg:pr-3">
+                <div className="flex items-center gap-1 bg-muted/50 rounded-lg p-1">
                   <Button
                     variant={filtroAtivo === "todos" ? "default" : "ghost"}
                     size="sm"
                     onClick={limparFiltros}
-                    className="h-8 text-xs px-2 sm:px-3"
+                    className="h-7 text-xs px-2 sm:px-3"
                   >
                     Todos
                   </Button>
@@ -857,7 +974,7 @@ export function FluxoCaixaContent() {
                     variant={filtroAtivo === "hoje" ? "default" : "ghost"}
                     size="sm"
                     onClick={filtrarHoje}
-                    className="h-8 text-xs px-2 sm:px-3"
+                    className="h-7 text-xs px-2 sm:px-3"
                   >
                     Hoje
                   </Button>
@@ -865,36 +982,18 @@ export function FluxoCaixaContent() {
                     variant={filtroAtivo === "amanha" ? "default" : "ghost"}
                     size="sm"
                     onClick={filtrarAmanha}
-                    className="h-8 text-xs px-2 sm:px-3"
+                    className="h-7 text-xs px-2 sm:px-3"
                   >
-                    Amanha
+                    Amanhã
                   </Button>
                   <Button
                     variant={filtroAtivo === "semana" ? "default" : "ghost"}
                     size="sm"
                     onClick={filtrarSemana}
-                    className="h-8 text-xs px-2 sm:px-3"
+                    className="h-7 text-xs px-2 sm:px-3"
                   >
                     7 dias
                   </Button>
-                </div>
-
-                {/* Filtro Personalizado */}
-                <div className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <Input
-                    type="date"
-                    value={dataInicio}
-                    onChange={(e) => handleDataInicioChange(e.target.value)}
-                    className="h-8 w-32 sm:w-36 text-xs"
-                  />
-                  <span className="text-muted-foreground text-xs">ate</span>
-                  <Input
-                    type="date"
-                    value={dataFim}
-                    onChange={(e) => handleDataFimChange(e.target.value)}
-                    className="h-8 w-32 sm:w-36 text-xs"
-                  />
                 </div>
 
                 {/* Botao Filtros Avancados */}
@@ -906,76 +1005,146 @@ export function FluxoCaixaContent() {
                 >
                   <Filter className="h-3 w-3 mr-1" />
                   Filtros
-                  {(filtroCodigo || filtroDescricao || filtroBancoId) && (
+                  {(dataInicio || dataFim || filtroCodigo || filtroDescricao || filtroBancoId || filtroTipoFluxo || filtroValorMin || filtroValorMax) && (
                     <span className="ml-1 bg-primary text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px]">
-                      {[filtroCodigo, filtroDescricao, filtroBancoId].filter(Boolean).length}
+                      {[dataInicio, dataFim, filtroCodigo, filtroDescricao, filtroBancoId, filtroTipoFluxo, filtroValorMin, filtroValorMax].filter(Boolean).length}
                     </span>
                   )}
                 </Button>
+
+                {temFiltro && (
+                  <Button variant="ghost" size="sm" onClick={limparFiltros} className="h-8 text-xs text-destructive hover:text-destructive">
+                    <X className="h-3 w-3 mr-1" />
+                    Limpar
+                  </Button>
+                )}
               </div>
             </div>
 
             {/* Filtros Avancados */}
             {showFiltrosAvancados && (
               <div className="mt-4 pt-4 border-t border-border">
-                <div className="flex flex-wrap gap-3 items-end">
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground">Codigo</label>
-                    <div className="relative">
-                      <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-                      <Input
-                        placeholder="Ex: DEP-01"
-                        value={filtroCodigo}
-                        onChange={(e) => setFiltroCodigo(e.target.value)}
-                        className="h-8 w-32 pl-7 text-xs"
-                      />
-                    </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+                  {/* Tipo */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">Tipo</label>
+                    <select
+                      value={filtroTipoFluxo}
+                      onChange={(e) => setFiltroTipoFluxo(e.target.value)}
+                      className="w-full h-8 px-2 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="">Todos</option>
+                      <option value="entrada">Entradas</option>
+                      <option value="saida">Saídas</option>
+                    </select>
                   </div>
 
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-muted-foreground">Descricao</label>
-                    <div className="relative">
-                      <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-                      <Input
-                        placeholder="Ex: Fornecedor XYZ"
-                        value={filtroDescricao}
-                        onChange={(e) => setFiltroDescricao(e.target.value)}
-                        className="h-8 w-44 pl-7 text-xs"
-                      />
-                    </div>
+                  {/* Data De */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">Data De</label>
+                    <Input
+                      type="date"
+                      value={dataInicio}
+                      onChange={(e) => handleDataInicioChange(e.target.value)}
+                      className="h-8 text-sm"
+                    />
                   </div>
 
-                  <div className="space-y-1">
+                  {/* Data Até */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">Data Até</label>
+                    <Input
+                      type="date"
+                      value={dataFim}
+                      onChange={(e) => handleDataFimChange(e.target.value)}
+                      className="h-8 text-sm"
+                    />
+                  </div>
+
+                  {/* Codigo */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">Cód Tipo</label>
+                    <Input
+                      placeholder="Ex: DEP-01"
+                      value={filtroCodigo}
+                      onChange={(e) => setFiltroCodigo(e.target.value)}
+                      className="h-8 text-sm"
+                    />
+                  </div>
+
+                  {/* Fornecedor/Cliente */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">Fornecedor/Cliente</label>
+                    <Input
+                      placeholder="Nome..."
+                      value={filtroDescricao}
+                      onChange={(e) => setFiltroDescricao(e.target.value)}
+                      className="h-8 text-sm"
+                    />
+                  </div>
+
+                  {/* Banco */}
+                  <div className="space-y-1.5">
                     <label className="text-xs font-medium text-muted-foreground">Banco</label>
                     <select
                       value={filtroBancoId}
                       onChange={(e) => setFiltroBancoId(e.target.value)}
-                      className="h-8 px-2 rounded-md border border-border bg-white text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary min-w-[140px]"
+                      className="w-full h-8 px-2 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                     >
-                      <option value="">Todos os bancos</option>
+                      <option value="">Todos</option>
                       {bancos.map((banco) => (
                         <option key={banco.id} value={banco.id}>
-                          {banco.codigo} - {banco.nome}
+                          {banco.nome}
                         </option>
                       ))}
                     </select>
                   </div>
 
-                  {(filtroCodigo || filtroDescricao || filtroBancoId) && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setFiltroCodigo("")
-                        setFiltroDescricao("")
-                        setFiltroBancoId("")
-                      }}
-                      className="h-8 text-xs text-red-600 hover:text-red-600"
-                    >
-                      <X className="h-3 w-3 mr-1" />
-                      Limpar filtros
-                    </Button>
-                  )}
+                  {/* Valor Min */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">Valor Mín</label>
+                    <Input
+                      type="number"
+                      placeholder="R$ 0,00"
+                      value={filtroValorMin}
+                      onChange={(e) => setFiltroValorMin(e.target.value)}
+                      className="h-8 text-sm"
+                    />
+                  </div>
+
+                  {/* Valor Max */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">Valor Máx</label>
+                    <Input
+                      type="number"
+                      placeholder="R$ 999.999"
+                      value={filtroValorMax}
+                      onChange={(e) => setFiltroValorMax(e.target.value)}
+                      className="h-8 text-sm"
+                    />
+                  </div>
+
+                  {/* Botão Limpar */}
+                  <div className="space-y-1.5 flex items-end">
+                    {(filtroCodigo || filtroDescricao || filtroBancoId || filtroTipoFluxo || filtroValorMin || filtroValorMax) && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setFiltroCodigo("")
+                          setFiltroDescricao("")
+                          setFiltroBancoId("")
+                          setFiltroTipoFluxo("")
+                          setFiltroValorMin("")
+                          setFiltroValorMax("")
+                        }}
+                        className="h-8 text-xs text-destructive hover:text-destructive"
+                      >
+                        <X className="h-3 w-3 mr-1" />
+                        Limpar
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -1010,6 +1179,17 @@ export function FluxoCaixaContent() {
                           {formatCurrency(saldo)}
                         </p>
                       </div>
+                      <button
+                        onClick={() => handleToggleConciliacao(banco.id, !!banco.conciliadoEm)}
+                        className="p-1 rounded hover:bg-muted transition-colors"
+                        title={banco.conciliadoEm ? `Conciliado em ${formatDate(banco.conciliadoEm)}` : 'Marcar como conciliado'}
+                      >
+                        {banco.conciliadoEm ? (
+                          <CheckCircle2 className="h-4 w-4 text-green-600" />
+                        ) : (
+                          <Circle className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </button>
                     </div>
                   )
                 })}
@@ -1048,9 +1228,6 @@ export function FluxoCaixaContent() {
                     </th>
                     <th className="py-3 px-4 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
                       Valor
-                    </th>
-                    <th className="py-3 px-4 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      Fluxo
                     </th>
                     <th className="py-3 px-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                       Banco
@@ -1095,9 +1272,6 @@ export function FluxoCaixaContent() {
                             {conta.tipo === 'receber' ? '+' : '-'} {formatCurrency(conta.valor)}
                           </span>
                         </td>
-                        <td className="py-3 px-4 text-sm text-muted-foreground text-right">
-                          -
-                        </td>
                         <td className="py-3 px-4 text-sm text-muted-foreground">
                           -
                         </td>
@@ -1119,7 +1293,7 @@ export function FluxoCaixaContent() {
                   {/* Movimentações já realizadas */}
                   {fluxoFiltrado.length === 0 && contasPendentesFiltradas.length === 0 ? (
                     <tr>
-                      <td colSpan="9" className="py-8 text-center text-sm text-muted-foreground">
+                      <td colSpan="8" className="py-8 text-center text-sm text-muted-foreground">
                         {temFiltro ? "Nenhuma movimentacao no periodo selecionado" : "Nenhuma movimentacao registrada"}
                       </td>
                     </tr>
@@ -1150,12 +1324,16 @@ export function FluxoCaixaContent() {
                         {item.conta?.descricao || "-"}
                       </td>
                       <td className="py-3 px-4 text-sm font-medium text-right">
-                        <span className={item.tipo === 'entrada' ? 'text-emerald-600' : 'text-red-600'}>
-                          {item.tipo === 'entrada' ? '+' : '-'} {formatCurrency(item.valor)}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-sm font-semibold text-foreground text-right">
-                        {formatCurrency(item.fluxo)}
+                        <div className="flex flex-col items-end">
+                          <span className={item.tipo === 'entrada' ? 'text-emerald-600' : 'text-red-600'}>
+                            {item.tipo === 'entrada' ? '+' : '-'} {formatCurrency(item.valor)}
+                          </span>
+                          {item.conta?.valorPago != null && item.conta.valorPago !== item.conta.valor && (
+                            <span className="text-xs text-muted-foreground" title={`Valor original: ${formatCurrency(item.conta.valor)}`}>
+                              (orig: {formatCurrency(item.conta.valor)})
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-3 px-4 text-sm text-foreground">
                         <button
@@ -1185,19 +1363,17 @@ export function FluxoCaixaContent() {
                       </td>
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end gap-2">
-                          {/* Botão Editar - apenas para lançamentos com conta vinculada */}
-                          {item.contaId && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleEditMovimentacao(item)
-                              }}
-                              className="text-muted-foreground hover:text-primary transition-colors"
-                              title="Editar lançamento"
-                            >
-                              <Edit className="h-4 w-4" />
-                            </button>
-                          )}
+                          {/* Botão Editar - para todos os lançamentos (com ou sem conta vinculada) */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleEditMovimentacao(item)
+                            }}
+                            className="text-muted-foreground hover:text-primary transition-colors"
+                            title="Editar lançamento"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </button>
                           {/* Botão Excluir */}
                           <button
                             onClick={(e) => {
@@ -1256,6 +1432,9 @@ export function FluxoCaixaContent() {
                     <th className="py-3 px-4 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
                       Saldo
                     </th>
+                    <th className="py-3 px-4 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Conciliado
+                    </th>
                     <th className="py-3 px-4 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
                       Acoes
                     </th>
@@ -1264,13 +1443,13 @@ export function FluxoCaixaContent() {
                 <tbody>
                   {loadingBancos ? (
                     <tr>
-                      <td colSpan="7" className="py-8 text-center text-sm text-muted-foreground">
+                      <td colSpan="8" className="py-8 text-center text-sm text-muted-foreground">
                         Carregando...
                       </td>
                     </tr>
                   ) : bancos.length === 0 ? (
                     <tr>
-                      <td colSpan="7" className="py-8 text-center text-sm text-muted-foreground">
+                      <td colSpan="8" className="py-8 text-center text-sm text-muted-foreground">
                         Nenhum banco cadastrado
                       </td>
                     </tr>
@@ -1315,6 +1494,25 @@ export function FluxoCaixaContent() {
                           <span className={saldosPorBanco[banco.id] < 0 ? 'text-red-600' : saldosPorBanco[banco.id] > 0 ? 'text-emerald-600' : 'text-foreground'}>
                             {formatCurrency(saldosPorBanco[banco.id] || 0)}
                           </span>
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <button
+                            onClick={() => handleToggleConciliacao(banco.id, !!banco.conciliadoEm)}
+                            className="inline-flex items-center gap-1.5 px-2 py-1 rounded hover:bg-muted transition-colors"
+                            title={banco.conciliadoEm ? `Conciliado em ${formatDate(banco.conciliadoEm)}` : 'Marcar como conciliado'}
+                          >
+                            {banco.conciliadoEm ? (
+                              <>
+                                <CheckCircle2 className="h-4 w-4 text-green-600" />
+                                <span className="text-xs text-green-600">{formatDate(banco.conciliadoEm)}</span>
+                              </>
+                            ) : (
+                              <>
+                                <Circle className="h-4 w-4 text-muted-foreground" />
+                                <span className="text-xs text-muted-foreground">Pendente</span>
+                              </>
+                            )}
+                          </button>
                         </td>
                         <td className="py-3 px-4 text-right">
                           <div className="flex items-center justify-end gap-2">
@@ -1612,13 +1810,43 @@ export function FluxoCaixaContent() {
               {/* Resumo da conta */}
               <div className="bg-muted/50 rounded-lg p-3 space-y-1">
                 <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Descricao:</span>
+                  <span className="text-sm text-muted-foreground">Descrição:</span>
                   <span className="text-sm font-medium text-foreground">{contaParaPagar.descricao || contaParaPagar.beneficiario || "-"}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Valor:</span>
+                  <span className="text-sm text-muted-foreground">Valor Original:</span>
                   <span className="text-sm font-bold text-foreground">{formatCurrency(contaParaPagar.valor)}</span>
                 </div>
+              </div>
+
+              {/* Campo de valor pago */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">
+                  Valor {contaParaPagar.tipo === "pagar" ? "Pago" : "Recebido"}
+                </label>
+                <CurrencyInput
+                  value={valorPago}
+                  onChange={(value) => setValorPago(value)}
+                  className="w-full"
+                />
+                {valorPago !== contaParaPagar.valor && (
+                  <p className="text-xs text-amber-600">
+                    Variação: {formatCurrency(valorPago - contaParaPagar.valor)} ({((valorPago - contaParaPagar.valor) / contaParaPagar.valor * 100).toFixed(1)}%)
+                  </p>
+                )}
+              </div>
+
+              {/* Campo de data de pagamento */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">
+                  Data do {contaParaPagar.tipo === "pagar" ? "Pagamento" : "Recebimento"}
+                </label>
+                <input
+                  type="date"
+                  value={dataPagamentoSelecionada}
+                  onChange={(e) => setDataPagamentoSelecionada(e.target.value)}
+                  className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                />
               </div>
 
               <p className="text-sm text-muted-foreground">
@@ -2033,93 +2261,18 @@ export function FluxoCaixaContent() {
         />
       )}
 
-      {/* Modal de Faturas do Cartão */}
-      {cartaoParaFaturas && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <Card className="w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b border-border">
-              <div>
-                <h2 className="text-lg font-semibold text-foreground">
-                  Faturas - {cartaoParaFaturas.nome}
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  **** {cartaoParaFaturas.ultimos4Digitos}
-                </p>
-              </div>
-              <Button variant="ghost" size="sm" onClick={() => setCartaoParaFaturas(null)}>
-                <X className="h-5 w-5" />
-              </Button>
-            </div>
-
-            <div className="p-4 overflow-y-auto flex-1">
-              {loadingFaturas ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                </div>
-              ) : faturas.length === 0 ? (
-                <div className="text-center py-8">
-                  <Calendar className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-                  <p className="text-sm text-muted-foreground">Nenhuma fatura encontrada</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {faturas.map((fatura) => {
-                    const meses = [
-                      "Janeiro", "Fevereiro", "Marco", "Abril", "Maio", "Junho",
-                      "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
-                    ]
-                    const mesNome = meses[fatura.mesReferencia - 1]
-
-                    return (
-                      <Card
-                        key={fatura.id}
-                        className={`p-4 cursor-pointer hover:shadow-md transition-shadow ${
-                          fatura.pago ? "bg-green-50" : "bg-yellow-50"
-                        }`}
-                        onClick={() => setFaturaDetalhe(fatura)}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h4 className="font-medium text-foreground">
-                              {mesNome}/{fatura.anoReferencia}
-                            </h4>
-                            <p className="text-xs text-muted-foreground">
-                              Vencimento: {new Date(fatura.dataVencimento).toLocaleDateString("pt-BR")}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <p className="font-bold text-foreground">
-                              {formatCurrency(fatura.valorTotal)}
-                            </p>
-                            <span className={`text-xs px-2 py-0.5 rounded ${
-                              fatura.pago
-                                ? "bg-green-100 text-green-700"
-                                : "bg-yellow-100 text-yellow-700"
-                            }`}>
-                              {fatura.pago ? "Paga" : "Aberta"}
-                            </span>
-                          </div>
-                        </div>
-                      </Card>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          </Card>
-        </div>
-      )}
-
       {/* Modal Detalhe Fatura */}
-      {faturaDetalhe && (
+      {faturaDetalhe && cartaoParaFaturas && (
         <FaturaModal
           fatura={faturaDetalhe}
-          onClose={() => setFaturaDetalhe(null)}
+          cartaoId={cartaoParaFaturas.id}
+          onClose={() => {
+            setFaturaDetalhe(null)
+            setCartaoParaFaturas(null)
+          }}
           onPago={() => {
             setFaturaDetalhe(null)
-            if (cartaoParaFaturas) {
-              loadFaturas(cartaoParaFaturas.id)
-            }
+            setCartaoParaFaturas(null)
             fetchCartoes()
           }}
         />
@@ -2154,8 +2307,11 @@ export function FluxoCaixaContent() {
 
 // Modal para editar lançamento já pago no fluxo de caixa
 function EditFluxoModal({ fluxo, onClose, onSuccess }) {
-  const [descricao, setDescricao] = useState(fluxo.conta?.descricao || "")
-  const [valor, setValor] = useState(fluxo.valor || 0)
+  const [descricao, setDescricao] = useState(fluxo.conta?.descricao || fluxo.descricao || "")
+  // Usar valorPago se disponível, senão o valor do fluxo
+  const [valorPago, setValorPago] = useState(fluxo.conta?.valorPago ?? fluxo.valor ?? 0)
+  // Valor original (não editável)
+  const valorOriginal = fluxo.conta?.valor ?? fluxo.valor ?? 0
   const [dataPagamento, setDataPagamento] = useState(
     fluxo.dia ? new Date(fluxo.dia).toISOString().split('T')[0] : ""
   )
@@ -2202,7 +2358,7 @@ function EditFluxoModal({ fluxo, onClose, onSuccess }) {
     e.preventDefault()
     setError(null)
 
-    if (!valor || valor <= 0) {
+    if (!valorPago || valorPago <= 0) {
       setError("Valor deve ser maior que zero")
       return
     }
@@ -2215,14 +2371,14 @@ function EditFluxoModal({ fluxo, onClose, onSuccess }) {
     setIsSaving(true)
 
     try {
-      // Atualizar a conta vinculada
+      // Atualizar a conta vinculada (apenas valorPago, mantém valor original)
       if (fluxo.contaId) {
         const contaResponse = await fetch(`/api/contas/${fluxo.contaId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             descricao: descricao.trim(),
-            valor: Number(valor),
+            valorPago: Number(valorPago),
             dataPagamento,
             beneficiario: fornecedorCliente.trim() || null,
             codigoTipo: codigoTipo.trim() || null,
@@ -2244,7 +2400,8 @@ function EditFluxoModal({ fluxo, onClose, onSuccess }) {
           bancoId: bancoId ? Number(bancoId) : null,
           fornecedorCliente: fornecedorCliente.trim() || null,
           codigoTipo: codigoTipo.trim() || null,
-          valor: Number(valor),
+          descricao: descricao.trim() || null,
+          valor: Number(valorPago),
           dia: dataPagamento,
         }),
       })
@@ -2300,14 +2457,31 @@ function EditFluxoModal({ fluxo, onClose, onSuccess }) {
               />
             </div>
 
-            {/* Valor */}
+            {/* Valor Original (não editável) */}
+            {fluxo.conta && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-muted-foreground">Valor Original</label>
+                <div className="h-10 px-3 flex items-center rounded-md border border-border bg-muted/50 text-sm text-muted-foreground">
+                  {formatCurrency(valorOriginal)}
+                </div>
+              </div>
+            )}
+
+            {/* Valor Pago (editável) */}
             <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground">Valor</label>
+              <label className="text-sm font-medium text-foreground">
+                Valor {fluxo.tipo === 'entrada' ? 'Recebido' : 'Pago'}
+              </label>
               <CurrencyInput
-                value={valor}
-                onValueChange={setValor}
+                value={valorPago}
+                onValueChange={setValorPago}
                 disabled={isSaving}
               />
+              {valorPago !== valorOriginal && (
+                <p className="text-xs text-amber-600">
+                  Variação: {formatCurrency(valorPago - valorOriginal)} ({((valorPago - valorOriginal) / valorOriginal * 100).toFixed(1)}%)
+                </p>
+              )}
             </div>
 
             {/* Data de Pagamento */}
