@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { formatCurrency } from "@/lib/format"
-import { Plus, CreditCard, Wallet, TrendingDown, Calendar, X, Edit, Trash2, Eye, Loader2 } from "lucide-react"
+import { Plus, CreditCard, Wallet, TrendingDown, Calendar, Loader2 } from "lucide-react"
 import { NovoCartaoModal } from "./components/NovoCartaoModal"
 import { CartaoCard } from "./components/CartaoCard"
 import { FaturaModal } from "./components/FaturaModal"
@@ -15,7 +15,6 @@ export function CartoesContent() {
   const [showNovoModal, setShowNovoModal] = useState(false)
   const [cartaoParaEditar, setCartaoParaEditar] = useState(null)
   const [cartaoParaFaturas, setCartaoParaFaturas] = useState(null)
-  const [faturas, setFaturas] = useState([])
   const [loadingFaturas, setLoadingFaturas] = useState(false)
   const [faturaDetalhe, setFaturaDetalhe] = useState(null)
 
@@ -37,23 +36,26 @@ export function CartoesContent() {
     loadCartoes()
   }, [])
 
-  const loadFaturas = async (cartaoId) => {
+  const handleVerFaturas = async (cartao) => {
     try {
       setLoadingFaturas(true)
-      const res = await fetch(`/api/cartoes/${cartaoId}/faturas`)
+      const res = await fetch(`/api/cartoes/${cartao.id}/faturas`)
       const data = await res.json()
-      setFaturas(Array.isArray(data) ? data : [])
+      const faturasCarregadas = Array.isArray(data) ? data : []
+
+      if (faturasCarregadas.length > 0) {
+        // Abrir direto a fatura mais recente (primeira da lista)
+        setCartaoParaFaturas(cartao)
+        setFaturaDetalhe(faturasCarregadas[0])
+      } else {
+        alert("Nenhuma fatura encontrada para este cartão")
+      }
     } catch (e) {
       console.error("Erro ao carregar faturas:", e)
-      setFaturas([])
+      alert("Erro ao carregar faturas")
     } finally {
       setLoadingFaturas(false)
     }
-  }
-
-  const handleVerFaturas = (cartao) => {
-    setCartaoParaFaturas(cartao)
-    loadFaturas(cartao.id)
   }
 
   const handleEditar = (cartao) => {
@@ -196,93 +198,18 @@ export function CartoesContent() {
         />
       )}
 
-      {/* Modal de Faturas */}
-      {cartaoParaFaturas && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <Card className="w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b border-fyn-border">
-              <div>
-                <h2 className="text-lg font-semibold text-fyn-text">
-                  Faturas - {cartaoParaFaturas.nome}
-                </h2>
-                <p className="text-sm text-fyn-muted">
-                  **** {cartaoParaFaturas.ultimos4Digitos}
-                </p>
-              </div>
-              <Button variant="ghost" size="sm" onClick={() => setCartaoParaFaturas(null)}>
-                <X className="h-5 w-5" />
-              </Button>
-            </div>
-
-            <div className="p-4 overflow-y-auto flex-1">
-              {loadingFaturas ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="h-6 w-6 animate-spin text-fyn-muted" />
-                </div>
-              ) : faturas.length === 0 ? (
-                <div className="text-center py-8">
-                  <Calendar className="h-10 w-10 text-fyn-muted mx-auto mb-3" />
-                  <p className="text-sm text-fyn-muted">Nenhuma fatura encontrada</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {faturas.map((fatura) => {
-                    const meses = [
-                      "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
-                      "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
-                    ]
-                    const mesNome = meses[fatura.mesReferencia - 1]
-
-                    return (
-                      <Card
-                        key={fatura.id}
-                        className={`p-4 cursor-pointer hover:shadow-md transition-shadow ${
-                          fatura.pago ? "bg-green-50" : "bg-yellow-50"
-                        }`}
-                        onClick={() => setFaturaDetalhe(fatura)}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h4 className="font-medium text-fyn-text">
-                              {mesNome}/{fatura.anoReferencia}
-                            </h4>
-                            <p className="text-xs text-fyn-muted">
-                              Vencimento: {new Date(fatura.dataVencimento).toLocaleDateString("pt-BR")}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <p className="font-bold text-fyn-text">
-                              {formatCurrency(fatura.valorTotal)}
-                            </p>
-                            <span className={`text-xs px-2 py-0.5 rounded ${
-                              fatura.pago
-                                ? "bg-green-100 text-green-700"
-                                : "bg-yellow-100 text-yellow-700"
-                            }`}>
-                              {fatura.pago ? "Paga" : "Aberta"}
-                            </span>
-                          </div>
-                        </div>
-                      </Card>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          </Card>
-        </div>
-      )}
-
       {/* Modal Detalhe Fatura */}
-      {faturaDetalhe && (
+      {faturaDetalhe && cartaoParaFaturas && (
         <FaturaModal
           fatura={faturaDetalhe}
-          onClose={() => setFaturaDetalhe(null)}
+          cartaoId={cartaoParaFaturas.id}
+          onClose={() => {
+            setFaturaDetalhe(null)
+            setCartaoParaFaturas(null)
+          }}
           onPago={() => {
             setFaturaDetalhe(null)
-            if (cartaoParaFaturas) {
-              loadFaturas(cartaoParaFaturas.id)
-            }
+            setCartaoParaFaturas(null)
             loadCartoes()
           }}
         />

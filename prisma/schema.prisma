@@ -54,6 +54,7 @@ model Conta {
   vencimento          DateTime
   pago                Boolean             @default(false)
   dataPagamento       DateTime?           // data efetiva do pagamento/recebimento
+  valorPago           Float?              // valor efetivamente pago (pode diferir do valor original)
   tipo                String              // 'pagar' ou 'receber'
   beneficiario        String?             // nome do beneficiário (opcional)
   fonte               String?             // fonte da receita (apenas para contas a receber)
@@ -97,12 +98,16 @@ model Conta {
   // Controle de processamento do pró-labore (para não contar duas vezes)
   proLaboreProcessado Boolean             @default(false) // se já foi contabilizado em um pró-labore
 
-  // Hierarquia para parcelamentos (conta pai agrupa parcelas)
+  // Parcelamentos - conta macro (pai) com parcelas filhas
+  isContaMacro        Boolean             @default(false) // true = conta macro que agrupa parcelas
+  grupoParcelamentoId String?             // UUID para agrupar parcelas do mesmo parcelamento
+  totalParcelas       Int?                // total de parcelas deste parcelamento
+
+  // Relacionamento pai-filho para parcelamentos
   parentId            Int?
   parent              Conta?              @relation("ContaParcelas", fields: [parentId], references: [id])
   parcelas            Conta[]             @relation("ContaParcelas")
-  valorTotal          Float?              // valor total quando é conta pai de parcelamento
-  totalParcelas       Int?                // total de parcelas quando é conta pai
+  valorTotal          Float?              // valor total do parcelamento (na conta macro)
 
   // Recorrência (para despesas fixas como aluguel, luz, água)
   isRecorrente        Boolean             @default(false) // se é conta recorrente
@@ -137,6 +142,8 @@ model Conta {
   @@index([cartaoId])
   @@index([socioResponsavelId])
   @@index([parentId])
+  @@index([grupoParcelamentoId])
+  @@index([isContaMacro])
   @@index([isRecorrente])
   @@index([recorrenciaParentId])
   @@index([bancoContaId])
@@ -154,6 +161,7 @@ model Banco {
   tipoChavePix String?  // Tipo da chave: celular, email, cpf, cnpj, aleatoria
   saldoInicial Float    @default(0) // Saldo inicial da conta
   ativo        Boolean  @default(true)
+  conciliadoEm DateTime? // Data/hora da última conciliação bancária
   criadoEm     DateTime @default(now())
   atualizadoEm DateTime @updatedAt
 

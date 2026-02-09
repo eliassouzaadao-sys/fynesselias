@@ -21,8 +21,10 @@ import {
   XCircle,
   MoreVertical,
   Copy,
+  Users,
 } from "lucide-react"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { FornecedorModal } from "./components/FornecedorModal"
 import { FornecedorDetalhesModal } from "./components/FornecedorDetalhesModal"
 import {
@@ -34,70 +36,92 @@ import {
 import { toast } from "sonner"
 
 export function FornecedoresContent() {
-  const [fornecedores, setFornecedores] = useState([])
+  const [pessoas, setPessoas] = useState([])
   const [searchTerm, setSearchTerm] = useState("")
   const [loading, setLoading] = useState(true)
   const [filtroStatus, setFiltroStatus] = useState("")
+  const [tipoAtivo, setTipoAtivo] = useState("fornecedor") // 'fornecedor' ou 'cliente'
   const [showModal, setShowModal] = useState(false)
-  const [fornecedorToEdit, setFornecedorToEdit] = useState(null)
+  const [pessoaToEdit, setPessoaToEdit] = useState(null)
   const [showDetalhes, setShowDetalhes] = useState(false)
-  const [fornecedorDetalhes, setFornecedorDetalhes] = useState(null)
+  const [pessoaDetalhes, setPessoaDetalhes] = useState(null)
 
-  const loadFornecedores = async () => {
+  // Labels dinamicos baseados no tipo
+  const labels = {
+    fornecedor: {
+      singular: "Fornecedor",
+      plural: "Fornecedores",
+      novo: "Novo Fornecedor",
+      documento: "CNPJ/CPF",
+      icon: Truck,
+    },
+    cliente: {
+      singular: "Cliente",
+      plural: "Clientes",
+      novo: "Novo Cliente",
+      documento: "CPF/CNPJ",
+      icon: Users,
+    },
+  }
+  const label = labels[tipoAtivo]
+  const IconeTipo = label.icon
+
+  const loadPessoas = async () => {
     try {
       setLoading(true)
       const params = new URLSearchParams()
+      params.set("tipo", tipoAtivo)
       if (filtroStatus) params.set("status", filtroStatus)
       if (searchTerm) params.set("search", searchTerm)
 
       const res = await fetch(`/api/fornecedores?${params.toString()}`)
       const data = await res.json()
-      setFornecedores(Array.isArray(data) ? data : [])
+      setPessoas(Array.isArray(data) ? data : [])
     } catch (e) {
-      console.error("Failed to load fornecedores:", e)
-      setFornecedores([])
+      console.error("Failed to load:", e)
+      setPessoas([])
     } finally {
       setLoading(false)
     }
   }
 
   useEffect(() => {
-    loadFornecedores()
-  }, [filtroStatus])
+    loadPessoas()
+  }, [filtroStatus, tipoAtivo])
 
   // Debounce search
   useEffect(() => {
     const timer = setTimeout(() => {
-      loadFornecedores()
+      loadPessoas()
     }, 300)
     return () => clearTimeout(timer)
   }, [searchTerm])
 
   const handleSuccess = () => {
-    loadFornecedores()
+    loadPessoas()
     setShowModal(false)
-    setFornecedorToEdit(null)
+    setPessoaToEdit(null)
   }
 
-  const handleEdit = (fornecedor) => {
-    setFornecedorToEdit(fornecedor)
+  const handleEdit = (pessoa) => {
+    setPessoaToEdit(pessoa)
     setShowModal(true)
   }
 
-  const handleVerDetalhes = async (fornecedor) => {
+  const handleVerDetalhes = async (pessoa) => {
     try {
-      const res = await fetch(`/api/fornecedores/${fornecedor.id}`)
+      const res = await fetch(`/api/fornecedores/${pessoa.id}`)
       const data = await res.json()
-      setFornecedorDetalhes(data)
+      setPessoaDetalhes(data)
       setShowDetalhes(true)
     } catch (e) {
       console.error("Erro ao carregar detalhes:", e)
-      toast.error("Erro ao carregar detalhes do fornecedor")
+      toast.error(`Erro ao carregar detalhes do ${label.singular.toLowerCase()}`)
     }
   }
 
-  const handleDelete = async (fornecedor) => {
-    if (!confirm(`Deseja realmente excluir o fornecedor "${fornecedor.nome}"?`)) {
+  const handleDelete = async (pessoa) => {
+    if (!confirm(`Deseja realmente excluir ${label.singular.toLowerCase()} "${pessoa.nome}"?`)) {
       return
     }
 
@@ -105,30 +129,30 @@ export function FornecedoresContent() {
       const res = await fetch("/api/fornecedores", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: fornecedor.id }),
+        body: JSON.stringify({ id: pessoa.id }),
       })
 
       const data = await res.json()
 
       if (res.ok) {
         if (data.inativado) {
-          toast.success("Fornecedor inativado (possui contas vinculadas)")
+          toast.success(`${label.singular} inativado (possui contas vinculadas)`)
         } else {
-          toast.success("Fornecedor excluído com sucesso")
+          toast.success(`${label.singular} excluido com sucesso`)
         }
-        loadFornecedores()
+        loadPessoas()
       } else {
-        toast.error(data.error || "Erro ao excluir fornecedor")
+        toast.error(data.error || `Erro ao excluir ${label.singular.toLowerCase()}`)
       }
     } catch (e) {
       console.error("Erro ao excluir:", e)
-      toast.error("Erro ao excluir fornecedor")
+      toast.error(`Erro ao excluir ${label.singular.toLowerCase()}`)
     }
   }
 
-  const copyToClipboard = (text, label) => {
+  const copyToClipboard = (text, labelText) => {
     navigator.clipboard.writeText(text)
-    toast.success(`${label} copiado!`)
+    toast.success(`${labelText} copiado!`)
   }
 
   const formatDocumento = (doc) => {
@@ -148,14 +172,28 @@ export function FornecedoresContent() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Truck className="h-6 w-6 text-primary" />
-          <h1 className="text-2xl font-bold">Fornecedores</h1>
+          <IconeTipo className="h-6 w-6 text-primary" />
+          <h1 className="text-2xl font-bold">{label.plural}</h1>
         </div>
         <Button onClick={() => setShowModal(true)}>
           <Plus className="mr-2 h-4 w-4" />
-          Novo Fornecedor
+          {label.novo}
         </Button>
       </div>
+
+      {/* Tabs de Tipo */}
+      <Tabs value={tipoAtivo} onValueChange={setTipoAtivo} className="w-full">
+        <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsTrigger value="fornecedor" className="flex items-center gap-2">
+            <Truck className="h-4 w-4" />
+            Fornecedores
+          </TabsTrigger>
+          <TabsTrigger value="cliente" className="flex items-center gap-2">
+            <Users className="h-4 w-4" />
+            Clientes
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       {/* Filtros */}
       <Card className="p-4">
@@ -163,7 +201,7 @@ export function FornecedoresContent() {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Buscar por nome ou CNPJ/CPF..."
+              placeholder={`Buscar por nome ou ${label.documento}...`}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-9"
@@ -187,11 +225,11 @@ export function FornecedoresContent() {
         <Card className="p-4">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-              <Truck className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+              <IconeTipo className="h-5 w-5 text-blue-600 dark:text-blue-400" />
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Total</p>
-              <p className="text-2xl font-bold">{fornecedores.length}</p>
+              <p className="text-2xl font-bold">{pessoas.length}</p>
             </div>
           </div>
         </Card>
@@ -203,7 +241,7 @@ export function FornecedoresContent() {
             <div>
               <p className="text-sm text-muted-foreground">Ativos</p>
               <p className="text-2xl font-bold">
-                {fornecedores.filter((f) => f.status === "ativo").length}
+                {pessoas.filter((f) => f.status === "ativo").length}
               </p>
             </div>
           </div>
@@ -216,110 +254,111 @@ export function FornecedoresContent() {
             <div>
               <p className="text-sm text-muted-foreground">Inativos</p>
               <p className="text-2xl font-bold">
-                {fornecedores.filter((f) => f.status === "inativo").length}
+                {pessoas.filter((f) => f.status === "inativo").length}
               </p>
             </div>
           </div>
         </Card>
       </div>
 
-      {/* Lista de Fornecedores */}
+      {/* Lista */}
       {loading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
-      ) : fornecedores.length === 0 ? (
+      ) : pessoas.length === 0 ? (
         <Card className="p-12 text-center">
-          <Truck className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-          <h3 className="text-lg font-medium mb-2">Nenhum fornecedor encontrado</h3>
+          <IconeTipo className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+          <h3 className="text-lg font-medium mb-2">Nenhum {label.singular.toLowerCase()} encontrado</h3>
           <p className="text-muted-foreground mb-4">
             {searchTerm || filtroStatus
               ? "Tente ajustar os filtros de busca"
-              : "Comece cadastrando seu primeiro fornecedor"}
+              : `Comece cadastrando seu primeiro ${label.singular.toLowerCase()}`}
           </p>
           {!searchTerm && !filtroStatus && (
             <Button onClick={() => setShowModal(true)}>
               <Plus className="mr-2 h-4 w-4" />
-              Cadastrar Fornecedor
+              Cadastrar {label.singular}
             </Button>
           )}
         </Card>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {fornecedores.map((fornecedor) => (
+          {pessoas.map((pessoa) => (
             <Card
-              key={fornecedor.id}
+              key={pessoa.id}
               className={`p-4 ${
-                fornecedor.status === "inativo" ? "opacity-60" : ""
+                pessoa.status === "inativo" ? "opacity-60" : ""
               }`}
             >
               <div className="flex items-start justify-between">
-                <div className="flex-1">
+                <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-2">
-                    <h3 className="font-semibold text-lg">{fornecedor.nome}</h3>
+                    <h3 className="font-semibold text-lg truncate">{pessoa.nome}</h3>
                     <Badge
-                      variant={fornecedor.status === "ativo" ? "default" : "secondary"}
+                      variant={pessoa.status === "ativo" ? "default" : "secondary"}
+                      className="flex-shrink-0"
                     >
-                      {fornecedor.status === "ativo" ? "Ativo" : "Inativo"}
+                      {pessoa.status === "ativo" ? "Ativo" : "Inativo"}
                     </Badge>
                   </div>
 
-                  {fornecedor.documento && (
+                  {pessoa.documento && (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-                      <Building2 className="h-4 w-4" />
-                      <span>{formatDocumento(fornecedor.documento)}</span>
+                      <Building2 className="h-4 w-4 flex-shrink-0" />
+                      <span className="truncate">{formatDocumento(pessoa.documento)}</span>
                       <button
-                        onClick={() => copyToClipboard(fornecedor.documento, "Documento")}
-                        className="hover:text-foreground"
+                        onClick={() => copyToClipboard(pessoa.documento, "Documento")}
+                        className="hover:text-foreground flex-shrink-0"
                       >
                         <Copy className="h-3 w-3" />
                       </button>
                     </div>
                   )}
 
-                  {fornecedor.contato && (
+                  {pessoa.contato && (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-                      <Phone className="h-4 w-4" />
-                      <span>{fornecedor.contato}</span>
+                      <Phone className="h-4 w-4 flex-shrink-0" />
+                      <span>{pessoa.contato}</span>
                     </div>
                   )}
 
-                  {fornecedor.email && (
+                  {pessoa.email && (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-                      <Mail className="h-4 w-4" />
-                      <span>{fornecedor.email}</span>
+                      <Mail className="h-4 w-4 flex-shrink-0" />
+                      <span className="truncate">{pessoa.email}</span>
                     </div>
                   )}
 
-                  {fornecedor._count?.contas > 0 && (
+                  {pessoa._count?.contas > 0 && (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground mt-2">
-                      <FileText className="h-4 w-4" />
-                      <span>{fornecedor._count.contas} conta(s) vinculada(s)</span>
+                      <FileText className="h-4 w-4 flex-shrink-0" />
+                      <span>{pessoa._count.contas} conta(s) vinculada(s)</span>
                     </div>
                   )}
                 </div>
 
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon">
+                    <Button variant="ghost" size="icon" className="flex-shrink-0">
                       <MoreVertical className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => handleVerDetalhes(fornecedor)}>
+                    <DropdownMenuItem onClick={() => handleVerDetalhes(pessoa)}>
                       <Eye className="mr-2 h-4 w-4" />
                       Ver Detalhes
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => handleEdit(fornecedor)}>
+                    <DropdownMenuItem onClick={() => handleEdit(pessoa)}>
                       <Edit className="mr-2 h-4 w-4" />
                       Editar
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onClick={() => handleDelete(fornecedor)}
+                      onClick={() => handleDelete(pessoa)}
                       className="text-destructive"
                     >
                       <Trash2 className="mr-2 h-4 w-4" />
-                      {fornecedor._count?.contas > 0 ? "Inativar" : "Excluir"}
+                      {pessoa._count?.contas > 0 ? "Inativar" : "Excluir"}
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -329,25 +368,27 @@ export function FornecedoresContent() {
         </div>
       )}
 
-      {/* Modal de Cadastro/Edição */}
+      {/* Modal de Cadastro/Edicao */}
       {showModal && (
         <FornecedorModal
-          fornecedor={fornecedorToEdit}
+          pessoa={pessoaToEdit}
+          tipo={tipoAtivo}
           onClose={() => {
             setShowModal(false)
-            setFornecedorToEdit(null)
+            setPessoaToEdit(null)
           }}
           onSuccess={handleSuccess}
         />
       )}
 
       {/* Modal de Detalhes */}
-      {showDetalhes && fornecedorDetalhes && (
+      {showDetalhes && pessoaDetalhes && (
         <FornecedorDetalhesModal
-          fornecedor={fornecedorDetalhes}
+          pessoa={pessoaDetalhes}
+          tipo={tipoAtivo}
           onClose={() => {
             setShowDetalhes(false)
-            setFornecedorDetalhes(null)
+            setPessoaDetalhes(null)
           }}
         />
       )}

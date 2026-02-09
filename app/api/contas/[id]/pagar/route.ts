@@ -13,6 +13,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/get-user';
 import { getEmpresaIdValidada } from '@/lib/get-empresa';
+import { atualizarContaProLabore } from '@/lib/prolabore';
 
 interface RouteContext {
   params: Promise<{
@@ -45,6 +46,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     const conta = await prisma.conta.findFirst({
       where,
+      include: {
+        parcelas: { select: { id: true }, take: 1 } // Verificar se tem filhos (é macro)
+      }
     });
 
     if (!conta) {
@@ -62,10 +66,24 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
     }
 
-    // Get optional payment date from request body
+    // Contas macro não podem ser pagas diretamente - apenas as parcelas individuais
+    // Verifica tanto a flag isContaMacro quanto se tem parcelas filhas (para dados antigos)
+    const isMacro = conta.isContaMacro ||
+      (conta.parcelas && conta.parcelas.length > 0 && !conta.parentId);
+
+    if (isMacro) {
+      return NextResponse.json(
+        { error: 'Contas macro não podem ser pagas diretamente. Pague as parcelas individualmente.' },
+        { status: 400 }
+      );
+    }
+
+    // Get optional payment date and valorPago from request body
     const body = await request.json().catch(() => ({}));
     const dataPagamento = body.dataPagamento ? new Date(body.dataPagamento) : new Date();
     const comprovante = body.comprovante || null;
+    // valorPago permite registrar o valor efetivamente pago (pode diferir do valor original)
+    const valorPago = body.valorPago !== undefined ? Number(body.valorPago) : null;
 
     // Update conta
     const contaAtualizada = await prisma.conta.update({
@@ -73,6 +91,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       data: {
         pago: true,
         dataPagamento,
+        valorPago,
         status: 'pago',
         noFluxoCaixa: true,
         comprovante,
@@ -81,6 +100,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
         pessoa: true,
       },
     });
+
+    // Se a conta tem um sócio responsável, atualizar a conta de pró-labore
+    if (conta.socioResponsavelId) {
+      await atualizarContaProLabore(conta.socioResponsavelId, user.id, empresaId);
+    }
 
     return NextResponse.json({
       success: true,

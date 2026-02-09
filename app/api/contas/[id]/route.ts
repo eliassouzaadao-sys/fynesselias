@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/get-user';
 import { getEmpresaIdValidada } from '@/lib/get-empresa';
+import { atualizarContaProLabore } from '@/lib/prolabore';
 
 // Função para criar data sem offset de timezone
 function parseLocalDate(dateStr: string | Date): Date {
@@ -54,6 +55,18 @@ export async function GET(request: NextRequest, context: RouteContext) {
       where,
       include: {
         pessoa: true,
+        parcelas: {
+          orderBy: { vencimento: 'asc' }
+        },
+        cartao: {
+          select: { id: true, nome: true, bandeira: true, ultimos4Digitos: true }
+        },
+        bancoConta: {
+          select: { id: true, nome: true, codigo: true }
+        },
+        parent: {
+          select: { id: true, descricao: true, valorTotal: true, totalParcelas: true }
+        }
       },
     });
 
@@ -118,6 +131,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
     if (data.descricao !== undefined) updateData.descricao = data.descricao;
     if (data.valor !== undefined) updateData.valor = Number(data.valor);
+    if (data.valorPago !== undefined) updateData.valorPago = Number(data.valorPago);
     if (data.vencimento !== undefined) updateData.vencimento = parseLocalDate(data.vencimento);
     if (data.pago !== undefined) updateData.pago = data.pago;
     if (data.dataPagamento !== undefined) {
@@ -153,6 +167,26 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       },
     });
 
+    // Se o valor foi alterado, atualizar pró-labore do sócio vinculado
+    if (data.valor !== undefined && Number(data.valor) !== Number(existingConta.valor)) {
+      if (contaAtualizada.socioResponsavelId) {
+        console.log('📊 Valor da conta alterado, atualizando pró-labore do sócio...');
+        await atualizarContaProLabore(contaAtualizada.socioResponsavelId, user.id, empresaId);
+      } else if (contaAtualizada.codigoTipo) {
+        // Verificar se o codigoTipo pertence a um sócio
+        const whereCentro: any = { sigla: contaAtualizada.codigoTipo, userId: user.id };
+        if (empresaId) whereCentro.empresaId = empresaId;
+        const centro = await prisma.centroCusto.findFirst({
+          where: whereCentro,
+          select: { id: true, isSocio: true }
+        });
+        if (centro && centro.isSocio) {
+          console.log('📊 Valor da conta alterado, atualizando pró-labore pelo codigoTipo...');
+          await atualizarContaProLabore(centro.id, user.id, empresaId);
+        }
+      }
+    }
+
     return NextResponse.json(contaAtualizada);
   } catch (error) {
     console.error('Error updating conta:', error);
@@ -165,6 +199,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 
 /**
  * DELETE - Delete conta
+ * Se for conta macro, exclui todas as parcelas filhas primeiro
  */
 export async function DELETE(request: NextRequest, context: RouteContext) {
   try {
@@ -191,6 +226,9 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
     const existingConta = await prisma.conta.findFirst({
       where,
+      include: {
+        parcelas: true, // Buscar parcelas filhas
+      }
     });
 
     if (!existingConta) {
@@ -200,11 +238,100 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       );
     }
 
+    let parcelasExcluidas = 0;
+    let fluxosExcluidos = 0;
+
+    // Se for conta macro ou tiver parcelas filhas, excluir elas primeiro
+    if (existingConta.isContaMacro || (existingConta.parcelas && existingConta.parcelas.length > 0)) {
+      console.log(`🗑️ Excluindo conta macro ID ${id} com ${existingConta.parcelas?.length || 0} parcelas`);
+
+      // Buscar todas as parcelas filhas (via parentId ou grupoParcelamentoId)
+      const parcelasFilhas = await prisma.conta.findMany({
+        where: {
+          OR: [
+            { parentId: id },
+            existingConta.grupoParcelamentoId
+              ? { grupoParcelamentoId: existingConta.grupoParcelamentoId, id: { not: id } }
+              : { id: -1 } // Condição falsa se não há grupoParcelamentoId
+          ],
+          userId: user.id,
+        },
+        select: { id: true, pago: true }
+      });
+
+      console.log(`   Encontradas ${parcelasFilhas.length} parcelas filhas`);
+
+      // Excluir fluxo de caixa das parcelas pagas
+      for (const parcela of parcelasFilhas) {
+        if (parcela.pago) {
+          const deleted = await prisma.fluxoCaixa.deleteMany({
+            where: { contaId: parcela.id }
+          });
+          fluxosExcluidos += deleted.count;
+        }
+      }
+
+      // Excluir todas as parcelas filhas
+      const deleteResult = await prisma.conta.deleteMany({
+        where: {
+          OR: [
+            { parentId: id },
+            existingConta.grupoParcelamentoId
+              ? { grupoParcelamentoId: existingConta.grupoParcelamentoId, id: { not: id } }
+              : { id: -1 }
+          ],
+          userId: user.id,
+        }
+      });
+      parcelasExcluidas = deleteResult.count;
+
+      console.log(`   ✅ ${parcelasExcluidas} parcelas excluídas, ${fluxosExcluidos} registros de fluxo removidos`);
+    }
+
+    // Excluir fluxo de caixa da própria conta (se foi paga)
+    if (existingConta.pago) {
+      await prisma.fluxoCaixa.deleteMany({
+        where: { contaId: id }
+      });
+    }
+
+    // Guardar referências do sócio ANTES de deletar a conta
+    const socioResponsavelId = existingConta.socioResponsavelId;
+    const codigoTipo = existingConta.codigoTipo;
+
+    // Excluir a conta
     await prisma.conta.delete({
       where: { id },
     });
 
-    return NextResponse.json({ success: true, message: 'Conta deletada com sucesso' });
+    // Atualizar pró-labore do sócio vinculado (após a exclusão)
+    if (socioResponsavelId) {
+      console.log('📊 Conta excluída tinha socioResponsavelId, atualizando pró-labore...');
+      await atualizarContaProLabore(socioResponsavelId, user.id, empresaId);
+    } else if (codigoTipo) {
+      // Verificar se o codigoTipo pertence a um sócio
+      const whereCentro: any = { sigla: codigoTipo, userId: user.id };
+      if (empresaId) whereCentro.empresaId = empresaId;
+      const centro = await prisma.centroCusto.findFirst({
+        where: whereCentro,
+        select: { id: true, isSocio: true }
+      });
+      if (centro && centro.isSocio) {
+        console.log('📊 Conta excluída vinculada a sócio pelo codigoTipo, atualizando pró-labore...');
+        await atualizarContaProLabore(centro.id, user.id, empresaId);
+      }
+    }
+
+    const message = parcelasExcluidas > 0
+      ? `Conta macro e ${parcelasExcluidas} parcelas excluídas com sucesso`
+      : 'Conta deletada com sucesso';
+
+    return NextResponse.json({
+      success: true,
+      message,
+      parcelasExcluidas,
+      fluxosExcluidos
+    });
   } catch (error) {
     console.error('Error deleting conta:', error);
     return NextResponse.json(

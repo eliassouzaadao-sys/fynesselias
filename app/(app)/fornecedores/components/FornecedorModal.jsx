@@ -12,11 +12,35 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Loader2, Truck } from "lucide-react"
+import { Loader2, Truck, Users } from "lucide-react"
 import { toast } from "sonner"
 
-export function FornecedorModal({ fornecedor, onClose, onSuccess }) {
-  const isEditing = !!fornecedor
+export function FornecedorModal({ pessoa, tipo = "fornecedor", onClose, onSuccess }) {
+  const isEditing = !!pessoa
+
+  // Labels dinâmicos baseados no tipo
+  const labels = {
+    fornecedor: {
+      singular: "Fornecedor",
+      novo: "Novo Fornecedor",
+      editar: "Editar Fornecedor",
+      placeholder: "Nome do fornecedor",
+      documento: "CNPJ",
+      docPlaceholder: "00.000.000/0000-00",
+      icon: Truck,
+    },
+    cliente: {
+      singular: "Cliente",
+      novo: "Novo Cliente",
+      editar: "Editar Cliente",
+      placeholder: "Nome do cliente",
+      documento: "CPF/CNPJ",
+      docPlaceholder: "000.000.000-00 ou 00.000.000/0000-00",
+      icon: Users,
+    },
+  }
+  const label = labels[tipo] || labels.fornecedor
+  const IconeTipo = label.icon
 
   const [loading, setLoading] = useState(false)
   const [formData, setFormData] = useState({
@@ -28,16 +52,16 @@ export function FornecedorModal({ fornecedor, onClose, onSuccess }) {
   })
 
   useEffect(() => {
-    if (fornecedor) {
+    if (pessoa) {
       setFormData({
-        nome: fornecedor.nome || "",
-        documento: fornecedor.documento || "",
-        contato: fornecedor.contato || "",
-        email: fornecedor.email || "",
-        chavePix: fornecedor.chavePix || "",
+        nome: pessoa.nome || "",
+        documento: pessoa.documento || "",
+        contato: pessoa.contato || "",
+        email: pessoa.email || "",
+        chavePix: pessoa.chavePix || "",
       })
     }
-  }, [fornecedor])
+  }, [pessoa])
 
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
@@ -81,11 +105,12 @@ export function FornecedorModal({ fornecedor, onClose, onSuccess }) {
         email: formData.email || null,
         contato: formData.contato.replace(/\D/g, "") || null,
         chavePix: formData.chavePix || null,
-        status: fornecedor?.status || "ativo",
+        status: pessoa?.status || "ativo",
+        tipo: tipo,
       }
 
       if (isEditing) {
-        payload.id = fornecedor.id
+        payload.id = pessoa.id
       }
 
       const res = await fetch("/api/fornecedores", {
@@ -97,14 +122,14 @@ export function FornecedorModal({ fornecedor, onClose, onSuccess }) {
       const data = await res.json()
 
       if (res.ok) {
-        toast.success(isEditing ? "Fornecedor atualizado!" : "Fornecedor cadastrado!")
+        toast.success(isEditing ? `${label.singular} atualizado!` : `${label.singular} cadastrado!`)
         onSuccess()
       } else {
-        toast.error(data.error || "Erro ao salvar fornecedor")
+        toast.error(data.error || `Erro ao salvar ${label.singular.toLowerCase()}`)
       }
     } catch (error) {
       console.error("Erro:", error)
-      toast.error("Erro ao salvar fornecedor")
+      toast.error(`Erro ao salvar ${label.singular.toLowerCase()}`)
     } finally {
       setLoading(false)
     }
@@ -115,8 +140,8 @@ export function FornecedorModal({ fornecedor, onClose, onSuccess }) {
       <DialogContent className="max-w-md max-h-[90vh] p-0">
         <DialogHeader className="px-6 pt-6 pb-4">
           <DialogTitle className="flex items-center gap-2">
-            <Truck className="h-5 w-5" />
-            {isEditing ? "Editar Fornecedor" : "Novo Fornecedor"}
+            <IconeTipo className="h-5 w-5" />
+            {isEditing ? label.editar : label.novo}
           </DialogTitle>
         </DialogHeader>
 
@@ -129,17 +154,17 @@ export function FornecedorModal({ fornecedor, onClose, onSuccess }) {
                   id="nome"
                   value={formData.nome}
                   onChange={(e) => handleChange("nome", e.target.value)}
-                  placeholder="Nome do fornecedor"
+                  placeholder={label.placeholder}
                 />
               </div>
 
               <div>
-                <Label htmlFor="documento">CNPJ</Label>
+                <Label htmlFor="documento">{label.documento}</Label>
                 <Input
                   id="documento"
                   value={formatCNPJ(formData.documento)}
                   onChange={(e) => handleChange("documento", e.target.value.replace(/\D/g, ""))}
-                  placeholder="00.000.000/0000-00"
+                  placeholder={label.docPlaceholder}
                   maxLength={18}
                 />
               </div>

@@ -186,7 +186,7 @@ export async function PUT(
     const fimMes = new Date(fatura.anoReferencia, fatura.mesReferencia, 0, 23, 59, 59);
 
     // Executar todas as operações em uma transação atômica
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx: any) => {
       // 1. Criar conta a pagar para a fatura
       const contaFatura = await tx.conta.create({
         data: {

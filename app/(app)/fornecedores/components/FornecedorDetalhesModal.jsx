@@ -24,10 +24,26 @@ import {
   CheckCircle,
   Clock,
   Copy,
+  Users,
 } from "lucide-react"
 import { toast } from "sonner"
 
-export function FornecedorDetalhesModal({ fornecedor, onClose }) {
+export function FornecedorDetalhesModal({ pessoa, tipo = "fornecedor", onClose }) {
+  // Labels dinâmicos baseados no tipo
+  const labels = {
+    fornecedor: {
+      singular: "Fornecedor",
+      titulo: "Detalhes do Fornecedor",
+      icon: Truck,
+    },
+    cliente: {
+      singular: "Cliente",
+      titulo: "Detalhes do Cliente",
+      icon: Users,
+    },
+  }
+  const label = labels[tipo] || labels.fornecedor
+  const IconeTipo = label.icon
   const copyToClipboard = (text, label) => {
     navigator.clipboard.writeText(text)
     toast.success(`${label} copiado!`)
@@ -45,7 +61,7 @@ export function FornecedorDetalhesModal({ fornecedor, onClose }) {
     return doc
   }
 
-  const stats = fornecedor.estatisticas || {
+  const stats = pessoa.estatisticas || {
     totalContas: 0,
     valorTotal: 0,
     contasPagas: 0,
@@ -59,8 +75,8 @@ export function FornecedorDetalhesModal({ fornecedor, onClose }) {
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Truck className="h-5 w-5" />
-            Detalhes do Fornecedor
+            <IconeTipo className="h-5 w-5" />
+            {label.titulo}
           </DialogTitle>
         </DialogHeader>
 
@@ -68,13 +84,13 @@ export function FornecedorDetalhesModal({ fornecedor, onClose }) {
           {/* Cabecalho */}
           <div className="flex items-start justify-between">
             <div>
-              <h2 className="text-xl font-bold">{fornecedor.nome}</h2>
-              {fornecedor.documento && (
+              <h2 className="text-xl font-bold">{pessoa.nome}</h2>
+              {pessoa.documento && (
                 <div className="flex items-center gap-2 text-muted-foreground mt-1">
                   <Building2 className="h-4 w-4" />
-                  <span>{formatDocumento(fornecedor.documento)}</span>
+                  <span>{formatDocumento(pessoa.documento)}</span>
                   <button
-                    onClick={() => copyToClipboard(fornecedor.documento, "Documento")}
+                    onClick={() => copyToClipboard(pessoa.documento, "Documento")}
                     className="hover:text-foreground"
                   >
                     <Copy className="h-3 w-3" />
@@ -82,8 +98,8 @@ export function FornecedorDetalhesModal({ fornecedor, onClose }) {
                 </div>
               )}
             </div>
-            <Badge variant={fornecedor.status === "ativo" ? "default" : "secondary"}>
-              {fornecedor.status === "ativo" ? "Ativo" : "Inativo"}
+            <Badge variant={pessoa.status === "ativo" ? "default" : "secondary"}>
+              {pessoa.status === "ativo" ? "Ativo" : "Inativo"}
             </Badge>
           </div>
 
@@ -139,29 +155,29 @@ export function FornecedorDetalhesModal({ fornecedor, onClose }) {
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="info">Informacoes</TabsTrigger>
               <TabsTrigger value="contas">
-                Contas ({fornecedor.contas?.length || 0})
+                Contas ({pessoa.contas?.length || 0})
               </TabsTrigger>
             </TabsList>
 
             <TabsContent value="info" className="space-y-4 mt-4">
               {/* Contato */}
-              {(fornecedor.contato || fornecedor.email) && (
+              {(pessoa.contato || pessoa.email) && (
                 <Card className="p-4">
                   <h4 className="font-medium mb-3 flex items-center gap-2">
                     <Phone className="h-4 w-4" />
                     Contato
                   </h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                    {fornecedor.contato && (
+                    {pessoa.contato && (
                       <div>
                         <span className="text-muted-foreground">Telefone:</span>{" "}
-                        {fornecedor.contato}
+                        {pessoa.contato}
                       </div>
                     )}
-                    {fornecedor.email && (
+                    {pessoa.email && (
                       <div>
                         <span className="text-muted-foreground">E-mail:</span>{" "}
-                        {fornecedor.email}
+                        {pessoa.email}
                       </div>
                     )}
                   </div>
@@ -169,16 +185,16 @@ export function FornecedorDetalhesModal({ fornecedor, onClose }) {
               )}
 
               {/* Endereco */}
-              {(fornecedor.endereco || fornecedor.cidade) && (
+              {(pessoa.endereco || pessoa.cidade) && (
                 <Card className="p-4">
                   <h4 className="font-medium mb-3 flex items-center gap-2">
                     <MapPin className="h-4 w-4" />
                     Endereco
                   </h4>
                   <div className="text-sm space-y-1">
-                    {fornecedor.endereco && <p>{fornecedor.endereco}</p>}
+                    {pessoa.endereco && <p>{pessoa.endereco}</p>}
                     <p>
-                      {[fornecedor.cidade, fornecedor.estado, fornecedor.cep]
+                      {[pessoa.cidade, pessoa.estado, pessoa.cep]
                         .filter(Boolean)
                         .join(" - ")}
                     </p>
@@ -187,47 +203,47 @@ export function FornecedorDetalhesModal({ fornecedor, onClose }) {
               )}
 
               {/* Dados Bancarios */}
-              {(fornecedor.banco || fornecedor.chavePix) && (
+              {(pessoa.banco || pessoa.chavePix) && (
                 <Card className="p-4">
                   <h4 className="font-medium mb-3 flex items-center gap-2">
                     <Landmark className="h-4 w-4" />
                     Dados Bancarios
                   </h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                    {fornecedor.banco && (
+                    {pessoa.banco && (
                       <div>
                         <span className="text-muted-foreground">Banco:</span>{" "}
-                        {fornecedor.banco}
+                        {pessoa.banco}
                       </div>
                     )}
-                    {fornecedor.agencia && (
+                    {pessoa.agencia && (
                       <div>
                         <span className="text-muted-foreground">Agencia:</span>{" "}
-                        {fornecedor.agencia}
+                        {pessoa.agencia}
                       </div>
                     )}
-                    {fornecedor.contaBancaria && (
+                    {pessoa.contaBancaria && (
                       <div>
                         <span className="text-muted-foreground">Conta:</span>{" "}
-                        {fornecedor.contaBancaria}
+                        {pessoa.contaBancaria}
                       </div>
                     )}
-                    {fornecedor.tipoConta && (
+                    {pessoa.tipoConta && (
                       <div>
                         <span className="text-muted-foreground">Tipo:</span>{" "}
-                        {fornecedor.tipoConta === "corrente"
+                        {pessoa.tipoConta === "corrente"
                           ? "Conta Corrente"
-                          : fornecedor.tipoConta === "poupanca"
+                          : pessoa.tipoConta === "poupanca"
                           ? "Poupanca"
                           : "Conta Pagamento"}
                       </div>
                     )}
-                    {fornecedor.chavePix && (
+                    {pessoa.chavePix && (
                       <div className="sm:col-span-2 flex items-center gap-2">
                         <span className="text-muted-foreground">Chave Pix:</span>{" "}
-                        <span>{fornecedor.chavePix}</span>
+                        <span>{pessoa.chavePix}</span>
                         <button
-                          onClick={() => copyToClipboard(fornecedor.chavePix, "Chave Pix")}
+                          onClick={() => copyToClipboard(pessoa.chavePix, "Chave Pix")}
                           className="hover:text-foreground"
                         >
                           <Copy className="h-3 w-3" />
@@ -239,28 +255,28 @@ export function FornecedorDetalhesModal({ fornecedor, onClose }) {
               )}
 
               {/* Observacoes */}
-              {fornecedor.observacoes && (
+              {pessoa.observacoes && (
                 <Card className="p-4">
                   <h4 className="font-medium mb-3">Observacoes</h4>
                   <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                    {fornecedor.observacoes}
+                    {pessoa.observacoes}
                   </p>
                 </Card>
               )}
             </TabsContent>
 
             <TabsContent value="contas" className="mt-4">
-              {!fornecedor.contas || fornecedor.contas.length === 0 ? (
+              {!pessoa.contas || pessoa.contas.length === 0 ? (
                 <Card className="p-8 text-center">
                   <FileText className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
                   <p className="text-muted-foreground">
-                    Nenhuma conta vinculada a este fornecedor
+                    Nenhuma conta vinculada a este {label.singular.toLowerCase()}
                   </p>
                 </Card>
               ) : (
                 <ScrollArea className="max-h-[300px] pr-4">
                   <div className="space-y-2">
-                    {fornecedor.contas.map((conta) => (
+                    {pessoa.contas.map((conta) => (
                       <Card key={conta.id} className="p-3">
                         <div className="flex items-center justify-between">
                           <div className="flex-1">

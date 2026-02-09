@@ -151,8 +151,19 @@ export async function GET() {
           );
 
           // 4. Adicionar descontos do fluxo de caixa (campo descontoReal do banco)
-          // O fluxo de caixa atualiza este campo quando lançamentos são feitos diretamente
-          const descontosReaisFluxo = socio.descontoReal || 0;
+          // O fluxo de caixa atualiza este campo quando lançamentos são feitos diretamente (sem conta associada)
+          // Usa Math.max para garantir que valores negativos históricos não corrompam o cálculo
+          let descontosReaisFluxo = socio.descontoReal || 0;
+
+          // Auto-correção: se descontoReal estiver negativo (dado histórico corrompido), zerar no banco
+          if (descontosReaisFluxo < 0) {
+            console.log(`⚠️ Corrigindo descontoReal negativo do sócio ${socio.nome}: ${descontosReaisFluxo} -> 0`);
+            await prisma.centroCusto.update({
+              where: { id: socio.id },
+              data: { descontoReal: 0 },
+            });
+            descontosReaisFluxo = 0;
+          }
 
           // Total de descontos reais = contas pagas + lançamentos do fluxo de caixa
           const descontosReais = descontosReaisContas + descontosReaisFluxo;
@@ -273,6 +284,8 @@ export async function POST(request: Request) {
       }
     }
 
+    const valorProLabore = typeof proLaboreBase === 'number' ? proLaboreBase : parseFloat(proLaboreBase);
+
     const socio = await prisma.centroCusto.create({
       data: {
         nome,
@@ -281,7 +294,7 @@ export async function POST(request: Request) {
         ativo: true,
         isSocio: true,
         cpfSocio: cpf,
-        previsto: typeof proLaboreBase === 'number' ? proLaboreBase : parseFloat(proLaboreBase),
+        previsto: valorProLabore,
         realizado: 0,
         parentId: centroPai.id,
         userId: user.id,
@@ -289,7 +302,38 @@ export async function POST(request: Request) {
       },
     });
 
-    return NextResponse.json(socio, { status: 201 });
+    // Criar automaticamente uma conta a pagar de pró-labore para o mês atual
+    const hoje = new Date();
+    const mesAtual = hoje.getMonth() + 1; // 1-12
+    const anoAtual = hoje.getFullYear();
+
+    // Último dia do mês atual
+    const ultimoDiaMes = new Date(anoAtual, mesAtual, 0, 12, 0, 0);
+
+    const contaProLabore = await prisma.conta.create({
+      data: {
+        descricao: `Pró-labore ${nome} - ${mesAtual.toString().padStart(2, '0')}/${anoAtual}`,
+        valor: valorProLabore,
+        vencimento: ultimoDiaMes,
+        tipo: "pagar",
+        categoria: "Pró-labore",
+        subcategoria: nome,
+        codigoTipo: sigla,
+        beneficiario: nome,
+        observacoes: `Pró-labore mensal do sócio ${nome} (CPF: ${cpf || 'não informado'})`,
+        pago: false,
+        status: "pendente",
+        userId: user.id,
+        empresaId: empresaId || undefined,
+      },
+    });
+
+    console.log(`✅ Sócio ${nome} criado com conta de pró-labore automática (ID: ${contaProLabore.id})`);
+
+    return NextResponse.json({
+      ...socio,
+      contaProLaboreId: contaProLabore.id,
+    }, { status: 201 });
   } catch (error: any) {
     console.error("Error creating sócio:", error);
 

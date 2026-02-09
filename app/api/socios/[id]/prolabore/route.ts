@@ -48,7 +48,7 @@ export async function GET(
       where: whereDescontosRecorrentes,
     });
 
-    const descontosPrevistos = descontosRecorrentes.reduce((acc, d) => acc + Number(d.valor), 0);
+    const descontosPrevistos = descontosRecorrentes.reduce((acc: number, d: any) => acc + Number(d.valor), 0);
 
     // 2. Buscar contas pagas no mês vinculadas a este sócio (descontos reais)
     const whereContas: any = {
@@ -67,13 +67,13 @@ export async function GET(
     });
 
     // Filtrar: excluir contas pai de parcelamento
-    const contasValidas = contasPagasMes.filter(c => {
+    const contasValidas = contasPagasMes.filter((c: any) => {
       if (c.parentId !== null) return true;
       if (c.parentId === null && c.totalParcelas === null) return true;
       return false;
     });
 
-    const descontosReais = contasValidas.reduce((acc, c) => acc + Number(c.valor), 0);
+    const descontosReais = contasValidas.reduce((acc: number, c: any) => acc + Number(c.valor), 0);
     const totalDescontos = descontosPrevistos + descontosReais;
 
     // Retornar dados do mês atual
@@ -99,7 +99,7 @@ export async function GET(
         proLaboreBase: socio.previsto,
       },
       historico: faturasPorMes,
-      descontosRecorrentes: descontosRecorrentes.map(d => ({
+      descontosRecorrentes: descontosRecorrentes.map((d: any) => ({
         id: d.id,
         nome: d.nome,
         valor: d.valor,

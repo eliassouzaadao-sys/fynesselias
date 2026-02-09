@@ -46,59 +46,84 @@ export async function GET(
     const mesAtual = hoje.getMonth() + 1;
     const anoAtual = hoje.getFullYear();
 
-    const faturaAtualWhere: any = {
+    // Buscar todos os meses que têm lançamentos no cartão
+    const contasWhere: any = {
       cartaoId: cartao.id,
-      mesReferencia: mesAtual,
-      anoReferencia: anoAtual,
-      userId: user.id
+      userId: user.id,
+      OR: [
+        { totalParcelas: null },
+        { parentId: { not: null } },
+      ]
     };
-    if (empresaId) faturaAtualWhere.empresaId = empresaId;
+    if (empresaId) contasWhere.empresaId = empresaId;
 
-    const faturaAtualExiste = await prisma.fatura.findFirst({
-      where: faturaAtualWhere
+    const contasCartao = await prisma.conta.findMany({
+      where: contasWhere,
+      select: { vencimento: true }
     });
 
-    if (!faturaAtualExiste) {
-      // Criar fatura do mês atual (mês de uso)
-      // O fechamento e vencimento são no mês SEGUINTE ao mês de uso
-      let mesFechamento = mesAtual + 1;
-      let anoFechamento = anoAtual;
-      if (mesFechamento > 12) {
-        mesFechamento = 1;
-        anoFechamento += 1;
-      }
-      const dataFechamento = new Date(anoFechamento, mesFechamento - 1, cartao.diaFechamento, 23, 59, 59);
-      const dataVencimento = new Date(anoFechamento, mesFechamento - 1, cartao.diaVencimento);
+    // Extrair meses únicos das contas
+    const mesesComLancamentos = new Set<string>();
+    contasCartao.forEach((conta: { vencimento: Date }) => {
+      const data = new Date(conta.vencimento);
+      const mes = data.getMonth() + 1;
+      const ano = data.getFullYear();
+      mesesComLancamentos.add(`${ano}-${mes}`);
+    });
 
-      await prisma.fatura.create({
-        data: {
-          cartaoId: cartao.id,
-          mesReferencia: mesAtual,
-          anoReferencia: anoAtual,
-          valorTotal: 0,
-          dataFechamento,
-          dataVencimento,
-          userId: user.id,
-          empresaId: empresaId || undefined
-        }
+    // Adicionar o mês atual
+    mesesComLancamentos.add(`${anoAtual}-${mesAtual}`);
+
+    // Criar faturas para todos os meses que têm lançamentos
+    for (const mesAno of mesesComLancamentos) {
+      const [ano, mes] = mesAno.split("-").map(Number);
+
+      const faturaWhere: any = {
+        cartaoId: cartao.id,
+        mesReferencia: mes,
+        anoReferencia: ano,
+        userId: user.id
+      };
+      if (empresaId) faturaWhere.empresaId = empresaId;
+
+      const faturaExiste = await prisma.fatura.findFirst({
+        where: faturaWhere
       });
+
+      if (!faturaExiste) {
+        // Criar fatura (fechamento e vencimento são no mês SEGUINTE)
+        let mesFechamento = mes + 1;
+        let anoFechamento = ano;
+        if (mesFechamento > 12) {
+          mesFechamento = 1;
+          anoFechamento += 1;
+        }
+        const dataFechamento = new Date(anoFechamento, mesFechamento - 1, cartao.diaFechamento, 23, 59, 59);
+        const dataVencimento = new Date(anoFechamento, mesFechamento - 1, cartao.diaVencimento);
+
+        await prisma.fatura.create({
+          data: {
+            cartaoId: cartao.id,
+            mesReferencia: mes,
+            anoReferencia: ano,
+            valorTotal: 0,
+            dataFechamento,
+            dataVencimento,
+            userId: user.id,
+            empresaId: empresaId || undefined
+          }
+        });
+      }
     }
 
     // Filtro por ano (opcional)
     const { searchParams } = new URL(request.url);
     const ano = searchParams.get("ano");
 
-    // Filtrar apenas faturas até o mês atual (não mostrar futuras)
+    // Buscar todas as faturas do cartão (incluindo futuras que têm lançamentos)
     const whereClause: any = {
       cartaoId,
-      userId: user.id,
-      OR: [
-        { anoReferencia: { lt: anoAtual } },
-        {
-          anoReferencia: anoAtual,
-          mesReferencia: { lte: mesAtual }
-        }
-      ]
+      userId: user.id
     };
     if (empresaId) whereClause.empresaId = empresaId;
     if (ano) {

@@ -101,7 +101,22 @@ interface ContaInput {
   pessoaId?: number;
 }
 
-// POST - Criar múltiplas contas individualmente (sem agrupamento)
+// Helper para detectar se é parcela pelo padrão "Parcela X/Y" na descrição
+function parseParcelaInfo(descricao: string): { isParcela: boolean; numeroParcela?: string; descricaoBase?: string; total?: number } {
+  // Padrão: "Descrição - Parcela X/Y"
+  const match = descricao.match(/^(.+?)\s*-\s*Parcela\s+(\d+)\/(\d+)$/i);
+  if (match) {
+    return {
+      isParcela: true,
+      descricaoBase: match[1].trim(),
+      numeroParcela: `${match[2]}/${match[3]}`,
+      total: parseInt(match[3]),
+    };
+  }
+  return { isParcela: false };
+}
+
+// POST - Criar múltiplas contas (com agrupamento automático para parcelamentos)
 export async function POST(request: Request) {
   try {
     const user = await getCurrentUser();
@@ -121,11 +136,90 @@ export async function POST(request: Request) {
       );
     }
 
-    console.log(`📝 Criando ${contas.length} contas individuais`);
+    console.log(`📝 Processando ${contas.length} contas`);
+
+    // Verificar se é parcelamento
+    const primeiraContaInfo = parseParcelaInfo(contas[0].descricao);
+    const isParcelamento = primeiraContaInfo.isParcela && contas.length > 1;
+
+    console.log(`📝 É parcelamento: ${isParcelamento}`, primeiraContaInfo);
 
     const contasCriadas = [];
     const erros = [];
 
+    // Se for parcelamento, criar conta macro primeiro
+    let contaMacro: any = null;
+    let grupoParcelamentoId: string | null = null;
+
+    if (isParcelamento) {
+      grupoParcelamentoId = crypto.randomUUID();
+      const valorTotal = contas.reduce((sum, c) => sum + Number(c.valor), 0);
+      const descricaoBase = primeiraContaInfo.descricaoBase || contas[0].descricao;
+      const primeiroVencimento = parseLocalDate(contas[0].vencimento);
+
+      // Buscar ID do sócio pelo centro de custo
+      const socioIdFromCentro = await getSocioIdByCentroCusto(
+        contas[0].codigoTipo || null,
+        user.id,
+        empresaId
+      );
+
+      const macroData: any = {
+        descricao: descricaoBase,
+        valor: valorTotal,
+        valorTotal: valorTotal,
+        vencimento: primeiroVencimento,
+        pago: false, // Macro nunca é paga diretamente
+        tipo: contas[0].tipo || "pagar",
+        isContaMacro: true,
+        totalParcelas: contas.length,
+        grupoParcelamentoId: grupoParcelamentoId,
+        userId: user.id,
+        empresaId: empresaId || undefined,
+      };
+
+      // Campos opcionais
+      if (contas[0].beneficiario) macroData.beneficiario = contas[0].beneficiario;
+      if (contas[0].codigoTipo) macroData.codigoTipo = contas[0].codigoTipo;
+      if (contas[0].numeroDocumento) macroData.numeroDocumento = contas[0].numeroDocumento;
+      if (contas[0].cartaoId) macroData.cartaoId = Number(contas[0].cartaoId);
+      if (contas[0].bancoContaId) macroData.bancoContaId = Number(contas[0].bancoContaId);
+      if (contas[0].pessoaId) macroData.pessoaId = Number(contas[0].pessoaId);
+      if (socioIdFromCentro) macroData.socioResponsavelId = socioIdFromCentro;
+
+      contaMacro = await prisma.conta.create({
+        data: macroData,
+        include: { pessoa: true },
+      });
+
+      console.log(`✅ Conta MACRO criada: ID ${contaMacro.id}, valor total: ${valorTotal}`);
+
+      // Atualizar previsto do centro de custo com valor total
+      if (contas[0].codigoTipo) {
+        const whereCentro: any = { sigla: contas[0].codigoTipo, userId: user.id };
+        if (empresaId) whereCentro.empresaId = empresaId;
+
+        const centro = await prisma.centroCusto.findFirst({
+          where: whereCentro,
+          select: { id: true, isSocio: true, descontoPrevisto: true },
+        });
+
+        if (centro) {
+          if (centro.isSocio) {
+            await prisma.centroCusto.update({
+              where: { id: centro.id },
+              data: { descontoPrevisto: (centro.descontoPrevisto || 0) + valorTotal },
+            });
+            console.log(`📊 Desconto previsto do sócio atualizado: +${valorTotal}`);
+          } else {
+            await updateCentroAndParent(contas[0].codigoTipo, "previsto", valorTotal, user.id);
+            console.log(`📊 Previsto do centro atualizado: +${valorTotal}`);
+          }
+        }
+      }
+    }
+
+    // Criar as contas/parcelas
     for (let i = 0; i < contas.length; i++) {
       const conta = contas[i];
 
@@ -136,8 +230,11 @@ export async function POST(request: Request) {
         // Buscar ID do sócio pelo centro de custo
         const socioIdFromCentro = await getSocioIdByCentroCusto(conta.codigoTipo || null, user.id, empresaId);
 
+        // Parse info da parcela
+        const parcelaInfo = parseParcelaInfo(conta.descricao);
+
         const contaData: any = {
-          descricao: conta.descricao,
+          descricao: isParcelamento ? primeiraContaInfo.descricaoBase : conta.descricao, // Descrição sem "Parcela X/Y"
           valor: valor,
           vencimento: vencimento,
           pago: conta.pago || false,
@@ -146,6 +243,14 @@ export async function POST(request: Request) {
           userId: user.id,
           empresaId: empresaId || undefined,
         };
+
+        // Se for parcelamento, adicionar vinculação à macro
+        if (isParcelamento && contaMacro) {
+          contaData.parentId = contaMacro.id;
+          contaData.grupoParcelamentoId = grupoParcelamentoId;
+          contaData.numeroParcela = parcelaInfo.numeroParcela || `${i + 1}/${contas.length}`;
+          contaData.totalParcelas = contas.length;
+        }
 
         if (conta.pago) {
           contaData.dataPagamento = new Date();
@@ -166,12 +271,10 @@ export async function POST(request: Request) {
           include: { pessoa: true },
         });
 
-        console.log(`✅ Conta ${i + 1}/${contas.length} criada: ${novaConta.descricao}`);
+        console.log(`✅ ${isParcelamento ? 'Parcela' : 'Conta'} ${i + 1}/${contas.length} criada: ID ${novaConta.id}${isParcelamento ? `, parentId: ${contaMacro?.id}` : ''}`);
         contasCriadas.push(novaConta);
 
         // Buscar centro de custo para verificar se é sócio
-        console.log(`🔍 Buscando centro: codigoTipo=${conta.codigoTipo}, userId=${user.id}, empresaId=${empresaId}`);
-
         const whereCentro: any = { sigla: conta.codigoTipo, userId: user.id };
         if (empresaId) whereCentro.empresaId = empresaId;
 
@@ -182,28 +285,23 @@ export async function POST(request: Request) {
             })
           : null;
 
-        console.log(`🔍 Centro encontrado:`, centro ? `id=${centro.id}, nome=${centro.nome}, isSocio=${centro.isSocio}, descontoPrevisto=${centro.descontoPrevisto}` : 'NÃO ENCONTRADO');
-
-        // Atualizar previsto/descontoPrevisto do centro de custo
-        if (conta.codigoTipo && centro) {
+        // Se NÃO for parcelamento, atualizar previsto/descontoPrevisto do centro de custo
+        if (!isParcelamento && conta.codigoTipo && centro) {
           if (centro.isSocio) {
-            // Se for sócio, atualizar descontoPrevisto
             const novoDesconto = (centro.descontoPrevisto || 0) + valor;
             await prisma.centroCusto.update({
               where: { id: centro.id },
               data: { descontoPrevisto: novoDesconto },
             });
-            console.log(`📊 Desconto previsto do sócio atualizado: ${centro.descontoPrevisto || 0} -> ${novoDesconto} (+${valor})`);
+            console.log(`📊 Desconto previsto do sócio atualizado: +${valor}`);
           } else {
-            // Se não for sócio, atualizar previsto normal
             await updateCentroAndParent(conta.codigoTipo, "previsto", valor, user.id);
           }
-        } else if (conta.codigoTipo && !centro) {
-          console.log(`⚠️ Centro de custo ${conta.codigoTipo} NÃO ENCONTRADO!`);
         }
 
         // Se a conta foi criada já paga, criar registro no fluxo de caixa
-        if (conta.pago) {
+        // NUNCA criar fluxo para conta macro - apenas parcelas individuais
+        if (conta.pago && !novaConta.isContaMacro) {
           const whereFluxo: any = { userId: user.id };
           if (empresaId) whereFluxo.empresaId = empresaId;
 
@@ -239,24 +337,14 @@ export async function POST(request: Request) {
             data: fluxoData,
           });
 
-          // Atualizar realizado/descontoReal do centro de custo
-          if (novaConta.codigoTipo && centro) {
-            if (centro.isSocio && tipoFluxo === "saida") {
-              // Se for sócio e saída, atualizar descontoReal
-              await prisma.centroCusto.update({
-                where: { id: centro.id },
-                data: { descontoReal: { increment: Number(novaConta.valor) } },
-              });
-              console.log(`💰 Desconto real do sócio atualizado: +${novaConta.valor}`);
-            } else if (!centro.isSocio) {
-              // Se não for sócio, atualizar realizado
-              await updateCentroAndParent(
-                novaConta.codigoTipo,
-                "realizado",
-                Number(novaConta.valor),
-                user.id
-              );
-            }
+          // Atualizar realizado do centro de custo
+          if (novaConta.codigoTipo && centro && !centro.isSocio) {
+            await updateCentroAndParent(
+              novaConta.codigoTipo,
+              "realizado",
+              Number(novaConta.valor),
+              user.id
+            );
           }
 
           console.log(`💰 Fluxo de caixa criado para conta ${novaConta.id}`);
@@ -275,8 +363,12 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      message: `${contasCriadas.length} conta(s) criada(s) com sucesso`,
+      message: isParcelamento
+        ? `Conta macro + ${contasCriadas.length} parcelas criadas`
+        : `${contasCriadas.length} conta(s) criada(s) com sucesso`,
+      contaMacro: contaMacro,
       contas: contasCriadas,
+      grupoParcelamentoId: grupoParcelamentoId,
       erros: erros.length > 0 ? erros : undefined,
       totalCriadas: contasCriadas.length,
       totalErros: erros.length,

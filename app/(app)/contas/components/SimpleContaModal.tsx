@@ -635,9 +635,9 @@ export function SimpleContaModal({ tipo, onClose, onSuccess }: SimpleContaModalP
                             disabled={isSaving}
                           >
                             {fornecedorSelecionado ? (
-                              <span className="flex items-center gap-2 whitespace-nowrap">
-                                <Truck className="h-4 w-4 text-muted-foreground" />
-                                {fornecedorSelecionado.nome}
+                              <span className="flex items-center gap-2 truncate">
+                                <Truck className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                                <span className="truncate">{fornecedorSelecionado.nome}</span>
                               </span>
                             ) : (
                               <span className="text-muted-foreground">Selecione...</span>
@@ -780,21 +780,21 @@ export function SimpleContaModal({ tipo, onClose, onSuccess }: SimpleContaModalP
 
                   <div className="grid gap-4 md:grid-cols-2">
                     {/* Centro de Custo/Receita */}
-                    <div>
+                    <div className="min-w-0">
                       <Label htmlFor="centro">Centro de {tipo === "pagar" ? "Custo" : "Receita"}</Label>
                       <Select value={codigoTipo || "none"} onValueChange={(v) => setCodigoTipo(v === "none" ? "" : v)} disabled={isSaving || loadingCentros}>
                         <SelectTrigger id="centro" className="mt-1">
-                          <SelectValue placeholder={loadingCentros ? "Carregando..." : "Selecione"} />
+                          <SelectValue placeholder={loadingCentros ? "Carregando..." : "Selecione"} className="truncate" />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="none">Nenhum</SelectItem>
                           {centros.map((centro: any) => (
                             <SelectItem key={centro.id} value={centro.sigla} className={centro.level === 1 ? "pl-6" : ""}>
-                              <span className="flex items-center gap-2 whitespace-nowrap">
+                              <span className="flex items-center gap-1">
                                 {centro.level === 1 && <span className="text-muted-foreground">└</span>}
                                 <span className={centro.isParent ? "font-medium" : ""}>{centro.sigla}</span>
                                 <span className="text-muted-foreground">-</span>
-                                <span className={centro.isSocio ? "text-primary" : ""}>{centro.nome}</span>
+                                <span className={`${centro.isSocio ? "text-primary" : ""} truncate`}>{centro.nome}</span>
                               </span>
                             </SelectItem>
                           ))}
@@ -816,7 +816,7 @@ export function SimpleContaModal({ tipo, onClose, onSuccess }: SimpleContaModalP
                           <SelectItem value="none">Nenhuma</SelectItem>
                           {bancos.map((banco) => (
                             <SelectItem key={banco.id} value={banco.id.toString()}>
-                              <span className="whitespace-nowrap">{banco.nome} - Ag: {banco.agencia}</span>
+                              <span className="truncate">{banco.nome} - Ag: {banco.agencia}</span>
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -847,7 +847,7 @@ export function SimpleContaModal({ tipo, onClose, onSuccess }: SimpleContaModalP
                           <SelectItem value="none">Nenhum (pagamento normal)</SelectItem>
                           {cartoes.map((cartao) => (
                             <SelectItem key={cartao.id} value={cartao.id.toString()}>
-                              <span className="whitespace-nowrap">{cartao.nome} (**** {cartao.ultimos4Digitos})</span>
+                              <span className="truncate">{cartao.nome} (**** {cartao.ultimos4Digitos})</span>
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -1047,12 +1047,14 @@ export function SimpleContaModal({ tipo, onClose, onSuccess }: SimpleContaModalP
                         <Label htmlFor="qtdParcelas">Quantidade de Parcelas *</Label>
                         <Input
                           id="qtdParcelas"
-                          type="number"
-                          min="2"
-                          max="48"
+                          type="text"
+                          inputMode="numeric"
                           placeholder="12"
                           value={totalParcelas}
-                          onChange={(e) => setTotalParcelas(e.target.value)}
+                          onChange={(e) => {
+                            const value = e.target.value.replace(/\D/g, '');
+                            setTotalParcelas(value);
+                          }}
                           disabled={isSaving}
                           className="w-24 mt-1"
                         />
@@ -1072,22 +1074,27 @@ export function SimpleContaModal({ tipo, onClose, onSuccess }: SimpleContaModalP
                         <Label>Qual parcela? *</Label>
                         <div className="flex items-center gap-2 mt-1">
                           <Input
-                            type="number"
-                            min="1"
+                            type="text"
+                            inputMode="numeric"
                             placeholder="1"
                             value={parcelaAtual}
-                            onChange={(e) => setParcelaAtual(e.target.value)}
+                            onChange={(e) => {
+                              const value = e.target.value.replace(/\D/g, '');
+                              setParcelaAtual(value);
+                            }}
                             disabled={isSaving}
                             className="w-20"
                           />
                           <span className="text-muted-foreground font-medium">/</span>
                           <Input
-                            type="number"
-                            min="1"
-                            max="48"
+                            type="text"
+                            inputMode="numeric"
                             placeholder="12"
                             value={totalParcelas}
-                            onChange={(e) => setTotalParcelas(e.target.value)}
+                            onChange={(e) => {
+                              const value = e.target.value.replace(/\D/g, '');
+                              setTotalParcelas(value);
+                            }}
                             disabled={isSaving}
                             className="w-20"
                           />

@@ -75,56 +75,56 @@ const categoriasReceber = [
 async function main() {
   console.log('🌱 Iniciando seed do banco de dados...');
 
-  // Seed Bancos
-  console.log('📦 Criando bancos...');
-  for (const banco of bancos) {
-    await prisma.banco.upsert({
-      where: { nome: banco.nome },
-      update: {},
-      create: banco,
-    });
-  }
-  console.log(`✅ ${bancos.length} bancos criados/atualizados`);
+  // Seed Bancos - Comentado pois Banco agora requer userId
+  // console.log('📦 Criando bancos...');
+  // for (const banco of bancos) {
+  //   const existingBanco = await prisma.banco.findFirst({
+  //     where: { nome: banco.nome },
+  //   });
+  //   if (!existingBanco) {
+  //     await prisma.banco.create({
+  //       data: banco,
+  //     });
+  //   }
+  // }
+  // console.log(`✅ ${bancos.length} bancos criados/atualizados`);
+  console.log('📦 Seed de bancos ignorado (requer userId)');
 
-  // Seed Categorias a Pagar
-  console.log('📁 Criando categorias de contas a pagar...');
-  for (const cat of categoriasPagar) {
-    const categoria = await prisma.categoria.upsert({
-      where: { nome_tipo: { nome: cat.nome, tipo: 'pagar' } },
-      update: {},
-      create: { nome: cat.nome, tipo: 'pagar' },
-    });
+  // Seed Categorias a Pagar - Comentado pois Categoria agora requer userId
+  // console.log('📁 Criando categorias de contas a pagar...');
+  // for (const cat of categoriasPagar) {
+  //   const categoria = await prisma.categoria.upsert({
+  //     where: { nome_tipo: { nome: cat.nome, tipo: 'pagar' } },
+  //     update: {},
+  //     create: { nome: cat.nome, tipo: 'pagar' },
+  //   });
+  //   for (const subNome of cat.subcategorias) {
+  //     await prisma.subcategoria.upsert({
+  //       where: { nome_categoriaId: { nome: subNome, categoriaId: categoria.id } },
+  //       update: {},
+  //       create: { nome: subNome, categoriaId: categoria.id },
+  //     });
+  //   }
+  // }
+  console.log('📁 Seed de categorias a pagar ignorado (requer userId)');
 
-    // Criar subcategorias
-    for (const subNome of cat.subcategorias) {
-      await prisma.subcategoria.upsert({
-        where: { nome_categoriaId: { nome: subNome, categoriaId: categoria.id } },
-        update: {},
-        create: { nome: subNome, categoriaId: categoria.id },
-      });
-    }
-  }
-  console.log(`✅ ${categoriasPagar.length} categorias de pagar criadas com subcategorias`);
-
-  // Seed Categorias a Receber
-  console.log('📁 Criando categorias de contas a receber...');
-  for (const cat of categoriasReceber) {
-    const categoria = await prisma.categoria.upsert({
-      where: { nome_tipo: { nome: cat.nome, tipo: 'receber' } },
-      update: {},
-      create: { nome: cat.nome, tipo: 'receber' },
-    });
-
-    // Criar subcategorias
-    for (const subNome of cat.subcategorias) {
-      await prisma.subcategoria.upsert({
-        where: { nome_categoriaId: { nome: subNome, categoriaId: categoria.id } },
-        update: {},
-        create: { nome: subNome, categoriaId: categoria.id },
-      });
-    }
-  }
-  console.log(`✅ ${categoriasReceber.length} categorias de receber criadas com subcategorias`);
+  // Seed Categorias a Receber - Comentado pois Categoria agora requer userId
+  // console.log('📁 Criando categorias de contas a receber...');
+  // for (const cat of categoriasReceber) {
+  //   const categoria = await prisma.categoria.upsert({
+  //     where: { nome_tipo: { nome: cat.nome, tipo: 'receber' } },
+  //     update: {},
+  //     create: { nome: cat.nome, tipo: 'receber' },
+  //   });
+  //   for (const subNome of cat.subcategorias) {
+  //     await prisma.subcategoria.upsert({
+  //       where: { nome_categoriaId: { nome: subNome, categoriaId: categoria.id } },
+  //       update: {},
+  //       create: { nome: subNome, categoriaId: categoria.id },
+  //     });
+  //   }
+  // }
+  console.log('📁 Seed de categorias a receber ignorado (requer userId)');
 
   console.log('✨ Seed concluído com sucesso!');
 }

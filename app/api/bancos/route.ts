@@ -100,17 +100,20 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const updateData: any = {
-      nome: data.nome,
-      codigo: data.codigo,
-      agencia: data.agencia,
-      conta: data.conta,
-      chavePix: data.chavePix || null,
-      tipoChavePix: data.tipoChavePix || null,
-    };
+    const updateData: any = {};
 
-    if (data.saldoInicial !== undefined) {
-      updateData.saldoInicial = Number(data.saldoInicial);
+    // Campos editáveis do banco
+    if (data.nome !== undefined) updateData.nome = data.nome;
+    if (data.codigo !== undefined) updateData.codigo = data.codigo;
+    if (data.agencia !== undefined) updateData.agencia = data.agencia;
+    if (data.conta !== undefined) updateData.conta = data.conta;
+    if (data.chavePix !== undefined) updateData.chavePix = data.chavePix || null;
+    if (data.tipoChavePix !== undefined) updateData.tipoChavePix = data.tipoChavePix || null;
+    if (data.saldoInicial !== undefined) updateData.saldoInicial = Number(data.saldoInicial);
+
+    // Conciliação bancária
+    if (data.conciliar !== undefined) {
+      updateData.conciliadoEm = data.conciliar ? new Date() : null;
     }
 
     const banco = await prisma.banco.update({

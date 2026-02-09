@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/get-user';
 import { getEmpresaIdValidada } from '@/lib/get-empresa';
+import { atualizarContaProLabore } from '@/lib/prolabore';
 
 // Função auxiliar para buscar socioResponsavelId pelo centro de custo
 async function getSocioIdByCentroCusto(sigla, userId, empresaId = null) {
@@ -85,6 +86,7 @@ export async function GET() {
         conta: {
           include: {
             pessoa: true,
+            parcelas: { select: { id: true } }, // Incluir parcelas para detectar macros
           },
         },
         banco: true,
@@ -92,7 +94,41 @@ export async function GET() {
       },
     });
 
-    return NextResponse.json(Array.isArray(fluxoCaixa) ? fluxoCaixa : []);
+    // Filtrar registros de contas macro (elas NUNCA devem aparecer no fluxo)
+    // Verifica tanto a flag isContaMacro quanto se a conta tem parcelas filhas (para dados antigos)
+    const fluxosParaRemover = [];
+    const fluxoFiltrado = fluxoCaixa.filter(f => {
+      if (!f.conta) return true; // Manter fluxos sem conta vinculada (lançamentos diretos)
+
+      // Verificar se é uma conta macro (pelo flag ou por ter parcelas filhas)
+      const isMacro = f.conta.isContaMacro ||
+        (f.conta.parcelas && f.conta.parcelas.length > 0 && !f.conta.parentId);
+
+      if (isMacro) {
+        console.log(`🚫 Detectado fluxo de macro (será removido): ID ${f.id}, contaId: ${f.contaId}, valor: ${f.valor}`);
+        fluxosParaRemover.push(f.id);
+        return false;
+      }
+      return true;
+    });
+
+    // Limpeza automática: remover fluxos de macros que existem no banco (dados antigos/corrompidos)
+    if (fluxosParaRemover.length > 0) {
+      console.log(`🧹 Removendo ${fluxosParaRemover.length} fluxos de macro do banco de dados...`);
+      try {
+        await prisma.fluxoCaixa.deleteMany({
+          where: {
+            id: { in: fluxosParaRemover },
+            userId: user.id,
+          }
+        });
+        console.log(`✅ ${fluxosParaRemover.length} fluxos de macro removidos com sucesso`);
+      } catch (cleanupError) {
+        console.error('Erro ao limpar fluxos de macro:', cleanupError);
+      }
+    }
+
+    return NextResponse.json(Array.isArray(fluxoFiltrado) ? fluxoFiltrado : []);
   } catch (error) {
     console.error('Error fetching fluxo de caixa:', error);
     return NextResponse.json([]);
@@ -128,6 +164,30 @@ export async function POST(request) {
     const socioId = await getSocioIdByCentroCusto(data.centroCustoSigla, user.id, empresaId);
     const contaId = data.contaId || null;
 
+    // Se tem contaId, verificar se é conta macro (não pode criar fluxo para macro)
+    if (contaId) {
+      const conta = await prisma.conta.findUnique({
+        where: { id: contaId },
+        select: {
+          isContaMacro: true,
+          parentId: true,
+          parcelas: { select: { id: true }, take: 1 } // Verificar se tem filhos
+        }
+      });
+
+      // Bloquear se é macro (pelo flag ou por ter parcelas filhas sem ser filho de outra conta)
+      const isMacro = conta?.isContaMacro ||
+        (conta?.parcelas && conta.parcelas.length > 0 && !conta.parentId);
+
+      if (isMacro) {
+        console.log(`🚫 Tentativa de criar fluxo para conta macro bloqueada: contaId=${contaId}`);
+        return NextResponse.json(
+          { error: 'Não é permitido criar fluxo de caixa para conta macro. Use as parcelas individuais.' },
+          { status: 400 }
+        );
+      }
+    }
+
     // Criar registro no fluxo de caixa
     const novoRegistro = await prisma.fluxoCaixa.create({
       data: {
@@ -147,8 +207,9 @@ export async function POST(request) {
       },
     });
 
-    // Se for sócio e for saída, atualizar descontoReal
-    if (socioId && data.tipo === 'saida') {
+    // Se for sócio e for saída SEM conta associada (lançamento direto), atualizar descontoReal
+    // Se tiver contaId, a conta será contada na query de contas pagas, então não precisa duplicar aqui
+    if (socioId && data.tipo === 'saida' && !contaId) {
       await prisma.centroCusto.update({
         where: { id: socioId },
         data: {
@@ -157,10 +218,13 @@ export async function POST(request) {
           },
         },
       });
-      console.log(`💰 Desconto real do sócio ${socioId} atualizado: +${data.valor}`);
+      console.log(`💰 Desconto real do sócio ${socioId} atualizado (lançamento direto): +${data.valor}`);
+
+      // Atualizar conta de pró-labore do sócio
+      await atualizarContaProLabore(socioId, user.id, empresaId);
     }
     // Se não for sócio e tiver centro de custo, atualizar o realizado do centro
-    else if (data.centroCustoSigla) {
+    else if (data.centroCustoSigla && !socioId) {
       await updateCentroAndParent(data.centroCustoSigla, 'realizado', Number(data.valor), user.id);
     }
 
@@ -251,6 +315,30 @@ export async function PUT(request) {
           data: { fluxo: saldoAcumulado },
         });
       }
+
+      // Se é lançamento de sócio e o valor mudou, atualizar pró-labore
+      if (existing.centroCustoSigla && existing.tipo === 'saida') {
+        const socioId = await getSocioIdByCentroCusto(existing.centroCustoSigla, user.id, empresaId);
+        if (socioId) {
+          // Se for lançamento direto (sem contaId), atualizar descontoReal com a diferença
+          if (!existing.contaId) {
+            const diferenca = Number(data.valor) - Number(existing.valor);
+            await prisma.centroCusto.update({
+              where: { id: socioId },
+              data: {
+                descontoReal: {
+                  increment: diferenca,
+                },
+              },
+            });
+            console.log(`💰 Desconto real do sócio ${socioId} ajustado: ${diferenca > 0 ? '+' : ''}${diferenca}`);
+          }
+
+          // Atualizar conta de pró-labore (tanto para lançamento direto quanto vinculado a conta)
+          console.log(`📊 Atualizando pró-labore do sócio ${socioId} após edição de valor no fluxo...`);
+          await atualizarContaProLabore(socioId, user.id, empresaId);
+        }
+      }
     }
 
     return NextResponse.json(fluxoAtualizado);
@@ -288,7 +376,16 @@ export async function DELETE(request) {
 
     const fluxo = await prisma.fluxoCaixa.findFirst({
       where: whereFluxo,
-      include: { conta: true },
+      include: {
+        conta: {
+          select: {
+            id: true,
+            socioResponsavelId: true,
+            codigoTipo: true,
+            pago: true,
+          },
+        },
+      },
     });
 
     if (!fluxo) {
@@ -298,9 +395,18 @@ export async function DELETE(request) {
       );
     }
 
-    // Se tiver conta vinculada, reverter o status da conta para pendente
+    // Guardar referência do sócio da conta vinculada ANTES de reverter
+    let socioIdDaConta = null;
     if (fluxo.contaId && fluxo.conta) {
-      console.log(`🔄 Revertendo conta ${fluxo.contaId} para status pendente...`);
+      // Verificar se a conta tem sócio vinculado
+      if (fluxo.conta.socioResponsavelId) {
+        socioIdDaConta = fluxo.conta.socioResponsavelId;
+      } else if (fluxo.conta.codigoTipo) {
+        // Verificar pelo codigoTipo
+        socioIdDaConta = await getSocioIdByCentroCusto(fluxo.conta.codigoTipo, user.id, empresaId);
+      }
+
+      console.log(`🔄 Revertendo conta ${fluxo.contaId} para status pendente... (socioIdDaConta: ${socioIdDaConta})`);
       await prisma.conta.update({
         where: { id: fluxo.contaId },
         data: {
@@ -313,31 +419,49 @@ export async function DELETE(request) {
       console.log(`✅ Conta ${fluxo.contaId} revertida para pendente`);
     }
 
-    // Se tiver centro de custo, verificar se é sócio
+    // Guardar informações necessárias ANTES de excluir
+    let socioIdParaAtualizar = null;
+
     if (fluxo.centroCustoSigla) {
       const socioId = await getSocioIdByCentroCusto(fluxo.centroCustoSigla, user.id, empresaId);
 
       if (socioId && fluxo.tipo === 'saida') {
-        // Se for sócio e saída, reverter o descontoReal
-        await prisma.centroCusto.update({
-          where: { id: socioId },
-          data: {
-            descontoReal: {
-              decrement: Number(fluxo.valor),
+        socioIdParaAtualizar = socioId;
+
+        // Se for lançamento direto (sem contaId), reverter o descontoReal
+        if (!fluxo.contaId) {
+          await prisma.centroCusto.update({
+            where: { id: socioId },
+            data: {
+              descontoReal: {
+                decrement: Number(fluxo.valor),
+              },
             },
-          },
-        });
-        console.log(`💰 Desconto real do sócio ${socioId} revertido: -${fluxo.valor}`);
-      } else {
+          });
+          console.log(`💰 Desconto real do sócio ${socioId} revertido (lançamento direto): -${fluxo.valor}`);
+        }
+      } else if (!socioId && fluxo.centroCustoSigla) {
         // Se não for sócio, reverter o realizado
         await updateCentroAndParent(fluxo.centroCustoSigla, 'realizado', -Number(fluxo.valor), user.id);
       }
     }
 
-    // Excluir a movimentação
+    // Se a conta tinha sócio vinculado, guardar para atualizar depois
+    if (socioIdDaConta && !socioIdParaAtualizar) {
+      socioIdParaAtualizar = socioIdDaConta;
+    }
+
+    // PRIMEIRO: Excluir a movimentação (ANTES de atualizar pró-labore)
     await prisma.fluxoCaixa.delete({
       where: { id: data.id },
     });
+    console.log(`✅ Movimentação ${data.id} excluída`);
+
+    // DEPOIS: Atualizar pró-labore (agora o lançamento não existe mais)
+    if (socioIdParaAtualizar) {
+      console.log(`📊 Atualizando pró-labore do sócio ${socioIdParaAtualizar} após exclusão no fluxo...`);
+      await atualizarContaProLabore(socioIdParaAtualizar, user.id, empresaId);
+    }
 
     // Recalcular todos os saldos (fluxo) após a exclusão
     const whereTodosFluxos = { userId: user.id };

@@ -45,7 +45,7 @@ export async function GET(request: Request) {
       const centrosHierarquicos: any[] = [];
 
       // Primeiro, centros sem parent (principais)
-      const centrosPrincipais = centros.filter((c) => !c.parentId && !c.isSocio);
+      const centrosPrincipais = centros.filter((c: any) => !c.parentId && !c.isSocio);
 
       for (const centro of centrosPrincipais) {
         // Adiciona o centro principal
@@ -70,10 +70,10 @@ export async function GET(request: Request) {
       }
 
       // Adiciona centros sem parent que são sócios (para o caso de estarem órfãos)
-      const sociosOrfaos = centros.filter((c) => c.isSocio && !c.parentId);
+      const sociosOrfaos = centros.filter((c: any) => c.isSocio && !c.parentId);
       for (const socio of sociosOrfaos) {
         // Verifica se já não foi adicionado
-        if (!centrosHierarquicos.find((ch) => ch.id === socio.id)) {
+        if (!centrosHierarquicos.find((ch: any) => ch.id === socio.id)) {
           centrosHierarquicos.push({
             ...socio,
             level: 1,
@@ -116,12 +116,12 @@ export async function GET(request: Request) {
         where: contasWhere,
       });
 
-      const centrosComValores = centros.map((centro) => {
-        const contasDoCentro = contas.filter((c) => c.codigoTipo === centro.sigla);
-        const previsto = contasDoCentro.reduce((sum, c) => sum + Number(c.valor), 0);
+      const centrosComValores = centros.map((centro: any) => {
+        const contasDoCentro = contas.filter((c: any) => c.codigoTipo === centro.sigla);
+        const previsto = contasDoCentro.reduce((sum: number, c: any) => sum + Number(c.valor), 0);
         const realizado = contasDoCentro
-          .filter((c) => c.pago)
-          .reduce((sum, c) => sum + Number(c.valor), 0);
+          .filter((c: any) => c.pago)
+          .reduce((sum: number, c: any) => sum + Number(c.valor), 0);
 
         return { ...centro, previsto, realizado };
       });

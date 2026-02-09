@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/get-user';
 import { getEmpresaIdValidada } from '@/lib/get-empresa';
+import { atualizarContaProLabore } from '@/lib/prolabore';
 
 // Função auxiliar para atualizar centro de custo e propagar recursivamente para todos os ancestrais
 async function updateCentroAndParent(sigla, field, increment, userId) {
@@ -196,15 +197,12 @@ export async function GET(request) {
     if (empresaId) whereBase.empresaId = empresaId;
 
     if (modo === 'individual') {
-      // Modo individual: retorna parcelas como contas separadas (para fluxo de caixa)
-      // Exclui contas pai (que têm totalParcelas > 0) pois são apenas agrupadores
+      // Modo individual: retorna todas as contas individuais (para fluxo de caixa)
+      // IMPORTANTE: NUNCA incluir contas macro - apenas parcelas e contas simples
       const contas = await prisma.conta.findMany({
         where: {
           ...whereBase,
-          OR: [
-            { totalParcelas: null }, // Contas simples (sem parcelamento)
-            { parentId: { not: null } }, // Parcelas individuais
-          ]
+          isContaMacro: false, // Excluir contas macro explicitamente
         },
         include: {
           pessoa: true,
@@ -216,23 +214,23 @@ export async function GET(request) {
       return NextResponse.json(Array.isArray(contas) ? contas : []);
     }
 
-    // Modo padrão: agrupado (para contas a pagar/receber)
-    // Buscar todas as contas que NÃO são subcontas (parentId = null) E NÃO são instâncias de recorrência
-    // Incluir as parcelas (subcontas) e recorrências dentro de cada conta pai
-    const contas = await prisma.conta.findMany({
+    // Modo padrão: agrupado para contas a pagar/receber
+    // Buscar contas que NÃO são parcelas filhas e NÃO são instâncias de recorrência
+    const todasContas = await prisma.conta.findMany({
       where: {
         ...whereBase,
-        parentId: null, // Apenas contas principais (não parcelas)
-        recorrenciaParentId: null, // Não incluir instâncias de recorrência (elas aparecem dentro do template)
+        recorrenciaParentId: null, // Não incluir instâncias de recorrência
+        parentId: null, // Não incluir parcelas filhas (elas vêm via include)
       },
       include: {
         pessoa: true,
         cartao: true,
         socioResponsavel: true,
-        parcelas: {
+        parcelas: { // Incluir parcelas filhas para contas macro
           orderBy: { vencimento: 'asc' },
           include: {
             pessoa: true,
+            cartao: true,
           }
         },
         recorrencias: {
@@ -244,12 +242,69 @@ export async function GET(request) {
       },
       orderBy: { vencimento: 'asc' },
     });
-    // Always ensure we return an array, even if database returns null/undefined
-    return NextResponse.json(Array.isArray(contas) ? contas : []);
+
+    // Processar contas
+    const contasAgrupadas = [];
+
+    for (const conta of todasContas) {
+      if (conta.isContaMacro && conta.parcelas && conta.parcelas.length > 0) {
+        // É uma conta macro com parcelas filhas
+        const valorTotal = conta.parcelas.reduce((sum, p) => sum + Number(p.valor), 0);
+        contasAgrupadas.push({
+          ...conta,
+          valorTotal: valorTotal,
+          totalParcelas: conta.parcelas.length,
+        });
+      } else if (conta.grupoParcelamentoId && !conta.isContaMacro) {
+        // LEGADO: Conta com grupoParcelamentoId mas sem isContaMacro (dados antigos)
+        // Buscar todas as parcelas do mesmo grupo
+        const parcelasDoGrupo = await prisma.conta.findMany({
+          where: {
+            ...whereBase,
+            grupoParcelamentoId: conta.grupoParcelamentoId,
+          },
+          include: {
+            pessoa: true,
+            cartao: true,
+          },
+          orderBy: { vencimento: 'asc' },
+        });
+
+        const valorTotal = parcelasDoGrupo.reduce((sum, p) => sum + Number(p.valor), 0);
+        contasAgrupadas.push({
+          ...conta,
+          // Manter o ID numérico original para exclusão funcionar
+          // grupoParcelamentoId já está disponível para agrupamento
+          valorTotal: valorTotal,
+          totalParcelas: parcelasDoGrupo.length,
+          parcelas: parcelasDoGrupo,
+        });
+      } else if (!conta.parentId) {
+        // Conta individual (sem parcelas)
+        contasAgrupadas.push({
+          ...conta,
+          parcelas: conta.parcelas || [],
+        });
+      }
+    }
+
+    // Remover duplicatas de contas legado (grupoParcelamentoId)
+    const idsVistos = new Set();
+    const contasSemDuplicatas = contasAgrupadas.filter(conta => {
+      const chave = conta.grupoParcelamentoId && !conta.isContaMacro
+        ? conta.grupoParcelamentoId
+        : conta.id;
+      if (idsVistos.has(chave)) return false;
+      idsVistos.add(chave);
+      return true;
+    });
+
+    // Ordenar por vencimento
+    contasSemDuplicatas.sort((a, b) => new Date(a.vencimento) - new Date(b.vencimento));
+
+    return NextResponse.json(Array.isArray(contasSemDuplicatas) ? contasSemDuplicatas : []);
   } catch (error) {
     console.error('Error fetching contas:', error);
-    // CRITICAL FIX: Return empty array on error, not error object
-    // This prevents "TypeError: data.filter is not a function" in frontend
     return NextResponse.json([]);
   }
 }
@@ -296,52 +351,17 @@ export async function POST(request) {
       criarComoPago,
     });
 
-    // Se for parcelamento (mais de 1 parcela), criar conta pai + subcontas
+    // Se for parcelamento (mais de 1 parcela), criar conta macro + parcelas filhas
     if (totalParcelas > 1) {
-      // Calcular valor total
+      // Gerar UUID para agrupar as parcelas (mantido para compatibilidade)
+      const grupoParcelamentoId = crypto.randomUUID();
       const valorTotal = valorParcela * totalParcelas;
 
-      // Criar conta pai (agrupadora)
-      const contaPaiData = {
-        descricao: data.descricao,
-        valor: valorTotal,
-        valorTotal: valorTotal,
-        totalParcelas: totalParcelas,
-        vencimento: vencimentoBase, // vencimento da primeira parcela
-        pago: false, // conta pai nunca é marcada como paga diretamente
-        tipo: data.tipo || 'pagar',
-        status: 'parcelado', // status especial para conta pai
-        userId: user.id,
-        empresaId: empresaId || undefined,
-      };
-
-      // Add optional fields to parent
-      if (data.beneficiario) contaPaiData.beneficiario = data.beneficiario;
-      if (data.fonte) contaPaiData.fonte = data.fonte;
-      if (data.banco) contaPaiData.banco = data.banco;
-      if (data.pessoaId) contaPaiData.pessoaId = Number(data.pessoaId);
-      if (data.categoria) contaPaiData.categoria = data.categoria;
-      if (data.subcategoria) contaPaiData.subcategoria = data.subcategoria;
-      if (data.formaPagamento) contaPaiData.formaPagamento = data.formaPagamento;
-      if (data.numeroDocumento) contaPaiData.numeroDocumento = data.numeroDocumento;
-      if (data.codigoTipo) contaPaiData.codigoTipo = data.codigoTipo;
-      if (data.observacoes) contaPaiData.observacoes = data.observacoes;
-      if (data.cartaoId) contaPaiData.cartaoId = Number(data.cartaoId);
-      if (data.bancoContaId) contaPaiData.bancoContaId = Number(data.bancoContaId);
+      console.log(`📝 Criando parcelamento: ${totalParcelas}x de R$ ${valorParcela} (Total: R$ ${valorTotal})`);
+      console.log(`   Grupo de parcelamento: ${grupoParcelamentoId}`);
 
       // Buscar socioResponsavelId automaticamente pelo centro de custo
       const socioIdFromCentro = await getSocioIdByCentroCusto(data.codigoTipo, user.id, empresaId);
-      if (socioIdFromCentro) contaPaiData.socioResponsavelId = socioIdFromCentro;
-
-      const contaPai = await prisma.conta.create({
-        data: contaPaiData,
-        include: { pessoa: true },
-      });
-
-      console.log(`✅ Conta pai criada com ID: ${contaPai.id} - Valor total: ${valorTotal}`);
-
-      // NOTA: Para contas parceladas no cartão, cada parcela vai para sua própria fatura
-      // A fatura será atualizada abaixo para cada parcela individualmente
 
       // Atualizar previsto/descontoPrevisto do centro de custo com valor total
       if (data.codigoTipo) {
@@ -355,14 +375,12 @@ export async function POST(request) {
 
         if (centro) {
           if (centro.isSocio) {
-            // Se for sócio, atualizar descontoPrevisto
             await prisma.centroCusto.update({
               where: { id: centro.id },
               data: { descontoPrevisto: centro.descontoPrevisto + valorTotal },
             });
             console.log('📊 Desconto previsto do sócio atualizado:', valorTotal);
           } else {
-            // Se não for sócio, atualizar previsto normal
             console.log('📊 Atualizando previsto do centro:', data.codigoTipo);
             await updateCentroAndParent(data.codigoTipo, 'previsto', valorTotal, user.id);
             console.log('✅ Previsto atualizado com valor total');
@@ -370,7 +388,44 @@ export async function POST(request) {
         }
       }
 
-      // Criar as parcelas como subcontas
+      // 1. CRIAR CONTA MACRO (pai) primeiro
+      const macroData = {
+        descricao: data.descricao,
+        valor: valorTotal,
+        valorTotal: valorTotal,
+        vencimento: vencimentoBase, // Vencimento da primeira parcela
+        pago: false, // Macro nunca é paga diretamente
+        tipo: data.tipo || 'pagar',
+        isContaMacro: true,
+        totalParcelas: totalParcelas,
+        grupoParcelamentoId: grupoParcelamentoId,
+        userId: user.id,
+        empresaId: empresaId || undefined,
+      };
+
+      // Add optional fields na macro
+      if (data.beneficiario) macroData.beneficiario = data.beneficiario;
+      if (data.fonte) macroData.fonte = data.fonte;
+      if (data.banco) macroData.banco = data.banco;
+      if (data.pessoaId) macroData.pessoaId = Number(data.pessoaId);
+      if (data.categoria) macroData.categoria = data.categoria;
+      if (data.subcategoria) macroData.subcategoria = data.subcategoria;
+      if (data.formaPagamento) macroData.formaPagamento = data.formaPagamento;
+      if (data.numeroDocumento) macroData.numeroDocumento = data.numeroDocumento;
+      if (data.codigoTipo) macroData.codigoTipo = data.codigoTipo;
+      if (data.observacoes) macroData.observacoes = data.observacoes;
+      if (data.cartaoId) macroData.cartaoId = Number(data.cartaoId);
+      if (data.bancoContaId) macroData.bancoContaId = Number(data.bancoContaId);
+      if (socioIdFromCentro) macroData.socioResponsavelId = socioIdFromCentro;
+
+      const contaMacro = await prisma.conta.create({
+        data: macroData,
+        include: { pessoa: true },
+      });
+
+      console.log(`✅ Conta MACRO criada com ID: ${contaMacro.id}`);
+
+      // 2. CRIAR PARCELAS FILHAS com parentId apontando para a macro
       const parcelasCriadas = [];
       for (let i = parcelaAtual; i <= totalParcelas; i++) {
         const vencimentoParcela = new Date(vencimentoBase);
@@ -379,13 +434,15 @@ export async function POST(request) {
         const estaPaga = criarComoPago && i === parcelaAtual;
 
         const parcelaData = {
-          descricao: `${data.descricao} - Parcela ${i}/${totalParcelas}`,
+          descricao: data.descricao,
           valor: valorParcela,
           vencimento: vencimentoParcela,
           pago: estaPaga,
           tipo: data.tipo || 'pagar',
           numeroParcela: `${i}/${totalParcelas}`,
-          parentId: contaPai.id, // Vincula à conta pai
+          totalParcelas: totalParcelas,
+          grupoParcelamentoId: grupoParcelamentoId,
+          parentId: contaMacro.id, // Vincula à conta macro
           userId: user.id,
           empresaId: empresaId || undefined,
         };
@@ -396,11 +453,19 @@ export async function POST(request) {
           parcelaData.status = 'pago';
         }
 
-        // Add optional fields to parcela
+        // Add optional fields
         if (data.beneficiario) parcelaData.beneficiario = data.beneficiario;
+        if (data.fonte) parcelaData.fonte = data.fonte;
+        if (data.banco) parcelaData.banco = data.banco;
+        if (data.pessoaId) parcelaData.pessoaId = Number(data.pessoaId);
+        if (data.categoria) parcelaData.categoria = data.categoria;
+        if (data.subcategoria) parcelaData.subcategoria = data.subcategoria;
+        if (data.formaPagamento) parcelaData.formaPagamento = data.formaPagamento;
+        if (data.numeroDocumento) parcelaData.numeroDocumento = data.numeroDocumento;
         if (data.codigoTipo) parcelaData.codigoTipo = data.codigoTipo;
+        if (data.observacoes) parcelaData.observacoes = data.observacoes;
         if (data.cartaoId) parcelaData.cartaoId = Number(data.cartaoId);
-        // Vincular sócio automaticamente pelo centro de custo
+        if (data.bancoContaId) parcelaData.bancoContaId = Number(data.bancoContaId);
         if (socioIdFromCentro) parcelaData.socioResponsavelId = socioIdFromCentro;
 
         const novaParcela = await prisma.conta.create({
@@ -408,7 +473,7 @@ export async function POST(request) {
           include: { pessoa: true },
         });
 
-        console.log(`✅ Parcela ${i}/${totalParcelas} criada com ID: ${novaParcela.id}`);
+        console.log(`✅ Parcela ${i}/${totalParcelas} criada com ID: ${novaParcela.id} (parentId: ${contaMacro.id})`);
         parcelasCriadas.push(novaParcela);
 
         // Se a parcela foi criada com cartão de crédito, atualizar fatura do mês correspondente
@@ -454,29 +519,25 @@ export async function POST(request) {
 
           console.log('✅ Fluxo criado:', fluxoCriado.id);
 
-          // Atualizar realizado do centro de custo (apenas o valor da parcela paga)
           if (novaParcela.codigoTipo) {
             await updateCentroAndParent(novaParcela.codigoTipo, 'realizado', Number(novaParcela.valor), user.id);
           }
         }
       }
 
-      // Retornar conta pai com as parcelas
-      const contaComParcelas = await prisma.conta.findUnique({
-        where: { id: contaPai.id },
-        include: {
-          pessoa: true,
-          parcelas: {
-            orderBy: { vencimento: 'asc' }
-          }
-        }
-      });
+      console.log(`✅ Conta macro (ID: ${contaMacro.id}) + ${parcelasCriadas.length} parcelas criadas`);
 
-      console.log(`✅ Total de ${parcelasCriadas.length} parcelas criadas sob conta pai ${contaPai.id}`);
+      // Atualizar conta de pró-labore do sócio se houver
+      if (socioIdFromCentro) {
+        await atualizarContaProLabore(socioIdFromCentro, user.id, empresaId);
+      }
+
       return NextResponse.json({
         success: true,
-        message: `Conta parcelada criada com ${parcelasCriadas.length} parcelas`,
-        conta: contaComParcelas,
+        message: `Conta macro + ${parcelasCriadas.length} parcelas criadas`,
+        contaMacro: contaMacro,
+        parcelas: parcelasCriadas,
+        grupoParcelamentoId: grupoParcelamentoId,
       });
     }
 
@@ -512,7 +573,9 @@ export async function POST(request) {
     if (data.bancoContaId) contaData.bancoContaId = Number(data.bancoContaId);
 
     // Buscar socioResponsavelId automaticamente pelo centro de custo
+    console.log(`🔍 Verificando se codigoTipo "${data.codigoTipo}" é um sócio...`);
     const socioIdFromCentroSimples = await getSocioIdByCentroCusto(data.codigoTipo, user.id, empresaId);
+    console.log(`   socioIdFromCentroSimples: ${socioIdFromCentroSimples}`);
     if (socioIdFromCentroSimples) contaData.socioResponsavelId = socioIdFromCentroSimples;
 
     const novaConta = await prisma.conta.create({
@@ -551,7 +614,8 @@ export async function POST(request) {
     }
 
     // Se a conta foi criada já paga, criar registro no fluxo de caixa
-    if (criarComoPago) {
+    // NUNCA criar fluxo para conta macro - apenas parcelas/contas individuais
+    if (criarComoPago && !novaConta.isContaMacro) {
       const whereFluxo = { userId: user.id };
       if (empresaId) whereFluxo.empresaId = empresaId;
 
@@ -587,20 +651,20 @@ export async function POST(request) {
         data: fluxoData,
       });
 
-      // Atualizar realizado/descontoReal do centro de custo
-      if (novaConta.codigoTipo && centroSimples) {
-        if (centroSimples.isSocio && tipoFluxo === 'saida') {
-          // Se for sócio e saída, atualizar descontoReal
-          await prisma.centroCusto.update({
-            where: { id: centroSimples.id },
-            data: { descontoReal: { increment: Number(novaConta.valor) } },
-          });
-          console.log('💰 Desconto real do sócio atualizado:', novaConta.valor);
-        } else if (!centroSimples.isSocio) {
-          // Se não for sócio, atualizar realizado
-          await updateCentroAndParent(novaConta.codigoTipo, 'realizado', Number(novaConta.valor), user.id);
-        }
+      // Atualizar realizado do centro de custo (não atualiza descontoReal - isso é feito via query de contas pagas)
+      if (novaConta.codigoTipo && centroSimples && !centroSimples.isSocio) {
+        // Se não for sócio, atualizar realizado
+        await updateCentroAndParent(novaConta.codigoTipo, 'realizado', Number(novaConta.valor), user.id);
       }
+    }
+
+    // Atualizar conta de pró-labore do sócio se houver
+    if (socioIdFromCentroSimples) {
+      console.log(`📊 Chamando atualizarContaProLabore para sócio ID: ${socioIdFromCentroSimples}`);
+      await atualizarContaProLabore(socioIdFromCentroSimples, user.id, empresaId);
+    } else {
+      console.log(`⚠️ Conta criada SEM vínculo com sócio (codigoTipo "${data.codigoTipo}" não é um sócio)`);
+      console.log(`   Para descontar do pró-labore, selecione um centro de custo que seja um sócio`);
     }
 
     return NextResponse.json(novaConta);
@@ -650,9 +714,16 @@ export async function PUT(request) {
     // Always update pago if provided
     if (data.pago !== undefined) {
       updateData.pago = data.pago;
-      updateData.dataPagamento = data.pago ? new Date() : null;
+      // Usar data de pagamento informada ou data atual
+      updateData.dataPagamento = data.pago
+        ? (data.dataPagamento ? new Date(data.dataPagamento) : new Date())
+        : null;
       updateData.status = data.pago ? 'pago' : contaAtual.status;
       if (marcandoComoPago) updateData.noFluxoCaixa = true;
+      // valorPago permite registrar o valor efetivamente pago (pode diferir do valor original)
+      if (data.valorPago !== undefined) {
+        updateData.valorPago = Number(data.valorPago);
+      }
     }
 
     // Update other fields only if provided
@@ -701,8 +772,24 @@ export async function PUT(request) {
       console.log(`✅ Valor do pai (ID: ${contaAtual.parentId}) atualizado para: ${novoValorTotal}`);
     }
 
+    // Se o valor foi alterado e a conta tem sócio responsável, atualizar pró-labore
+    if (data.valor !== undefined && Number(data.valor) !== contaAtual.valor) {
+      if (contaAtualizada.socioResponsavelId) {
+        console.log('📊 Valor da conta alterado, atualizando pró-labore do sócio...');
+        await atualizarContaProLabore(contaAtualizada.socioResponsavelId, user.id, empresaId);
+      } else if (contaAtualizada.codigoTipo) {
+        // Se não tem socioResponsavelId, verificar pelo codigoTipo (sigla do sócio)
+        const socioIdFromCentro = await getSocioIdByCentroCusto(contaAtualizada.codigoTipo, user.id, empresaId);
+        if (socioIdFromCentro) {
+          console.log('📊 Valor da conta alterado, atualizando pró-labore pelo codigoTipo...');
+          await atualizarContaProLabore(socioIdFromCentro, user.id, empresaId);
+        }
+      }
+    }
+
     // Se está marcando como pago, registrar no fluxo de caixa
-    if (marcandoComoPago) {
+    // IMPORTANTE: Contas macro NÃO devem criar registro no fluxo - apenas as parcelas individuais
+    if (marcandoComoPago && !contaAtual.isContaMacro) {
       console.log('🔥 Marcando conta como paga:', {
         id: contaAtualizada.id,
         tipo: contaAtualizada.tipo,
@@ -722,23 +809,28 @@ export async function PUT(request) {
 
       const saldoAnterior = ultimoFluxo?.fluxo || 0;
       const tipo = contaAtualizada.tipo === 'receber' ? 'entrada' : 'saida';
+      // Usar valorPago se disponível, senão usar valor original
+      const valorParaFluxo = contaAtualizada.valorPago ?? contaAtualizada.valor;
       const novoFluxo = tipo === 'entrada'
-        ? saldoAnterior + Number(contaAtualizada.valor)
-        : saldoAnterior - Number(contaAtualizada.valor);
+        ? saldoAnterior + Number(valorParaFluxo)
+        : saldoAnterior - Number(valorParaFluxo);
 
       console.log('💰 Criando fluxo de caixa:', {
         tipo,
-        valor: contaAtualizada.valor,
+        valorOriginal: contaAtualizada.valor,
+        valorPago: contaAtualizada.valorPago,
+        valorParaFluxo,
         saldoAnterior,
         novoFluxo,
       });
 
-      // Criar registro no fluxo de caixa
+      // Criar registro no fluxo de caixa (usar data de pagamento informada)
+      const dataPagamentoFluxo = data.dataPagamento ? new Date(data.dataPagamento) : new Date();
       const fluxoData = {
-        dia: new Date(),
+        dia: dataPagamentoFluxo,
         codigoTipo: contaAtualizada.codigoTipo || `${tipo === 'entrada' ? 'REC' : 'PAG'}-${contaAtualizada.id}`,
         fornecedorCliente: contaAtualizada.beneficiario || contaAtualizada.pessoa?.nome || contaAtualizada.descricao,
-        valor: Number(contaAtualizada.valor),
+        valor: Number(valorParaFluxo),
         tipo,
         fluxo: novoFluxo,
         contaId: contaAtualizada.id,
@@ -758,7 +850,7 @@ export async function PUT(request) {
 
       console.log('✅ Fluxo criado:', fluxoCriado.id);
 
-      // Atualizar o campo "realizado" ou "descontoReal" do centro de custo
+      // Atualizar o campo "realizado" do centro de custo (não atualiza descontoReal - isso é feito via query de contas pagas)
       if (contaAtualizada.codigoTipo) {
         const whereCentroPagamento = { sigla: contaAtualizada.codigoTipo, userId: user.id };
         if (empresaId) whereCentroPagamento.empresaId = empresaId;
@@ -768,25 +860,25 @@ export async function PUT(request) {
           select: { id: true, isSocio: true }
         });
 
-        if (centroPagamento) {
-          if (centroPagamento.isSocio && tipoFluxo === 'saida') {
-            // Se for sócio e saída, atualizar descontoReal
-            await prisma.centroCusto.update({
-              where: { id: centroPagamento.id },
-              data: { descontoReal: { increment: Number(contaAtualizada.valor) } },
-            });
-            console.log('💰 Desconto real do sócio atualizado:', contaAtualizada.valor);
-          } else if (!centroPagamento.isSocio) {
-            // Se não for sócio, atualizar realizado
-            console.log('📊 Atualizando centro de custo:', contaAtualizada.codigoTipo);
-            await updateCentroAndParent(contaAtualizada.codigoTipo, 'realizado', Number(contaAtualizada.valor), user.id);
-            console.log('✅ Centro de custo atualizado');
-          }
+        if (centroPagamento && !centroPagamento.isSocio) {
+          // Se não for sócio, atualizar realizado
+          console.log('📊 Atualizando centro de custo:', contaAtualizada.codigoTipo);
+          await updateCentroAndParent(contaAtualizada.codigoTipo, 'realizado', Number(contaAtualizada.valor), user.id);
+          console.log('✅ Centro de custo atualizado');
+        }
+
+        // Atualizar conta de pró-labore do sócio se houver
+        if (centroPagamento && centroPagamento.isSocio) {
+          await atualizarContaProLabore(centroPagamento.id, user.id, empresaId);
         }
       } else {
         console.log('⚠️ Conta sem codigoTipo, não atualiza centro de custo');
       }
 
+      // Se a conta tem socioResponsavelId, também atualizar o pró-labore
+      if (contaAtualizada.socioResponsavelId) {
+        await atualizarContaProLabore(contaAtualizada.socioResponsavelId, user.id, empresaId);
+      }
     }
 
     return NextResponse.json(contaAtualizada);
@@ -821,21 +913,12 @@ async function deletarContaIndividual(conta, userId, empresaId = null) {
 
     if (centro) {
       if (centro.isSocio) {
-        // Se for sócio, decrementar descontoPrevisto
+        // Se for sócio, decrementar descontoPrevisto (descontoReal não é mais usado - usa query de contas pagas)
         await prisma.centroCusto.update({
           where: { id: centro.id },
           data: { descontoPrevisto: { decrement: Number(conta.valor) } },
         });
         console.log('📊 Desconto previsto do sócio decrementado:', conta.valor);
-
-        // Se estava paga, decrementar descontoReal também
-        if (conta.pago) {
-          await prisma.centroCusto.update({
-            where: { id: centro.id },
-            data: { descontoReal: { decrement: Number(conta.valor) } },
-          });
-          console.log('💰 Desconto real do sócio decrementado:', conta.valor);
-        }
       } else {
         // Se não for sócio, decrementar previsto normal
         console.log('📊 Decrementando previsto do centro:', conta.codigoTipo);
@@ -946,6 +1029,28 @@ export async function DELETE(request) {
       }
 
       console.log('✅ Saldos recalculados');
+    }
+
+    // Atualizar conta de pró-labore do sócio se a conta tinha um responsável
+    console.log('🔍 Verificando vínculo com sócio:', {
+      socioResponsavelId: conta.socioResponsavelId,
+      codigoTipo: conta.codigoTipo,
+      valor: conta.valor,
+    });
+
+    if (conta.socioResponsavelId) {
+      console.log('📊 Conta excluída tinha socioResponsavelId, atualizando pró-labore...');
+      await atualizarContaProLabore(conta.socioResponsavelId, user.id, empresaId);
+    } else if (conta.codigoTipo) {
+      // Se não tem socioResponsavelId, verificar pelo codigoTipo (sigla do sócio)
+      const socioIdFromCentro = await getSocioIdByCentroCusto(conta.codigoTipo, user.id, empresaId);
+      console.log('🔍 Busca por codigoTipo:', conta.codigoTipo, '-> socioId:', socioIdFromCentro);
+      if (socioIdFromCentro) {
+        console.log('📊 Conta excluída vinculada a sócio pelo codigoTipo, atualizando pró-labore...');
+        await atualizarContaProLabore(socioIdFromCentro, user.id, empresaId);
+      }
+    } else {
+      console.log('⚠️ Conta excluída não tem vínculo com sócio (sem socioResponsavelId e sem codigoTipo)');
     }
 
     console.log('✅ Exclusão concluída com sucesso');

@@ -6,12 +6,13 @@ import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { formatCurrency, formatDate } from "@/lib/format"
-import { Plus, Download, Search, ArrowUpCircle, ArrowDownCircle, X, Trash2, Calendar, Edit, Loader2, ChevronRight, ChevronDown, Layers, RefreshCw, CreditCard, Truck, Check, UserPlus, Building2 } from "lucide-react"
+import { Plus, Download, Search, ArrowUpCircle, ArrowDownCircle, X, Trash2, Calendar, Edit, Loader2, ChevronRight, ChevronDown, Layers, RefreshCw, CreditCard, Truck, Check, UserPlus, Building2, Filter, SlidersHorizontal } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Textarea } from "@/components/ui/textarea"
 import { CurrencyInput } from "@/components/ui/currency-input"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { SimpleContaModal } from "./components/SimpleContaModal"
+import { EditParcelamentoModal } from "./components/EditParcelamentoModal"
 
 export function ContasContent() {
   const [contas, setContas] = useState([])
@@ -28,13 +29,65 @@ export function ContasContent() {
   const [contaParceladaToEdit, setContaParceladaToEdit] = useState(null)
   const [expandedContas, setExpandedContas] = useState({}) // {contaId: true/false}
 
-  // Estados para filtros
-  const [dataInicio, setDataInicio] = useState("")
-  const [dataFim, setDataFim] = useState("")
+  // Estados para filtros - com persistência no localStorage
+  const [dataInicio, setDataInicioState] = useState("")
+  const [dataFim, setDataFimState] = useState("")
   const [filtroTipo, setFiltroTipo] = useState("") // "", "pagar", "receber"
   const [filtroStatus, setFiltroStatus] = useState("") // "", "pendente", "vencida", "paga"
   const [filtroCentro, setFiltroCentro] = useState("")
-  const [filtroAtivo, setFiltroAtivo] = useState("todos") // todos, hoje, amanha, semana, personalizado
+  const [filtroAtivo, setFiltroAtivoState] = useState("todos") // todos, hoje, amanha, semana, personalizado
+
+  // Carregar filtros do localStorage na inicialização
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedDataInicio = localStorage.getItem('filtro_contas_dataInicio')
+      const savedDataFim = localStorage.getItem('filtro_contas_dataFim')
+      const savedFiltroAtivo = localStorage.getItem('filtro_contas_filtroAtivo')
+
+      if (savedDataInicio) setDataInicioState(savedDataInicio)
+      if (savedDataFim) setDataFimState(savedDataFim)
+      if (savedFiltroAtivo) setFiltroAtivoState(savedFiltroAtivo)
+    }
+  }, [])
+
+  // Funções wrapper para salvar no localStorage
+  const setDataInicio = (value) => {
+    setDataInicioState(value)
+    if (typeof window !== 'undefined') {
+      if (value) {
+        localStorage.setItem('filtro_contas_dataInicio', value)
+      } else {
+        localStorage.removeItem('filtro_contas_dataInicio')
+      }
+    }
+  }
+
+  const setDataFim = (value) => {
+    setDataFimState(value)
+    if (typeof window !== 'undefined') {
+      if (value) {
+        localStorage.setItem('filtro_contas_dataFim', value)
+      } else {
+        localStorage.removeItem('filtro_contas_dataFim')
+      }
+    }
+  }
+
+  const setFiltroAtivo = (value) => {
+    setFiltroAtivoState(value)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('filtro_contas_filtroAtivo', value)
+    }
+  }
+
+  // Filtros avançados por coluna
+  const [filtroCodigoTipo, setFiltroCodigoTipo] = useState("")
+  const [filtroFornecedor, setFiltroFornecedor] = useState("")
+  const [filtroDescricao, setFiltroDescricao] = useState("")
+  const [filtroNfParcela, setFiltroNfParcela] = useState("")
+  const [filtroValorMin, setFiltroValorMin] = useState("")
+  const [filtroValorMax, setFiltroValorMax] = useState("")
+  const [showFiltrosAvancados, setShowFiltrosAvancados] = useState(false)
 
   const loadContas = async () => {
     try {
@@ -134,8 +187,8 @@ export function ContasContent() {
     setFiltroAtivo("personalizado")
   }
 
-  // Helper para verificar se é conta parcelada (tem parcelas)
-  const isContaParcelada = (conta) => conta.parcelas && conta.parcelas.length > 0
+  // Helper para verificar se é conta parcelada (conta macro ou tem parcelas/grupoParcelamentoId)
+  const isContaParcelada = (conta) => conta.isContaMacro || (conta.parcelas && conta.parcelas.length > 0) || conta.grupoParcelamentoId
 
   // Helper para calcular status de conta parcelada
   const getParcelasStatus = (conta) => {
@@ -187,7 +240,7 @@ export function ContasContent() {
 
     // Para contas parceladas, verificar se alguma parcela está no período
     if (isContaParcelada(conta)) {
-      if (dataInicio || dataFim) {
+      if ((dataInicio || dataFim) && conta.parcelas && conta.parcelas.length > 0) {
         // Verificar se alguma parcela está no período
         const algumaParcelaNoPeriodo = conta.parcelas.some(parcela => {
           const dataVencimentoStr = normalizarData(parcela.vencimento)
@@ -210,8 +263,8 @@ export function ContasContent() {
       // Filtro por status para contas parceladas
       if (filtroStatus) {
         const parcelasStatus = getParcelasStatus(conta)
-        if (filtroStatus === "paga" && !parcelasStatus.todasPagas) return false
-        if (filtroStatus === "pendente" && parcelasStatus.todasPagas) return false
+        if (filtroStatus === "paga" && !parcelasStatus?.todasPagas) return false
+        if (filtroStatus === "pendente" && parcelasStatus?.todasPagas) return false
       }
     } else {
       // Conta simples - filtro de período normal
@@ -243,6 +296,41 @@ export function ContasContent() {
     // Filtro por centro de custo
     if (filtroCentro && conta.codigoTipo !== filtroCentro) return false
 
+    // Filtros por coluna (inline)
+    // Filtro por Código Tipo
+    if (filtroCodigoTipo) {
+      const codigoTipo = conta.codigoTipo?.toLowerCase() || ""
+      if (!codigoTipo.includes(filtroCodigoTipo.toLowerCase())) return false
+    }
+
+    // Filtro por Fornecedor/Cliente
+    if (filtroFornecedor) {
+      const fornecedor = (conta.beneficiario || conta.pessoa?.nome || "").toLowerCase()
+      if (!fornecedor.includes(filtroFornecedor.toLowerCase())) return false
+    }
+
+    // Filtro por Descrição
+    if (filtroDescricao) {
+      const descricao = conta.descricao?.toLowerCase() || ""
+      if (!descricao.includes(filtroDescricao.toLowerCase())) return false
+    }
+
+    // Filtro por NF/Parcela
+    if (filtroNfParcela) {
+      const nfParcela = (conta.numeroDocumento || conta.numeroParcela?.toString() || "").toLowerCase()
+      if (!nfParcela.includes(filtroNfParcela.toLowerCase())) return false
+    }
+
+    // Filtro por Valor (range)
+    if (filtroValorMin) {
+      const valorMin = parseFloat(filtroValorMin)
+      if (!isNaN(valorMin) && conta.valor < valorMin) return false
+    }
+    if (filtroValorMax) {
+      const valorMax = parseFloat(filtroValorMax)
+      if (!isNaN(valorMax) && conta.valor > valorMax) return false
+    }
+
     return true
   })
 
@@ -254,20 +342,36 @@ export function ContasContent() {
     setFiltroStatus("")
     setFiltroCentro("")
     setFiltroAtivo("todos")
+    // Limpar filtros de coluna
+    setFiltroCodigoTipo("")
+    setFiltroFornecedor("")
+    setFiltroDescricao("")
+    setFiltroNfParcela("")
+    setFiltroValorMin("")
+    setFiltroValorMax("")
   }
 
-  const temFiltro = dataInicio || dataFim || filtroTipo || filtroStatus || filtroCentro
+  const temFiltro = dataInicio || dataFim || filtroTipo || filtroStatus || filtroCentro ||
+    filtroCodigoTipo || filtroFornecedor || filtroDescricao || filtroNfParcela || filtroValorMin || filtroValorMax
 
   const getStatusBadge = (conta) => {
     // Para contas parceladas
     if (isContaParcelada(conta)) {
-      const { pagas, total, todasPagas } = getParcelasStatus(conta)
-      if (todasPagas) {
-        return <Badge variant="success" className="bg-blue-100 text-blue-700">Quitada</Badge>
+      const parcelasStatus = getParcelasStatus(conta)
+      if (parcelasStatus) {
+        if (parcelasStatus.todasPagas) {
+          return <Badge variant="success" className="bg-blue-100 text-blue-700">Quitada</Badge>
+        }
+        return (
+          <Badge variant="outline" className="bg-gray-100 text-gray-700 border-gray-300">
+            {parcelasStatus.pagas}/{parcelasStatus.total} pagas
+          </Badge>
+        )
       }
+      // Conta macro sem parcelas carregadas
       return (
         <Badge variant="outline" className="bg-gray-100 text-gray-700 border-gray-300">
-          {pagas}/{total} pagas
+          {conta.totalParcelas || 0} parcelas
         </Badge>
       )
     }
@@ -303,11 +407,24 @@ export function ContasContent() {
   const getRowClassName = (conta) => {
     // Para contas parceladas
     if (isContaParcelada(conta)) {
-      const { todasPagas } = getParcelasStatus(conta)
-      if (todasPagas) {
+      const parcelasStatus = getParcelasStatus(conta)
+      if (parcelasStatus?.todasPagas) {
         return "bg-blue-50 hover:bg-blue-100/80"
       }
-      return "bg-gray-50 hover:bg-gray-100/80"
+      // Verificar se alguma parcela está vencida
+      if (conta.parcelas && conta.parcelas.length > 0) {
+        const hoje = new Date()
+        const hojeStr = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`
+        const temVencida = conta.parcelas.some(p => {
+          if (p.pago) return false
+          const vencimentoStr = normalizarData(p.vencimento)
+          return vencimentoStr < hojeStr
+        })
+        if (temVencida) {
+          return "bg-red-50 hover:bg-red-100/80"
+        }
+      }
+      return "bg-yellow-50 hover:bg-yellow-100/80"
     }
 
     // Para contas recorrentes (template)
@@ -331,22 +448,40 @@ export function ContasContent() {
     }
   }
 
-  async function deletarConta(id) {
-    if (!confirm('Tem certeza que deseja excluir esta conta?')) {
+  async function deletarConta(id, conta = null) {
+    // Verificar se é parcelamento para mensagem adequada
+    const isParcelamento = conta && (conta.isContaMacro || (conta.parcelas && conta.parcelas.length > 0) || conta.grupoParcelamentoId)
+    const totalParcelas = conta?.parcelas?.length || conta?.totalParcelas || 0
+
+    const mensagem = isParcelamento
+      ? `Tem certeza que deseja excluir este parcelamento?\n\nIsso irá excluir a conta principal e todas as ${totalParcelas} parcelas.`
+      : 'Tem certeza que deseja excluir esta conta?'
+
+    if (!confirm(mensagem)) {
       return
     }
 
     try {
-      await fetch('/api/contas', {
+      const response = await fetch(`/api/contas/${id}`, {
         method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
       })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao excluir')
+      }
+
+      // Mostrar resultado
+      if (data.parcelasExcluidas > 0) {
+        console.log(`✅ ${data.message}`)
+      }
+
       setShowDetail(false)
       loadContas()
     } catch (error) {
       console.error('Erro ao deletar conta:', error)
-      alert('Erro ao excluir conta')
+      alert(error.message || 'Erro ao excluir conta')
     }
   }
 
@@ -370,125 +505,207 @@ export function ContasContent() {
         </div>
       </div>
 
-      {/* Filtros */}
-      <div className="flex flex-wrap items-center gap-4">
-        {/* Busca */}
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Buscar contas..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10"
-          />
+      {/* Barra de Filtros Principal */}
+      <Card className="p-4">
+        <div className="flex flex-wrap items-center gap-4">
+          {/* Busca */}
+          <div className="relative flex-1 min-w-[200px]">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Buscar contas..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+
+          {/* Filtros Rápidos de Período */}
+          <div className="flex items-center gap-1 bg-muted/50 rounded-lg p-1">
+            <Button
+              variant={filtroAtivo === "todos" ? "default" : "ghost"}
+              size="sm"
+              onClick={limparFiltros}
+              className="h-7 text-xs px-3"
+            >
+              Todos
+            </Button>
+            <Button
+              variant={filtroAtivo === "hoje" ? "default" : "ghost"}
+              size="sm"
+              onClick={filtrarHoje}
+              className="h-7 text-xs px-3"
+            >
+              Hoje
+            </Button>
+            <Button
+              variant={filtroAtivo === "amanha" ? "default" : "ghost"}
+              size="sm"
+              onClick={filtrarAmanha}
+              className="h-7 text-xs px-3"
+            >
+              Amanhã
+            </Button>
+            <Button
+              variant={filtroAtivo === "semana" ? "default" : "ghost"}
+              size="sm"
+              onClick={filtrarSemana}
+              className="h-7 text-xs px-3"
+            >
+              7 dias
+            </Button>
+          </div>
+
+          {/* Botão Filtros Avançados */}
+          <Button
+            variant={showFiltrosAvancados ? "default" : "outline"}
+            size="sm"
+            onClick={() => setShowFiltrosAvancados(!showFiltrosAvancados)}
+            className="h-9"
+          >
+            <Filter className="h-4 w-4 mr-2" />
+            Filtros
+            {(filtroTipo || filtroStatus || filtroCodigoTipo || filtroFornecedor || filtroDescricao || filtroNfParcela || filtroValorMin || filtroValorMax || dataInicio || dataFim) && (
+              <Badge className="ml-2 h-5 w-5 p-0 flex items-center justify-center text-xs">
+                {[filtroTipo, filtroStatus, filtroCodigoTipo, filtroFornecedor, filtroDescricao, filtroNfParcela, filtroValorMin, filtroValorMax, dataInicio, dataFim].filter(Boolean).length}
+              </Badge>
+            )}
+          </Button>
+
+          {temFiltro && (
+            <Button variant="ghost" size="sm" onClick={limparFiltros} className="h-9 text-destructive hover:text-destructive">
+              <X className="h-4 w-4 mr-1" />
+              Limpar
+            </Button>
+          )}
         </div>
 
-        {/* Filtro por Tipo */}
-        <select
-          value={filtroTipo}
-          onChange={(e) => setFiltroTipo(e.target.value)}
-          className="h-9 rounded-md border border-border bg-card px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-        >
-          <option value="">Todos os tipos</option>
-          <option value="pagar">A Pagar</option>
-          <option value="receber">A Receber</option>
-        </select>
+        {/* Filtros Avançados (Expansível) */}
+        {showFiltrosAvancados && (
+          <div className="mt-4 pt-4 border-t border-border">
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+              {/* Tipo */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Tipo</label>
+                <select
+                  value={filtroTipo}
+                  onChange={(e) => setFiltroTipo(e.target.value)}
+                  className="w-full h-8 px-2 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">Todos</option>
+                  <option value="pagar">A Pagar</option>
+                  <option value="receber">A Receber</option>
+                </select>
+              </div>
 
-        {/* Filtro por Status */}
-        <select
-          value={filtroStatus}
-          onChange={(e) => setFiltroStatus(e.target.value)}
-          className="h-9 rounded-md border border-border bg-card px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-        >
-          <option value="">Todos os status</option>
-          <option value="pendente">Pendente</option>
-          <option value="vencida">Vencida</option>
-          <option value="paga">Paga</option>
-        </select>
+              {/* Status */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Status</label>
+                <select
+                  value={filtroStatus}
+                  onChange={(e) => setFiltroStatus(e.target.value)}
+                  className="w-full h-8 px-2 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">Todos</option>
+                  <option value="pendente">Pendente</option>
+                  <option value="vencida">Vencida</option>
+                  <option value="paga">Paga</option>
+                </select>
+              </div>
 
-        {temFiltro && (
-          <Button variant="ghost" size="sm" onClick={limparFiltros}>
-            <X className="h-4 w-4 mr-1" />
-            Limpar
-          </Button>
+              {/* Período */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Vencimento De</label>
+                <Input
+                  type="date"
+                  value={dataInicio}
+                  onChange={(e) => handleDataInicioChange(e.target.value)}
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Vencimento Até</label>
+                <Input
+                  type="date"
+                  value={dataFim}
+                  onChange={(e) => handleDataFimChange(e.target.value)}
+                  className="h-8 text-sm"
+                />
+              </div>
+
+              {/* Código Tipo */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Cód Tipo</label>
+                <Input
+                  placeholder="Ex: REC-001"
+                  value={filtroCodigoTipo}
+                  onChange={(e) => setFiltroCodigoTipo(e.target.value)}
+                  className="h-8 text-sm"
+                />
+              </div>
+
+              {/* Fornecedor/Cliente */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Fornecedor/Cliente</label>
+                <Input
+                  placeholder="Nome..."
+                  value={filtroFornecedor}
+                  onChange={(e) => setFiltroFornecedor(e.target.value)}
+                  className="h-8 text-sm"
+                />
+              </div>
+
+              {/* Descrição */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Descrição</label>
+                <Input
+                  placeholder="Buscar..."
+                  value={filtroDescricao}
+                  onChange={(e) => setFiltroDescricao(e.target.value)}
+                  className="h-8 text-sm"
+                />
+              </div>
+
+              {/* Valor Range */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Valor Mín</label>
+                <Input
+                  type="number"
+                  placeholder="R$ 0,00"
+                  value={filtroValorMin}
+                  onChange={(e) => setFiltroValorMin(e.target.value)}
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Valor Máx</label>
+                <Input
+                  type="number"
+                  placeholder="R$ 999.999"
+                  value={filtroValorMax}
+                  onChange={(e) => setFiltroValorMax(e.target.value)}
+                  className="h-8 text-sm"
+                />
+              </div>
+            </div>
+          </div>
         )}
-      </div>
-
-      {/* Filtros de Data */}
-      <div className="flex flex-wrap items-center gap-4">
-        <div className="flex items-center gap-2">
-          <Calendar className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm text-muted-foreground">Periodo:</span>
-        </div>
-
-        {/* Filtros Rápidos */}
-        <div className="flex items-center gap-1">
-          <Button
-            variant={filtroAtivo === "todos" ? "default" : "ghost"}
-            size="sm"
-            onClick={limparFiltros}
-            className="h-8 text-xs px-3"
-          >
-            Todos
-          </Button>
-          <Button
-            variant={filtroAtivo === "hoje" ? "default" : "ghost"}
-            size="sm"
-            onClick={filtrarHoje}
-            className="h-8 text-xs px-3"
-          >
-            Hoje
-          </Button>
-          <Button
-            variant={filtroAtivo === "amanha" ? "default" : "ghost"}
-            size="sm"
-            onClick={filtrarAmanha}
-            className="h-8 text-xs px-3"
-          >
-            Amanha
-          </Button>
-          <Button
-            variant={filtroAtivo === "semana" ? "default" : "ghost"}
-            size="sm"
-            onClick={filtrarSemana}
-            className="h-8 text-xs px-3"
-          >
-            7 dias
-          </Button>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Input
-            type="date"
-            value={dataInicio}
-            onChange={(e) => handleDataInicioChange(e.target.value)}
-            className="h-9 w-40"
-          />
-          <span className="text-muted-foreground">ate</span>
-          <Input
-            type="date"
-            value={dataFim}
-            onChange={(e) => handleDataFimChange(e.target.value)}
-            className="h-9 w-40"
-          />
-        </div>
-      </div>
+      </Card>
 
       {/* Tabela de Contas */}
       <Card>
-        <div className="overflow-x-auto">
-          <table className="w-full">
+        <div>
+          <table className="w-full table-fixed">
             <thead>
               <tr className="border-b border-border bg-muted/50">
-                <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase">Tipo</th>
-                <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase">Cód Tipo</th>
-                <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase">Fornecedor/Cliente</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase w-[120px]">Tipo</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase w-[100px]">Cód Tipo</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase w-[15%]">Fornecedor/Cliente</th>
                 <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase">Descrição</th>
-                <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase">NF/Parcela</th>
-                <th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase">Valor</th>
-                <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase">Vencimento</th>
-                <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase">Status</th>
-                <th className="text-center py-3 px-4 text-xs font-medium text-muted-foreground uppercase w-24">Ações</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase w-[80px]">NF/Parcela</th>
+                <th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase w-[100px]">Valor</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase w-[100px]">Vencimento</th>
+                <th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase w-[80px]">Status</th>
+                <th className="text-center py-3 px-4 text-xs font-medium text-muted-foreground uppercase w-[80px]">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -555,9 +772,9 @@ export function ContasContent() {
                           )}
                         </div>
                       </td>
-                      <td className="py-3 px-4 text-sm text-foreground whitespace-nowrap">{conta.codigoTipo || "-"}</td>
-                      <td className="py-3 px-4 text-sm text-foreground whitespace-nowrap">{conta.beneficiario || conta.pessoa?.nome || "-"}</td>
-                      <td className="py-3 px-4 text-sm text-foreground whitespace-nowrap">
+                      <td className="py-3 px-4 text-sm text-foreground">{conta.codigoTipo || "-"}</td>
+                      <td className="py-3 px-4 text-sm text-foreground break-words">{conta.beneficiario || conta.pessoa?.nome || "-"}</td>
+                      <td className="py-3 px-4 text-sm text-foreground break-words">
                         {conta.descricao || "-"}
                         {isContaParcelada(conta) && (
                           <span className="text-xs text-muted-foreground ml-2">
@@ -574,7 +791,14 @@ export function ContasContent() {
                         {conta.numeroDocumento || "-"}
                       </td>
                       <td className="py-3 px-4 text-sm font-medium text-foreground text-right">
-                        {formatCurrency(conta.valorTotal || conta.valor)}
+                        <div className="flex flex-col items-end">
+                          <span>{formatCurrency(conta.valorTotal || conta.valor)}</span>
+                          {!conta.isContaMacro && conta.pago && conta.valorPago != null && conta.valorPago !== conta.valor && (
+                            <span className="text-xs text-amber-600">
+                              (pago: {formatCurrency(conta.valorPago)})
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-3 px-4 text-sm text-foreground">
                         {isContaParcelada(conta) ? (
@@ -614,10 +838,10 @@ export function ContasContent() {
                           <button
                             onClick={(e) => {
                               e.stopPropagation()
-                              deletarConta(conta.id)
+                              deletarConta(conta.id, conta)
                             }}
                             className="rounded p-1.5 text-muted-foreground hover:bg-red-100 hover:text-red-600 transition-colors"
-                            title="Excluir"
+                            title={isContaParcelada(conta) ? "Excluir parcelamento" : "Excluir"}
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
@@ -644,16 +868,23 @@ export function ContasContent() {
                             )}
                           </div>
                         </td>
-                        <td className="py-2 px-4 text-xs text-muted-foreground whitespace-nowrap">{parcela.codigoTipo || "-"}</td>
-                        <td className="py-2 px-4 text-xs text-muted-foreground whitespace-nowrap">{parcela.beneficiario || "-"}</td>
-                        <td className="py-2 px-4 text-xs text-muted-foreground whitespace-nowrap">
+                        <td className="py-2 px-4 text-xs text-muted-foreground">{parcela.codigoTipo || "-"}</td>
+                        <td className="py-2 px-4 text-xs text-muted-foreground break-words">{parcela.beneficiario || "-"}</td>
+                        <td className="py-2 px-4 text-xs text-muted-foreground">
                           Parcela {parcela.numeroParcela}
                         </td>
                         <td className="py-2 px-4 text-xs text-muted-foreground">
                           {parcela.numeroParcela}
                         </td>
                         <td className="py-2 px-4 text-xs font-medium text-foreground text-right">
-                          {formatCurrency(parcela.valor)}
+                          <div className="flex flex-col items-end">
+                            <span>{formatCurrency(parcela.valor)}</span>
+                            {parcela.pago && parcela.valorPago != null && parcela.valorPago !== parcela.valor && (
+                              <span className="text-amber-600" title={`Pago: ${formatCurrency(parcela.valorPago)}`}>
+                                (pago: {formatCurrency(parcela.valorPago)})
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-2 px-4 text-xs text-foreground">
                           {formatDate(parcela.vencimento)}
@@ -672,11 +903,12 @@ export function ContasContent() {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation()
-                                setContaToEdit(parcela)
-                                setShowEditModal(true)
+                                // Passa o pai (conta) que tem todas as parcelas
+                                setContaParceladaToEdit(conta)
+                                setShowEditParceladaModal(true)
                               }}
                               className="rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
-                              title="Editar parcela"
+                              title="Editar parcelamento"
                             >
                               <Edit className="h-3.5 w-3.5" />
                             </button>
@@ -700,9 +932,9 @@ export function ContasContent() {
                             <RefreshCw className="h-3.5 w-3.5 text-green-400" />
                           </div>
                         </td>
-                        <td className="py-2 px-4 text-xs text-muted-foreground whitespace-nowrap">{recorrencia.codigoTipo || "-"}</td>
-                        <td className="py-2 px-4 text-xs text-muted-foreground whitespace-nowrap">{recorrencia.beneficiario || "-"}</td>
-                        <td className="py-2 px-4 text-xs text-muted-foreground whitespace-nowrap">
+                        <td className="py-2 px-4 text-xs text-muted-foreground">{recorrencia.codigoTipo || "-"}</td>
+                        <td className="py-2 px-4 text-xs text-muted-foreground break-words">{recorrencia.beneficiario || "-"}</td>
+                        <td className="py-2 px-4 text-xs text-muted-foreground break-words">
                           {recorrencia.descricao}
                         </td>
                         <td className="py-2 px-4 text-xs text-muted-foreground">
@@ -828,6 +1060,11 @@ export function ContasContent() {
                 </div>
                 <div className="text-right">
                   <p className="text-2xl font-bold text-foreground">{formatCurrency(selectedConta.valor)}</p>
+                  {selectedConta.pago && selectedConta.valorPago != null && selectedConta.valorPago !== selectedConta.valor && (
+                    <p className="text-sm text-amber-600">
+                      Pago: {formatCurrency(selectedConta.valorPago)} ({selectedConta.valorPago > selectedConta.valor ? '+' : ''}{((selectedConta.valorPago - selectedConta.valor) / selectedConta.valor * 100).toFixed(1)}%)
+                    </p>
+                  )}
                   {getStatusBadge(selectedConta)}
                 </div>
               </div>
@@ -873,8 +1110,32 @@ export function ContasContent() {
                 </p>
                 <Button variant="outline" onClick={() => {
                   setShowDetail(false)
-                  setContaToEdit(selectedConta)
-                  setShowEditModal(true)
+                  // Se a conta é parcelada ou tem grupoParcelamentoId, abrir modal de parcelamento
+                  if (isContaParcelada(selectedConta)) {
+                    // Se clicou numa parcela individual (tem grupoParcelamentoId mas não tem array de parcelas com itens)
+                    const temParcelasCarregadas = selectedConta.parcelas && selectedConta.parcelas.length > 0
+                    if (selectedConta.grupoParcelamentoId && !temParcelasCarregadas) {
+                      // Encontrar o grupo na lista de contas
+                      const grupoParcelado = contas.find(c =>
+                        c.grupoParcelamentoId === selectedConta.grupoParcelamentoId &&
+                        c.parcelas &&
+                        c.parcelas.length > 0
+                      )
+                      if (grupoParcelado) {
+                        setContaParceladaToEdit(grupoParcelado)
+                      } else {
+                        // Se não encontrou o grupo, usar a parcela individual mesmo
+                        // O modal vai mostrar mensagem apropriada
+                        setContaParceladaToEdit(selectedConta)
+                      }
+                    } else {
+                      setContaParceladaToEdit(selectedConta)
+                    }
+                    setShowEditParceladaModal(true)
+                  } else {
+                    setContaToEdit(selectedConta)
+                    setShowEditModal(true)
+                  }
                 }}>
                   <Edit className="h-4 w-4" />
                 </Button>
@@ -903,9 +1164,9 @@ export function ContasContent() {
         />
       )}
 
-      {/* Modal de Edição de Conta Parcelada */}
+      {/* Modal de Edição de Parcelamento */}
       {showEditParceladaModal && contaParceladaToEdit && (
-        <EditContaParceladaModal
+        <EditParcelamentoModal
           conta={contaParceladaToEdit}
           onClose={() => {
             setShowEditParceladaModal(false)
@@ -1162,14 +1423,14 @@ function EditContaModal({ conta, onClose, onSuccess }) {
                       disabled={isSaving}
                     >
                       {fornecedorSelecionado ? (
-                        <span className="flex items-center gap-2 whitespace-nowrap">
-                          <Truck className="h-4 w-4 text-muted-foreground" />
-                          {fornecedorSelecionado.nome}
+                        <span className="flex items-center gap-2 truncate">
+                          <Truck className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                          <span className="truncate">{fornecedorSelecionado.nome}</span>
                         </span>
                       ) : beneficiario ? (
-                        <span className="flex items-center gap-2 whitespace-nowrap">
-                          <Truck className="h-4 w-4 text-muted-foreground" />
-                          {beneficiario}
+                        <span className="flex items-center gap-2 truncate">
+                          <Truck className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                          <span className="truncate">{beneficiario}</span>
                         </span>
                       ) : (
                         <span className="text-muted-foreground">Selecione um {labelPessoa.toLowerCase()}...</span>
@@ -1247,12 +1508,12 @@ function EditContaModal({ conta, onClose, onSuccess }) {
               </div>
 
               {/* Centro de Custo/Receita */}
-              <div className="space-y-2">
+              <div className="space-y-2 min-w-0">
                 <label className="text-sm font-medium text-foreground">
                   Centro de {conta.tipo === "pagar" ? "Custo" : "Receita"}
                 </label>
                 <Select value={codigoTipo || "none"} onValueChange={(v) => setCodigoTipo(v === "none" ? "" : v)} disabled={isSaving || loadingCentros}>
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue placeholder={loadingCentros ? "Carregando..." : "Selecione um centro"} />
                   </SelectTrigger>
                   <SelectContent>
@@ -1263,7 +1524,7 @@ function EditContaModal({ conta, onClose, onSuccess }) {
                         value={centro.sigla}
                         className={centro.level === 1 ? "pl-6" : ""}
                       >
-                        <span className="flex items-center gap-2 whitespace-nowrap">
+                        <span className="flex items-center gap-1">
                           {centro.level === 1 && (
                             <span className="text-muted-foreground">└</span>
                           )}
@@ -1271,15 +1532,15 @@ function EditContaModal({ conta, onClose, onSuccess }) {
                             {centro.sigla}
                           </span>
                           <span className="text-muted-foreground">-</span>
-                          <span className={centro.isSocio ? "text-primary" : ""}>
+                          <span className={`${centro.isSocio ? "text-primary" : ""} truncate max-w-[150px]`}>
                             {centro.nome}
                           </span>
                           {centro.isSocio ? (
-                            <span className="text-xs px-1.5 py-0.5 bg-primary/10 text-primary rounded">
+                            <span className="text-xs px-1.5 py-0.5 bg-primary/10 text-primary rounded flex-shrink-0">
                               Sócio
                             </span>
                           ) : centro.level === 1 && (
-                            <span className="text-xs px-1.5 py-0.5 bg-muted text-muted-foreground rounded">
+                            <span className="text-xs px-1.5 py-0.5 bg-muted text-muted-foreground rounded flex-shrink-0">
                               Sub
                             </span>
                           )}
@@ -1316,7 +1577,7 @@ function EditContaModal({ conta, onClose, onSuccess }) {
                       <SelectItem value="none">Nenhum (pagamento normal)</SelectItem>
                       {cartoes.map((cartao) => (
                         <SelectItem key={cartao.id} value={cartao.id.toString()}>
-                          <span className="whitespace-nowrap">{cartao.nome} (**** {cartao.ultimos4Digitos})</span>
+                          <span className="truncate">{cartao.nome} (**** {cartao.ultimos4Digitos})</span>
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -1338,7 +1599,7 @@ function EditContaModal({ conta, onClose, onSuccess }) {
                     <SelectItem value="none">Nenhuma</SelectItem>
                     {bancos.map((b) => (
                       <SelectItem key={b.id} value={b.id.toString()}>
-                        <span className="whitespace-nowrap">{b.nome} - Ag: {b.agencia} / Cc: {b.conta}</span>
+                        <span className="truncate">{b.nome} - Ag: {b.agencia}</span>
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1718,12 +1979,12 @@ function EditContaParceladaModal({ conta, onClose, onSuccess }) {
               </div>
 
               {/* Centro de Custo/Receita */}
-              <div className="space-y-2">
+              <div className="space-y-2 min-w-0">
                 <label className="text-sm font-medium text-foreground">
                   Centro de {conta.tipo === "pagar" ? "Custo" : "Receita"}
                 </label>
                 <Select value={codigoTipo || "none"} onValueChange={(v) => setCodigoTipo(v === "none" ? "" : v)} disabled={isSaving || loadingCentros}>
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue placeholder={loadingCentros ? "Carregando..." : "Selecione um centro"} />
                   </SelectTrigger>
                   <SelectContent>
@@ -1734,7 +1995,7 @@ function EditContaParceladaModal({ conta, onClose, onSuccess }) {
                         value={centro.sigla}
                         className={centro.level === 1 ? "pl-6" : ""}
                       >
-                        <span className="flex items-center gap-2 whitespace-nowrap">
+                        <span className="flex items-center gap-1">
                           {centro.level === 1 && (
                             <span className="text-muted-foreground">└</span>
                           )}
@@ -1742,15 +2003,15 @@ function EditContaParceladaModal({ conta, onClose, onSuccess }) {
                             {centro.sigla}
                           </span>
                           <span className="text-muted-foreground">-</span>
-                          <span className={centro.isSocio ? "text-primary" : ""}>
+                          <span className={`${centro.isSocio ? "text-primary" : ""} truncate max-w-[150px]`}>
                             {centro.nome}
                           </span>
                           {centro.isSocio ? (
-                            <span className="text-xs px-1.5 py-0.5 bg-primary/10 text-primary rounded">
+                            <span className="text-xs px-1.5 py-0.5 bg-primary/10 text-primary rounded flex-shrink-0">
                               Sócio
                             </span>
                           ) : centro.level === 1 && (
-                            <span className="text-xs px-1.5 py-0.5 bg-muted text-muted-foreground rounded">
+                            <span className="text-xs px-1.5 py-0.5 bg-muted text-muted-foreground rounded flex-shrink-0">
                               Sub
                             </span>
                           )}
@@ -1787,11 +2048,17 @@ function EditContaParceladaModal({ conta, onClose, onSuccess }) {
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">Total de Parcelas *</label>
                 <Input
-                  type="number"
-                  min={minParcelas}
-                  max="48"
+                  type="text"
+                  inputMode="numeric"
                   value={totalParcelas}
-                  onChange={(e) => setTotalParcelas(e.target.value)}
+                  onChange={(e) => {
+                    const value = e.target.value.replace(/\D/g, '');
+                    const num = parseInt(value) || 0;
+                    // Respeitar mínimo de parcelas (pagas)
+                    if (value === '' || num >= minParcelas) {
+                      setTotalParcelas(value);
+                    }
+                  }}
                   disabled={isSaving}
                   className="w-24"
                 />
@@ -1817,7 +2084,7 @@ function EditContaParceladaModal({ conta, onClose, onSuccess }) {
                       <SelectItem value="none">Nenhum (pagamento normal)</SelectItem>
                       {cartoes.map((cartao) => (
                         <SelectItem key={cartao.id} value={cartao.id.toString()}>
-                          <span className="whitespace-nowrap">{cartao.nome} (**** {cartao.ultimos4Digitos})</span>
+                          <span className="truncate">{cartao.nome} (**** {cartao.ultimos4Digitos})</span>
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -1839,7 +2106,7 @@ function EditContaParceladaModal({ conta, onClose, onSuccess }) {
                     <SelectItem value="none">Nenhuma</SelectItem>
                     {bancos.map((b) => (
                       <SelectItem key={b.id} value={b.id.toString()}>
-                        <span className="whitespace-nowrap">{b.nome} - Ag: {b.agencia} / Cc: {b.conta}</span>
+                        <span className="truncate">{b.nome} - Ag: {b.agencia}</span>
                       </SelectItem>
                     ))}
                   </SelectContent>

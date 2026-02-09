@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/get-user";
 import { getEmpresaIdValidada } from "@/lib/get-empresa";
+import { atualizarContaProLabore } from "@/lib/prolabore";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -49,8 +50,8 @@ export async function GET(request: Request, { params }: RouteParams) {
     });
 
     const totalPrevistos = descontos
-      .filter((d) => d.ativo)
-      .reduce((acc, d) => acc + d.valor, 0);
+      .filter((d: any) => d.ativo)
+      .reduce((acc: number, d: any) => acc + d.valor, 0);
 
     return NextResponse.json({
       descontos,
@@ -123,6 +124,9 @@ export async function POST(request: Request, { params }: RouteParams) {
       },
     });
 
+    // Atualizar conta de pró-labore do sócio
+    await atualizarContaProLabore(socioId, user.id, empresaId);
+
     return NextResponse.json(desconto);
   } catch (error: any) {
     console.error("Erro ao criar desconto recorrente:", error);
@@ -188,6 +192,9 @@ export async function PUT(request: Request, { params }: RouteParams) {
       data: updateData,
     });
 
+    // Atualizar conta de pró-labore do sócio
+    await atualizarContaProLabore(socioId, user.id, empresaId);
+
     return NextResponse.json(descontoAtualizado);
   } catch (error: any) {
     console.error("Erro ao atualizar desconto recorrente:", error);
@@ -246,6 +253,9 @@ export async function DELETE(request: Request, { params }: RouteParams) {
     await prisma.descontoRecorrente.delete({
       where: { id: parseInt(descontoId) },
     });
+
+    // Atualizar conta de pró-labore do sócio
+    await atualizarContaProLabore(socioId, user.id, empresaId);
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

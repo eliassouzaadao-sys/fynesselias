@@ -1,6 +1,6 @@
 /**
- * API para editar conta parcelada (conta pai) e propagar alterações para parcelas futuras
- * PUT /api/contas/[id]/parcelas - Atualiza conta pai e propaga para parcelas não pagas
+ * API para editar parcelas de um parcelamento
+ * PUT /api/contas/[id]/parcelas - id é o grupoParcelamentoId
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -9,68 +9,13 @@ import { getCurrentUser } from '@/lib/get-user';
 import { getEmpresaIdValidada } from '@/lib/get-empresa';
 
 // Função para criar data sem offset de timezone
-function parseLocalDate(dateStr: string | Date): Date {
+function parseLocalDate(dateStr: string | Date | null | undefined): Date {
+  if (!dateStr) return new Date();
   if (typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
     const [year, month, day] = dateStr.split('-').map(Number);
     return new Date(year, month - 1, day, 12, 0, 0);
   }
   return new Date(dateStr);
-}
-
-// Função auxiliar para atualizar centro de custo
-async function updateCentroAndParent(sigla: string, field: string, increment: number, userId: number) {
-  if (!sigla || !userId) return;
-
-  try {
-    const centro = await prisma.centroCusto.findFirst({
-      where: { sigla, userId },
-    });
-
-    if (!centro) return;
-
-    await prisma.centroCusto.update({
-      where: { id: centro.id },
-      data: {
-        [field]: {
-          increment: increment,
-        },
-      },
-    });
-
-    // Propagar para ancestrais
-    if (centro.parentId) {
-      await propagateToAncestors(centro.parentId, field, increment, userId);
-    }
-  } catch (error) {
-    console.error(`Error updating centro ${sigla}:`, error);
-  }
-}
-
-async function propagateToAncestors(parentId: number, field: string, increment: number, userId: number) {
-  if (!parentId) return;
-
-  try {
-    const parent = await prisma.centroCusto.findFirst({
-      where: { id: parentId, userId },
-    });
-
-    if (!parent) return;
-
-    await prisma.centroCusto.update({
-      where: { id: parentId },
-      data: {
-        [field]: {
-          increment: increment,
-        },
-      },
-    });
-
-    if (parent.parentId) {
-      await propagateToAncestors(parent.parentId, field, increment, userId);
-    }
-  } catch (error) {
-    console.error(`Error propagating to parent ${parentId}:`, error);
-  }
 }
 
 // Buscar ID do sócio pelo código do centro de custo
@@ -96,6 +41,125 @@ async function getSocioIdByCentroCusto(sigla: string | null, userId: number, emp
   }
 }
 
+// Criar ou atualizar registro no fluxo de caixa
+async function atualizarFluxoCaixa(
+  parcelaAtualizada: any,
+  parcelaAnterior: any,
+  userId: number,
+  empresaId?: number | null
+) {
+  const marcouComoPaga = parcelaAtualizada.pago && !parcelaAnterior.pago;
+  const desmarcouPaga = !parcelaAtualizada.pago && parcelaAnterior.pago;
+
+  if (marcouComoPaga) {
+    // Verificar se já existe registro no fluxo para esta conta
+    const fluxoExistente = await prisma.fluxoCaixa.findFirst({
+      where: { contaId: parcelaAnterior.id }
+    });
+
+    if (!fluxoExistente) {
+      // Criar novo registro no fluxo de caixa
+      await prisma.fluxoCaixa.create({
+        data: {
+          dia: parseLocalDate(parcelaAtualizada.dataPagamento),
+          codigoTipo: parcelaAnterior.codigoTipo || 'GER',
+          fornecedorCliente: parcelaAnterior.beneficiario || 'Não informado',
+          descricao: parcelaAnterior.descricao,
+          valor: Number(parcelaAtualizada.valor),
+          tipo: parcelaAnterior.tipo === 'pagar' ? 'saida' : 'entrada',
+          fluxo: 0, // Será recalculado posteriormente
+          contaId: parcelaAnterior.id,
+          centroCustoSigla: parcelaAnterior.codigoTipo,
+          bancoId: parcelaAnterior.bancoContaId,
+          cartaoId: parcelaAnterior.cartaoId,
+          userId,
+          empresaId: empresaId || undefined
+        }
+      });
+      console.log(`   ✅ Criado registro no fluxo de caixa para parcela ${parcelaAnterior.id}`);
+    }
+  } else if (desmarcouPaga) {
+    // Remover registro do fluxo de caixa
+    await prisma.fluxoCaixa.deleteMany({
+      where: { contaId: parcelaAnterior.id }
+    });
+    console.log(`   ✅ Removido registro do fluxo de caixa para parcela ${parcelaAnterior.id}`);
+  }
+}
+
+// Recalcular fatura do cartão para um mês específico
+async function recalcularFaturaCartao(
+  cartaoId: number,
+  dataReferencia: Date,
+  userId: number,
+  empresaId?: number | null
+) {
+  const mes = dataReferencia.getMonth() + 1;
+  const ano = dataReferencia.getFullYear();
+
+  // Buscar início e fim do mês
+  const inicioMes = new Date(ano, mes - 1, 1);
+  const fimMes = new Date(ano, mes, 0, 23, 59, 59);
+
+  // Buscar todas as contas deste cartão neste mês
+  const contasDoMes = await prisma.conta.findMany({
+    where: {
+      cartaoId,
+      userId,
+      empresaId: empresaId || undefined,
+      vencimento: {
+        gte: inicioMes,
+        lte: fimMes
+      }
+    }
+  });
+
+  const novoTotal = contasDoMes.reduce((sum: number, c: any) => sum + (c.valor || 0), 0);
+
+  // Verificar se existe fatura para este mês
+  const faturaExistente = await prisma.fatura.findFirst({
+    where: { cartaoId, mesReferencia: mes, anoReferencia: ano, userId }
+  });
+
+  if (faturaExistente) {
+    // Atualizar fatura existente
+    await prisma.fatura.update({
+      where: { id: faturaExistente.id },
+      data: { valorTotal: novoTotal }
+    });
+    console.log(`   ✅ Fatura ${mes}/${ano} atualizada: R$ ${novoTotal.toFixed(2)}`);
+  }
+}
+
+// Atualizar centro de custo com diferença de valor
+async function atualizarCentroCusto(
+  codigoTipo: string,
+  diferenca: number,
+  userId: number,
+  empresaId?: number | null
+) {
+  if (!codigoTipo || diferenca === 0) return;
+
+  try {
+    const where: any = { sigla: codigoTipo, userId };
+    if (empresaId) where.empresaId = empresaId;
+
+    const centro = await prisma.centroCusto.findFirst({ where });
+
+    if (centro) {
+      await prisma.centroCusto.update({
+        where: { id: centro.id },
+        data: {
+          previsto: { increment: diferenca }
+        }
+      });
+      console.log(`   ✅ Centro de custo ${codigoTipo} atualizado: +R$ ${diferenca.toFixed(2)}`);
+    }
+  } catch (error) {
+    console.error('Erro ao atualizar centro de custo:', error);
+  }
+}
+
 interface RouteContext {
   params: Promise<{
     id: string;
@@ -103,7 +167,12 @@ interface RouteContext {
 }
 
 /**
- * PUT - Atualiza conta parcelada e propaga alterações para parcelas futuras (não pagas)
+ * PUT - Atualiza parcelas de um parcelamento
+ * Suporta:
+ * - id como grupoParcelamentoId OU id da conta macro
+ * - valorTotal: recalcula todas as parcelas dividindo igualmente
+ * - novaQuantidade: adiciona/remove parcelas (remove apenas pendentes)
+ * - parcelasAtualizadas: edição individual de parcelas
  */
 export async function PUT(request: NextRequest, context: RouteContext) {
   try {
@@ -115,309 +184,489 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     const empresaId = await getEmpresaIdValidada(user.id);
 
     const params = await context.params;
-    const id = parseInt(params.id);
-
-    if (isNaN(id)) {
-      return NextResponse.json({ error: 'ID inválido' }, { status: 400 });
-    }
+    const idParam = params.id;
 
     const data = await request.json();
 
-    // Verificar se a conta existe e é uma conta pai de parcelamento
-    const where: any = { id, userId: user.id };
+    console.log(`📝 Editando parcelamento: ${idParam}`);
+
+    // Tentar buscar como conta macro primeiro (por ID numérico)
+    let contaMacro: any = null;
+    let grupoParcelamentoId: string = idParam;
+
+    const macroId = parseInt(idParam);
+    if (!isNaN(macroId)) {
+      contaMacro = await prisma.conta.findFirst({
+        where: {
+          id: macroId,
+          userId: user.id,
+          isContaMacro: true,
+          ...(empresaId ? { empresaId } : {})
+        }
+      });
+
+      if (contaMacro) {
+        grupoParcelamentoId = contaMacro.grupoParcelamentoId || idParam;
+        console.log(`   Conta macro encontrada: ID ${contaMacro.id}, grupo: ${grupoParcelamentoId}`);
+      }
+    }
+
+    // Buscar todas as parcelas filhas (excluindo a macro)
+    const where: any = {
+      grupoParcelamentoId,
+      userId: user.id,
+      isContaMacro: false // Apenas parcelas, não a macro
+    };
     if (empresaId) where.empresaId = empresaId;
 
-    const contaPai = await prisma.conta.findFirst({
+    let todasParcelas = await prisma.conta.findMany({
       where,
-      include: {
-        parcelas: {
-          orderBy: { vencimento: 'asc' }
-        }
-      }
+      orderBy: { vencimento: 'asc' }
     });
 
-    if (!contaPai) {
-      return NextResponse.json({ error: 'Conta não encontrada' }, { status: 404 });
+    // Se não encontrou parcelas, tentar buscar pelo parentId da macro
+    if (todasParcelas.length === 0 && contaMacro) {
+      todasParcelas = await prisma.conta.findMany({
+        where: {
+          parentId: contaMacro.id,
+          userId: user.id,
+          ...(empresaId ? { empresaId } : {})
+        },
+        orderBy: { vencimento: 'asc' }
+      });
     }
 
-    if (!contaPai.totalParcelas || contaPai.parcelas.length === 0) {
-      return NextResponse.json(
-        { error: 'Esta conta não é uma conta parcelada' },
-        { status: 400 }
-      );
+    if (todasParcelas.length === 0) {
+      return NextResponse.json({ error: 'Parcelamento não encontrado' }, { status: 404 });
     }
+
+    // Calcular valor total anterior para comparação
+    const valorTotalAnterior = todasParcelas.reduce((sum: number, p: any) => sum + (p.valor || 0), 0);
+    const quantidadeAnterior = todasParcelas.length;
+
+    console.log(`   Parcelas existentes: ${quantidadeAnterior}, Valor total: R$ ${valorTotalAnterior.toFixed(2)}`);
 
     // Extrair dados da requisição
     const {
       descricao,
-      valorTotal: novoValorTotal,
-      totalParcelas: novoTotalParcelas,
       beneficiario,
       codigoTipo,
-      numeroDocumento,
-      vencimentoPrimeiraParcela,
-      cartaoId,
-      bancoContaId,
-      formaPagamento,
-      observacoes,
-      propagarParaFuturas = true, // Por padrão, propaga para parcelas futuras
+      totalParcelas: novoTotalParcelas,
+      valorTotal: novoValorTotal,
+      novaQuantidade,
+      parcelasAtualizadas,
     } = data;
 
-    const valorTotal = novoValorTotal !== undefined ? Number(novoValorTotal) : contaPai.valorTotal;
-    const totalParcelas = novoTotalParcelas !== undefined ? parseInt(novoTotalParcelas) : contaPai.totalParcelas;
+    const totalParcelas = novaQuantidade || novoTotalParcelas || quantidadeAnterior;
 
-    // Validações
-    if (totalParcelas < 1) {
-      return NextResponse.json(
-        { error: 'Total de parcelas deve ser maior que zero' },
-        { status: 400 }
-      );
-    }
+    // Buscar sócio pelo centro de custo
+    const socioIdFromCentro = codigoTipo ? await getSocioIdByCentroCusto(codigoTipo, user.id, empresaId) : null;
 
-    if (valorTotal <= 0) {
-      return NextResponse.json(
-        { error: 'Valor total deve ser maior que zero' },
-        { status: 400 }
-      );
-    }
-
-    // Separar parcelas pagas e não pagas
-    const parcelasPagas = contaPai.parcelas.filter(p => p.pago);
-    const parcelasNaoPagas = contaPai.parcelas.filter(p => !p.pago);
-
-    console.log(`📝 Editando conta parcelada ID: ${id}`);
-    console.log(`   Parcelas pagas: ${parcelasPagas.length}, Não pagas: ${parcelasNaoPagas.length}`);
-    console.log(`   Valor total atual: ${contaPai.valorTotal}, Novo: ${valorTotal}`);
-    console.log(`   Total parcelas atual: ${contaPai.totalParcelas}, Novo: ${totalParcelas}`);
-
-    // Se mudou a quantidade de parcelas, precisamos recalcular
-    const mudouQuantidadeParcelas = totalParcelas !== contaPai.totalParcelas;
-    const mudouValorTotal = valorTotal !== contaPai.valorTotal;
-
-    // Calcular novo valor por parcela
-    const novoValorParcela = valorTotal / totalParcelas;
-
-    // Buscar sócio pelo centro de custo (se mudou)
-    const socioIdFromCentro = codigoTipo
-      ? await getSocioIdByCentroCusto(codigoTipo, user.id, empresaId)
-      : null;
-
-    // Atualizar centro de custo se mudou o valor total
-    if (mudouValorTotal && contaPai.codigoTipo) {
-      const whereCentroAtual: any = { sigla: contaPai.codigoTipo, userId: user.id };
-      if (empresaId) whereCentroAtual.empresaId = empresaId;
-
-      const centroAtual = await prisma.centroCusto.findFirst({
-        where: whereCentroAtual,
-        select: { isSocio: true }
-      });
-
-      if (centroAtual && !centroAtual.isSocio) {
-        const diferenca = valorTotal - (contaPai.valorTotal || 0);
-        await updateCentroAndParent(contaPai.codigoTipo, 'previsto', diferenca, user.id);
-        console.log(`📊 Centro ${contaPai.codigoTipo} previsto atualizado: ${diferenca > 0 ? '+' : ''}${diferenca}`);
-      }
-    }
-
-    // Atualizar a conta pai
-    const updatePaiData: any = {
-      valor: valorTotal,
-      valorTotal: valorTotal,
-      totalParcelas: totalParcelas,
-    };
-
-    if (descricao !== undefined) updatePaiData.descricao = descricao;
-    if (beneficiario !== undefined) updatePaiData.beneficiario = beneficiario;
-    if (codigoTipo !== undefined) updatePaiData.codigoTipo = codigoTipo;
-    if (numeroDocumento !== undefined) updatePaiData.numeroDocumento = numeroDocumento;
-    if (socioIdFromCentro) updatePaiData.socioResponsavelId = socioIdFromCentro;
-    if (cartaoId !== undefined) updatePaiData.cartaoId = cartaoId ? Number(cartaoId) : null;
-    if (bancoContaId !== undefined) updatePaiData.bancoContaId = bancoContaId ? Number(bancoContaId) : null;
-    if (formaPagamento !== undefined) updatePaiData.formaPagamento = formaPagamento;
-    if (observacoes !== undefined) updatePaiData.observacoes = observacoes;
-
-    await prisma.conta.update({
-      where: { id },
-      data: updatePaiData,
-    });
-
-    console.log('✅ Conta pai atualizada');
-
-    // Se não deve propagar ou não há mudanças significativas, retornar
-    if (!propagarParaFuturas) {
-      const contaAtualizada = await prisma.conta.findUnique({
-        where: { id },
-        include: { parcelas: { orderBy: { vencimento: 'asc' } } }
-      });
-      return NextResponse.json({
-        success: true,
-        message: 'Conta pai atualizada (sem propagação)',
-        conta: contaAtualizada,
-      });
-    }
-
-    // Lógica de propagação para parcelas futuras
-    let parcelasAtualizadas = 0;
+    let parcelasModificadas = 0;
     let parcelasCriadas = 0;
     let parcelasRemovidas = 0;
+    const cartaoIdParaRecalcular = todasParcelas[0]?.cartaoId;
+    const mesesParaRecalcular = new Set<string>();
 
-    // Se mudou a quantidade de parcelas, precisamos reorganizar
-    if (mudouQuantidadeParcelas) {
-      // Calcular quantas parcelas não pagas precisamos ter
-      const parcelasNaoPagasNecessarias = totalParcelas - parcelasPagas.length;
+    // ========================================
+    // TRATAMENTO DE VALOR TOTAL (dividir igualmente)
+    // ========================================
+    if (novoValorTotal !== undefined && novoValorTotal !== valorTotalAnterior) {
+      console.log(`   💰 Recalculando valor total: R$ ${valorTotalAnterior.toFixed(2)} → R$ ${novoValorTotal.toFixed(2)}`);
 
-      if (parcelasNaoPagasNecessarias < 0) {
-        return NextResponse.json(
-          { error: `Não é possível reduzir para ${totalParcelas} parcelas. Já existem ${parcelasPagas.length} parcelas pagas.` },
-          { status: 400 }
-        );
+      const novoValorParcela = novoValorTotal / todasParcelas.length;
+
+      // Atualizar valor de TODAS as parcelas igualmente
+      for (const parcela of todasParcelas) {
+        await prisma.conta.update({
+          where: { id: parcela.id },
+          data: { valor: novoValorParcela }
+        });
+        parcelasModificadas++;
+
+        // Marcar mês para recalcular fatura se tem cartão
+        if (cartaoIdParaRecalcular && parcela.vencimento) {
+          const dataVencimento = new Date(parcela.vencimento);
+          mesesParaRecalcular.add(`${dataVencimento.getFullYear()}-${dataVencimento.getMonth() + 1}`);
+        }
       }
 
-      // Determinar a data base para novas parcelas
-      const primeiraParcelaNaoPaga = parcelasNaoPagas[0];
-      let dataBaseVencimento = primeiraParcelaNaoPaga
-        ? new Date(primeiraParcelaNaoPaga.vencimento)
-        : (vencimentoPrimeiraParcela ? parseLocalDate(vencimentoPrimeiraParcela) : new Date());
+      console.log(`   ✅ ${todasParcelas.length} parcelas atualizadas para R$ ${novoValorParcela.toFixed(2)} cada`);
 
-      // Se temos mais parcelas não pagas do que necessário, remover o excesso
-      if (parcelasNaoPagas.length > parcelasNaoPagasNecessarias) {
-        const parcelasParaRemover = parcelasNaoPagas.slice(parcelasNaoPagasNecessarias);
-        for (const parcela of parcelasParaRemover) {
-          await prisma.conta.delete({ where: { id: parcela.id } });
+      // Atualizar a conta macro se existir
+      if (contaMacro) {
+        await prisma.conta.update({
+          where: { id: contaMacro.id },
+          data: { valor: novoValorTotal, valorTotal: novoValorTotal }
+        });
+        console.log(`   ✅ Conta macro atualizada com valor total R$ ${novoValorTotal.toFixed(2)}`);
+      }
+
+      // Atualizar lista de parcelas com novos valores
+      todasParcelas = await prisma.conta.findMany({
+        where: { ...where, isContaMacro: false },
+        orderBy: { vencimento: 'asc' }
+      });
+    }
+
+    // ========================================
+    // TRATAMENTO DE QUANTIDADE DE PARCELAS
+    // (Ignorar se há parcelasAtualizadas - elas já contêm as novas parcelas)
+    // ========================================
+    const temParcelasAtualizadas = parcelasAtualizadas && Array.isArray(parcelasAtualizadas) && parcelasAtualizadas.length > 0;
+
+    if (novaQuantidade !== undefined && novaQuantidade !== quantidadeAnterior && !temParcelasAtualizadas) {
+      console.log(`   📊 Alterando quantidade: ${quantidadeAnterior} → ${novaQuantidade}`);
+
+      const valorTotalAtual = novoValorTotal || todasParcelas.reduce((sum: number, p: any) => sum + (p.valor || 0), 0);
+
+      if (novaQuantidade > quantidadeAnterior) {
+        // ADICIONAR NOVAS PARCELAS
+        const parcelasParaAdicionar = novaQuantidade - quantidadeAnterior;
+        const novoValorParcela = valorTotalAtual / novaQuantidade;
+        const primeiraParcela = todasParcelas[0];
+        const ultimaParcela = todasParcelas[todasParcelas.length - 1];
+
+        console.log(`   ➕ Adicionando ${parcelasParaAdicionar} novas parcelas`);
+
+        // Primeiro, atualizar valor de todas as parcelas existentes
+        for (const parcela of todasParcelas) {
+          await prisma.conta.update({
+            where: { id: parcela.id },
+            data: { valor: novoValorParcela }
+          });
+
+          if (cartaoIdParaRecalcular && parcela.vencimento) {
+            const dataVencimento = new Date(parcela.vencimento);
+            mesesParaRecalcular.add(`${dataVencimento.getFullYear()}-${dataVencimento.getMonth() + 1}`);
+          }
+        }
+
+        // Criar novas parcelas
+        for (let i = 0; i < parcelasParaAdicionar; i++) {
+          const novoVencimento = new Date(ultimaParcela.vencimento);
+          novoVencimento.setMonth(novoVencimento.getMonth() + i + 1);
+
+          const novaParcela = await prisma.conta.create({
+            data: {
+              descricao: descricao || primeiraParcela.descricao,
+              valor: novoValorParcela,
+              vencimento: novoVencimento,
+              pago: false,
+              status: 'pendente',
+              tipo: primeiraParcela.tipo,
+              numeroParcela: `${quantidadeAnterior + i + 1}/${novaQuantidade}`,
+              totalParcelas: novaQuantidade,
+              grupoParcelamentoId: grupoParcelamentoId,
+              parentId: contaMacro?.id || primeiraParcela.parentId,
+              beneficiario: beneficiario || primeiraParcela.beneficiario,
+              codigoTipo: codigoTipo || primeiraParcela.codigoTipo,
+              cartaoId: primeiraParcela.cartaoId,
+              bancoContaId: primeiraParcela.bancoContaId,
+              socioResponsavelId: socioIdFromCentro || primeiraParcela.socioResponsavelId,
+              userId: user.id,
+              empresaId: empresaId || undefined,
+            }
+          });
+          parcelasCriadas++;
+
+          if (cartaoIdParaRecalcular) {
+            mesesParaRecalcular.add(`${novoVencimento.getFullYear()}-${novoVencimento.getMonth() + 1}`);
+          }
+        }
+
+        console.log(`   ✅ ${parcelasParaAdicionar} parcelas criadas com valor R$ ${novoValorParcela.toFixed(2)}`);
+
+      } else if (novaQuantidade < quantidadeAnterior) {
+        // REMOVER PARCELAS (apenas pendentes, do final)
+        const parcelasParaRemover = quantidadeAnterior - novaQuantidade;
+
+        // Ordenar parcelas: pendentes primeiro (do final), pagas depois
+        const parcelasOrdenadas = [...todasParcelas].sort((a, b) => {
+          // Primeiro critério: pendentes antes de pagas
+          if (a.pago !== b.pago) return a.pago ? 1 : -1;
+          // Segundo critério: maior vencimento primeiro (para remover do final)
+          return new Date(b.vencimento).getTime() - new Date(a.vencimento).getTime();
+        });
+
+        // Contar parcelas pendentes disponíveis para remoção
+        const parcelasPendentes = parcelasOrdenadas.filter(p => !p.pago);
+
+        if (parcelasPendentes.length < parcelasParaRemover) {
+          return NextResponse.json({
+            error: `Não é possível reduzir para ${novaQuantidade} parcelas. Existem apenas ${parcelasPendentes.length} parcelas pendentes que podem ser removidas.`,
+            parcelasPagas: todasParcelas.filter(p => p.pago).length
+          }, { status: 400 });
+        }
+
+        console.log(`   ➖ Removendo ${parcelasParaRemover} parcelas pendentes`);
+
+        // Remover parcelas pendentes do final
+        for (let i = 0; i < parcelasParaRemover; i++) {
+          const parcelaRemover = parcelasPendentes[i];
+
+          if (cartaoIdParaRecalcular && parcelaRemover.vencimento) {
+            const dataVencimento = new Date(parcelaRemover.vencimento);
+            mesesParaRecalcular.add(`${dataVencimento.getFullYear()}-${dataVencimento.getMonth() + 1}`);
+          }
+
+          await prisma.conta.delete({ where: { id: parcelaRemover.id } });
           parcelasRemovidas++;
         }
-        console.log(`🗑️ ${parcelasRemovidas} parcelas removidas`);
+
+        // Recalcular valor das parcelas restantes
+        const novoValorParcela = valorTotalAtual / novaQuantidade;
+        const parcelasRestantes = await prisma.conta.findMany({
+          where: { ...where, isContaMacro: false },
+          orderBy: { vencimento: 'asc' }
+        });
+
+        for (const parcela of parcelasRestantes) {
+          await prisma.conta.update({
+            where: { id: parcela.id },
+            data: { valor: novoValorParcela }
+          });
+
+          if (cartaoIdParaRecalcular && parcela.vencimento) {
+            const dataVencimento = new Date(parcela.vencimento);
+            mesesParaRecalcular.add(`${dataVencimento.getFullYear()}-${dataVencimento.getMonth() + 1}`);
+          }
+        }
+
+        console.log(`   ✅ ${parcelasRemovidas} parcelas removidas, restantes atualizadas para R$ ${novoValorParcela.toFixed(2)}`);
       }
 
-      // Se temos menos parcelas não pagas do que necessário, criar novas
-      if (parcelasNaoPagas.length < parcelasNaoPagasNecessarias) {
-        const parcelasParaCriar = parcelasNaoPagasNecessarias - parcelasNaoPagas.length;
-        const ultimaParcelaNaoPaga = parcelasNaoPagas[parcelasNaoPagas.length - 1];
-        let proximaData = ultimaParcelaNaoPaga
-          ? new Date(ultimaParcelaNaoPaga.vencimento)
-          : dataBaseVencimento;
+      // Atualizar a conta macro se existir
+      if (contaMacro) {
+        await prisma.conta.update({
+          where: { id: contaMacro.id },
+          data: { totalParcelas: novaQuantidade }
+        });
+      }
 
-        for (let i = 0; i < parcelasParaCriar; i++) {
-          proximaData = new Date(proximaData);
-          proximaData.setMonth(proximaData.getMonth() + 1);
+      // Atualizar lista de parcelas
+      todasParcelas = await prisma.conta.findMany({
+        where: { ...where, isContaMacro: false },
+        orderBy: { vencimento: 'asc' }
+      });
+    }
 
-          const numeroParcela = parcelasPagas.length + parcelasNaoPagas.length + parcelasCriadas + 1;
+    // ========================================
+    // ATUALIZAR DADOS GERAIS EM TODAS AS PARCELAS
+    // ========================================
+    const dadosGerais: any = {};
+    if (descricao !== undefined) dadosGerais.descricao = descricao;
+    if (beneficiario !== undefined) dadosGerais.beneficiario = beneficiario || null;
+    if (codigoTipo !== undefined) dadosGerais.codigoTipo = codigoTipo || null;
+    if (socioIdFromCentro) dadosGerais.socioResponsavelId = socioIdFromCentro;
+    dadosGerais.totalParcelas = totalParcelas;
 
-          const novaParcelaData: any = {
-            descricao: descricao
-              ? `${descricao} - Parcela ${numeroParcela}/${totalParcelas}`
-              : `${contaPai.descricao} - Parcela ${numeroParcela}/${totalParcelas}`,
-            valor: novoValorParcela,
-            vencimento: proximaData,
-            pago: false,
-            tipo: contaPai.tipo,
-            numeroParcela: `${numeroParcela}/${totalParcelas}`,
-            parentId: id,
-            userId: user.id,
-            empresaId: empresaId || undefined,
-          };
+    if (Object.keys(dadosGerais).length > 1) { // Mais que apenas totalParcelas
+      await prisma.conta.updateMany({
+        where: { grupoParcelamentoId, userId: user.id, isContaMacro: false },
+        data: dadosGerais
+      });
 
-          if (beneficiario !== undefined) novaParcelaData.beneficiario = beneficiario;
-          else if (contaPai.beneficiario) novaParcelaData.beneficiario = contaPai.beneficiario;
+      // Atualizar conta macro também
+      if (contaMacro) {
+        await prisma.conta.update({
+          where: { id: contaMacro.id },
+          data: dadosGerais
+        });
+      }
 
-          if (codigoTipo !== undefined) novaParcelaData.codigoTipo = codigoTipo;
-          else if (contaPai.codigoTipo) novaParcelaData.codigoTipo = contaPai.codigoTipo;
+      console.log(`   ✅ Dados gerais atualizados em ${todasParcelas.length} parcelas`);
+    }
 
-          // Cartão: usar o novo se fornecido, senão manter o existente
-          if (cartaoId !== undefined) novaParcelaData.cartaoId = cartaoId ? Number(cartaoId) : null;
-          else if (contaPai.cartaoId) novaParcelaData.cartaoId = contaPai.cartaoId;
+    // Processar parcelas atualizadas
+    if (parcelasAtualizadas && Array.isArray(parcelasAtualizadas)) {
+      // IDs das parcelas que devem existir após a atualização
+      const idsParcelasRecebidas = new Set<number>();
 
-          // Banco: usar o novo se fornecido, senão manter o existente
-          if (bancoContaId !== undefined) novaParcelaData.bancoContaId = bancoContaId ? Number(bancoContaId) : null;
-          else if (contaPai.bancoContaId) novaParcelaData.bancoContaId = contaPai.bancoContaId;
+      for (let i = 0; i < parcelasAtualizadas.length; i++) {
+        const parcelaData = parcelasAtualizadas[i];
+        const numeroParcela = parcelaData.numeroParcela || `${i + 1}/${totalParcelas}`;
 
-          if (socioIdFromCentro) novaParcelaData.socioResponsavelId = socioIdFromCentro;
-          else if (contaPai.socioResponsavelId) novaParcelaData.socioResponsavelId = contaPai.socioResponsavelId;
+        if (parcelaData.id && parcelaData.id > 0) {
+          // Atualizar parcela existente (paga OU pendente)
+          const parcelaExistente = todasParcelas.find((p: any) => p.id === parcelaData.id);
 
-          await prisma.conta.create({ data: novaParcelaData });
+          if (parcelaExistente) {
+            idsParcelasRecebidas.add(parcelaData.id);
+
+            // Verificar mudanças
+            const mudouStatus = parcelaExistente.pago !== parcelaData.pago;
+            const mudouValor = parcelaExistente.valor !== Number(parcelaData.valor);
+
+            // Atualizar a parcela
+            await prisma.conta.update({
+              where: { id: parcelaData.id },
+              data: {
+                valor: Number(parcelaData.valor),
+                vencimento: parseLocalDate(parcelaData.vencimento),
+                numeroParcela: numeroParcela,
+                pago: parcelaData.pago,
+                dataPagamento: parcelaData.pago ? parseLocalDate(parcelaData.dataPagamento) : null,
+                status: parcelaData.pago ? 'pago' : 'pendente',
+                noFluxoCaixa: parcelaData.pago
+              }
+            });
+            parcelasModificadas++;
+
+            // Atualizar fluxo de caixa se status mudou
+            if (mudouStatus) {
+              await atualizarFluxoCaixa(parcelaData, parcelaExistente, user.id, empresaId);
+            }
+
+            // Marcar mês para recalcular fatura se valor mudou e tem cartão
+            if (mudouValor && cartaoIdParaRecalcular) {
+              const dataVencimento = parseLocalDate(parcelaData.vencimento);
+              mesesParaRecalcular.add(`${dataVencimento.getFullYear()}-${dataVencimento.getMonth() + 1}`);
+            }
+          }
+        } else {
+          // Criar nova parcela
+          const primeiraParcela = todasParcelas[0];
+
+          const novaParcela = await prisma.conta.create({
+            data: {
+              descricao: descricao || primeiraParcela.descricao,
+              valor: Number(parcelaData.valor),
+              vencimento: parseLocalDate(parcelaData.vencimento),
+              pago: parcelaData.pago || false,
+              dataPagamento: parcelaData.pago ? parseLocalDate(parcelaData.dataPagamento) : null,
+              status: parcelaData.pago ? 'pago' : 'pendente',
+              noFluxoCaixa: parcelaData.pago || false,
+              tipo: primeiraParcela.tipo,
+              numeroParcela: numeroParcela,
+              totalParcelas: totalParcelas,
+              grupoParcelamentoId: grupoParcelamentoId,
+              parentId: contaMacro?.id || primeiraParcela.parentId, // Vincular à conta macro
+              beneficiario: beneficiario || primeiraParcela.beneficiario,
+              codigoTipo: codigoTipo || primeiraParcela.codigoTipo,
+              cartaoId: primeiraParcela.cartaoId,
+              bancoContaId: primeiraParcela.bancoContaId,
+              socioResponsavelId: socioIdFromCentro || primeiraParcela.socioResponsavelId,
+              userId: user.id,
+              empresaId: empresaId || undefined,
+            }
+          });
           parcelasCriadas++;
+
+          // Se nova parcela já está paga, criar fluxo de caixa
+          if (parcelaData.pago) {
+            await atualizarFluxoCaixa(
+              { ...parcelaData, pago: true },
+              { ...novaParcela, pago: false },
+              user.id,
+              empresaId
+            );
+          }
+
+          // Marcar mês para recalcular fatura se tem cartão
+          if (cartaoIdParaRecalcular) {
+            const dataVencimento = parseLocalDate(parcelaData.vencimento);
+            mesesParaRecalcular.add(`${dataVencimento.getFullYear()}-${dataVencimento.getMonth() + 1}`);
+          }
         }
-        console.log(`✨ ${parcelasCriadas} novas parcelas criadas`);
+      }
+
+      // Remover parcelas que não estão mais na lista
+      for (const parcela of todasParcelas) {
+        if (!idsParcelasRecebidas.has(parcela.id)) {
+          // Se estava paga, remover do fluxo de caixa primeiro
+          if (parcela.pago) {
+            await prisma.fluxoCaixa.deleteMany({
+              where: { contaId: parcela.id }
+            });
+          }
+
+          await prisma.conta.delete({ where: { id: parcela.id } });
+          parcelasRemovidas++;
+
+          // Marcar mês para recalcular fatura se tem cartão
+          if (cartaoIdParaRecalcular && parcela.vencimento) {
+            const dataVencimento = new Date(parcela.vencimento);
+            mesesParaRecalcular.add(`${dataVencimento.getFullYear()}-${dataVencimento.getMonth() + 1}`);
+          }
+        }
       }
     }
 
-    // Atualizar as parcelas não pagas existentes (que não foram removidas)
-    const parcelasNaoPagasRestantes = await prisma.conta.findMany({
-      where: {
-        parentId: id,
-        pago: false,
-        userId: user.id,
-      },
+    // Recalcular faturas de cartão afetadas
+    if (cartaoIdParaRecalcular && mesesParaRecalcular.size > 0) {
+      for (const mesAno of mesesParaRecalcular) {
+        const [ano, mes] = mesAno.split('-').map(Number);
+        await recalcularFaturaCartao(
+          cartaoIdParaRecalcular,
+          new Date(ano, mes - 1, 15),
+          user.id,
+          empresaId
+        );
+      }
+    }
+
+    // Atualizar numeroParcela de todas as parcelas restantes (excluindo macro)
+    const parcelasFinais = await prisma.conta.findMany({
+      where: { grupoParcelamentoId, userId: user.id, isContaMacro: false },
       orderBy: { vencimento: 'asc' }
     });
 
-    for (let i = 0; i < parcelasNaoPagasRestantes.length; i++) {
-      const parcela = parcelasNaoPagasRestantes[i];
-      const numeroParcela = parcelasPagas.length + i + 1;
-
-      const updateParcelaData: any = {
-        valor: novoValorParcela,
-        numeroParcela: `${numeroParcela}/${totalParcelas}`,
-      };
-
-      // Atualizar descrição se mudou
-      if (descricao !== undefined) {
-        updateParcelaData.descricao = `${descricao} - Parcela ${numeroParcela}/${totalParcelas}`;
-      }
-
-      // Propagar outros campos se fornecidos
-      if (beneficiario !== undefined) updateParcelaData.beneficiario = beneficiario;
-      if (codigoTipo !== undefined) updateParcelaData.codigoTipo = codigoTipo;
-      if (socioIdFromCentro) updateParcelaData.socioResponsavelId = socioIdFromCentro;
-
+    for (let i = 0; i < parcelasFinais.length; i++) {
       await prisma.conta.update({
-        where: { id: parcela.id },
-        data: updateParcelaData,
-      });
-
-      parcelasAtualizadas++;
-    }
-
-    console.log(`✅ ${parcelasAtualizadas} parcelas atualizadas`);
-
-    // Atualizar também o numeroParcela das parcelas pagas para refletir o novo total
-    for (let i = 0; i < parcelasPagas.length; i++) {
-      const parcela = parcelasPagas[i];
-      await prisma.conta.update({
-        where: { id: parcela.id },
+        where: { id: parcelasFinais[i].id },
         data: {
-          numeroParcela: `${i + 1}/${totalParcelas}`,
-        },
+          numeroParcela: `${i + 1}/${parcelasFinais.length}`,
+          totalParcelas: parcelasFinais.length
+        }
       });
     }
 
-    // Buscar conta atualizada com todas as parcelas
-    const contaAtualizada = await prisma.conta.findUnique({
-      where: { id },
-      include: {
-        parcelas: { orderBy: { vencimento: 'asc' } },
-        pessoa: true,
-      }
-    });
+    // Calcular valor total final
+    const valorTotalNovo = parcelasFinais.reduce((sum: number, p: any) => sum + (p.valor || 0), 0);
+    const diferencaValor = valorTotalNovo - valorTotalAnterior;
 
-    console.log(`✅ Edição concluída: ${parcelasAtualizadas} atualizadas, ${parcelasCriadas} criadas, ${parcelasRemovidas} removidas`);
+    // Atualizar conta macro com valor total final
+    if (contaMacro) {
+      await prisma.conta.update({
+        where: { id: contaMacro.id },
+        data: {
+          valor: valorTotalNovo,
+          valorTotal: valorTotalNovo,
+          totalParcelas: parcelasFinais.length
+        }
+      });
+      console.log(`   ✅ Conta macro atualizada: R$ ${valorTotalNovo.toFixed(2)}, ${parcelasFinais.length} parcelas`);
+    }
+
+    // Atualizar centro de custo se houve diferença de valor
+    if (diferencaValor !== 0 && codigoTipo) {
+      await atualizarCentroCusto(codigoTipo, diferencaValor, user.id, empresaId);
+    }
+
+    console.log(`✅ Parcelamento atualizado:`);
+    console.log(`   - ${parcelasModificadas} parcelas modificadas`);
+    console.log(`   - ${parcelasCriadas} parcelas criadas`);
+    console.log(`   - ${parcelasRemovidas} parcelas removidas`);
+    console.log(`   - Valor total: R$ ${valorTotalAnterior.toFixed(2)} → R$ ${valorTotalNovo.toFixed(2)}`);
 
     return NextResponse.json({
       success: true,
-      message: `Conta parcelada atualizada. ${parcelasAtualizadas} parcelas atualizadas${parcelasCriadas > 0 ? `, ${parcelasCriadas} criadas` : ''}${parcelasRemovidas > 0 ? `, ${parcelasRemovidas} removidas` : ''}.`,
-      conta: contaAtualizada,
-      resumo: {
-        parcelasAtualizadas,
-        parcelasCriadas,
-        parcelasRemovidas,
-        novoValorParcela,
-        totalParcelas,
+      message: 'Parcelamento atualizado com sucesso',
+      contaMacro: contaMacro ? { id: contaMacro.id, valorTotal: valorTotalNovo, totalParcelas: parcelasFinais.length } : null,
+      stats: {
+        modificadas: parcelasModificadas,
+        criadas: parcelasCriadas,
+        removidas: parcelasRemovidas,
+        total: parcelasFinais.length,
+        valorTotal: valorTotalNovo
       }
     });
+
   } catch (error) {
-    console.error('Erro ao atualizar conta parcelada:', error);
+    console.error('Erro ao atualizar parcelamento:', error);
     return NextResponse.json(
-      { error: 'Erro ao atualizar conta parcelada' },
+      { error: 'Erro ao atualizar parcelamento' },
       { status: 500 }
     );
   }

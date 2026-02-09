@@ -42,7 +42,7 @@ export async function GET(request: Request) {
     });
 
     // Formatar resposta
-    const historicoFormatado = historico.map(h => ({
+    const historicoFormatado = historico.map((h: any) => ({
       id: h.id,
       mesReferencia: h.mesReferencia,
       anoReferencia: h.anoReferencia,
@@ -62,15 +62,15 @@ export async function GET(request: Request) {
 
     // Calcular totais
     const totais = {
-      totalBase: historico.reduce((acc, h) => acc + h.proLaboreBase, 0),
-      totalDescontos: historico.reduce((acc, h) => acc + h.totalDescontos, 0),
-      totalLiquido: historico.reduce((acc, h) => acc + h.proLaboreLiquido, 0),
+      totalBase: historico.reduce((acc: number, h: any) => acc + h.proLaboreBase, 0),
+      totalDescontos: historico.reduce((acc: number, h: any) => acc + h.totalDescontos, 0),
+      totalLiquido: historico.reduce((acc: number, h: any) => acc + h.proLaboreLiquido, 0),
       quantidadeRegistros: historico.length,
     };
 
     // Agrupar por mês
     const porMes: { [key: string]: any[] } = {};
-    historicoFormatado.forEach(h => {
+    historicoFormatado.forEach((h: any) => {
       const chave = h.periodo;
       if (!porMes[chave]) {
         porMes[chave] = [];
