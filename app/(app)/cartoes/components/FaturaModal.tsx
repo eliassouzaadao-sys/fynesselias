@@ -23,7 +23,7 @@ import {
   AlertDialogAction,
 } from "@/components/ui/alert-dialog"
 import { formatCurrency, formatDate } from "@/lib/format"
-import { Loader2, Calendar, CheckCircle, CreditCard } from "lucide-react"
+import { Loader2, Calendar, CheckCircle, CreditCard, Receipt, ShoppingBag } from "lucide-react"
 
 interface FaturaModalProps {
   fatura: {
@@ -54,6 +54,8 @@ const meses = [
 export function FaturaModal({ fatura, onClose, onPago }: FaturaModalProps) {
   const [loading, setLoading] = useState(true)
   const [lancamentos, setLancamentos] = useState<any[]>([])
+  const [totalLancamentos, setTotalLancamentos] = useState(0)
+  const [quantidadeLancamentos, setQuantidadeLancamentos] = useState(0)
   const [showPagarModal, setShowPagarModal] = useState(false)
   const [bancos, setBancos] = useState<any[]>([])
   const [bancoSelecionado, setBancoSelecionado] = useState("")
@@ -69,9 +71,13 @@ export function FaturaModal({ fatura, onClose, onPago }: FaturaModalProps) {
         const res = await fetch(`/api/faturas/${fatura.id}`)
         const data = await res.json()
         setLancamentos(data.lancamentos || [])
+        setTotalLancamentos(data.totalLancamentos || 0)
+        setQuantidadeLancamentos(data.quantidadeLancamentos || 0)
       } catch (err) {
         console.error("Erro ao carregar fatura:", err)
         setLancamentos([])
+        setTotalLancamentos(0)
+        setQuantidadeLancamentos(0)
       } finally {
         setLoading(false)
       }
@@ -176,43 +182,89 @@ export function FaturaModal({ fatura, onClose, onPago }: FaturaModalProps) {
             </div>
           </div>
 
-          {/* Lancamentos */}
-          <div className="flex-1 overflow-hidden">
-            <div className="px-6 pt-4 pb-2">
-              <h3 className="text-sm font-medium text-foreground">Lancamentos</h3>
+          {/* Resumo dos Lancamentos */}
+          <div className="px-6 py-3 border-b border-border bg-muted/30">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Receipt className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium text-foreground">Detalhamento da Fatura</span>
+              </div>
+              <div className="text-right">
+                <span className="text-xs text-muted-foreground">{quantidadeLancamentos} lançamento{quantidadeLancamentos !== 1 ? 's' : ''}</span>
+              </div>
             </div>
+          </div>
 
-            <ScrollArea className="h-[300px] px-6">
+          {/* Lista de Lancamentos */}
+          <div className="flex-1 overflow-hidden">
+            <ScrollArea className="h-[280px]">
               {loading ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
               ) : lancamentos.length === 0 ? (
                 <div className="text-center py-8">
+                  <ShoppingBag className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
                   <p className="text-sm text-muted-foreground">Nenhum lancamento nesta fatura</p>
+                  <p className="text-xs text-muted-foreground mt-1">Compras feitas no cartao aparecerao aqui</p>
                 </div>
               ) : (
-                <div className="space-y-2 pb-4">
+                <div className="divide-y divide-border">
                   {lancamentos.map((lanc) => (
                     <div
                       key={lanc.id}
-                      className="flex items-center justify-between p-3 bg-muted rounded-lg"
+                      className="flex items-start justify-between px-6 py-3 hover:bg-muted/30 transition-colors"
                     >
-                      <div>
+                      <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-foreground">{lanc.descricao}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {lanc.beneficiario && `${lanc.beneficiario} - `}
-                          {lanc.numeroParcela && `Parcela ${lanc.numeroParcela} - `}
-                          {formatDate(new Date(lanc.criadoEm))}
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1">
+                          {(lanc.beneficiario || lanc.pessoa?.nome) && (
+                            <span className="text-xs text-muted-foreground">
+                              {lanc.pessoa?.nome || lanc.beneficiario}
+                            </span>
+                          )}
+                          {lanc.numeroParcela && (
+                            <span className="text-xs px-1.5 py-0.5 bg-primary/10 text-primary rounded">
+                              Parcela {lanc.numeroParcela}
+                            </span>
+                          )}
+                          {lanc.codigoTipo && (
+                            <span className="text-xs text-muted-foreground">
+                              {lanc.codigoTipo}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Data: {formatDate(new Date(lanc.vencimento))}
                         </p>
                       </div>
-                      <p className="font-medium text-foreground">{formatCurrency(lanc.valor)}</p>
+                      <div className="text-right ml-4">
+                        <p className="font-medium text-foreground">{formatCurrency(lanc.valor)}</p>
+                        {lanc.pago && (
+                          <span className="text-xs text-green-600">Pago</span>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
               )}
             </ScrollArea>
           </div>
+
+          {/* Total da Fatura */}
+          {!loading && lancamentos.length > 0 && (
+            <div className="px-6 py-3 border-t border-border bg-muted/50">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-muted-foreground">Total dos Lancamentos</span>
+                <span className="text-lg font-bold text-foreground">{formatCurrency(totalLancamentos)}</span>
+              </div>
+              {Math.abs(totalLancamentos - fatura.valorTotal) > 0.01 && (
+                <p className="text-xs text-amber-600 mt-1">
+                  * O valor total da fatura ({formatCurrency(fatura.valorTotal)}) pode incluir encargos ou ajustes
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Footer */}
           {!fatura.pago ? (

@@ -100,7 +100,7 @@ async function getSocioIdByCentroCusto(sigla, userId, empresaId = null) {
 }
 
 // Função auxiliar para criar/atualizar fatura do cartão de crédito
-async function atualizarFaturaCartao(conta, cartaoId) {
+async function atualizarFaturaCartao(conta, cartaoId, userId, empresaId = null) {
   try {
     // Buscar o cartão
     const cartao = await prisma.cartaoCredito.findUnique({
@@ -113,21 +113,13 @@ async function atualizarFaturaCartao(conta, cartaoId) {
     }
 
     // Calcular qual fatura a conta pertence
+    // A fatura é referenciada pelo mês de USO (quando a compra foi feita)
+    // Ex: compra em 9/fev = Fatura de Fevereiro (mesmo que vença em março)
     const dataVencimento = new Date(conta.vencimento);
-    const diaCompra = dataVencimento.getDate();
-    let mes = dataVencimento.getMonth() + 1; // 1-12
-    let ano = dataVencimento.getFullYear();
+    const mes = dataVencimento.getMonth() + 1; // 1-12 (mês de uso)
+    const ano = dataVencimento.getFullYear();
 
-    // Se a compra foi depois do fechamento, vai para a fatura do próximo mês
-    if (diaCompra > cartao.diaFechamento) {
-      mes += 1;
-      if (mes > 12) {
-        mes = 1;
-        ano += 1;
-      }
-    }
-
-    console.log('💳 Calculando fatura:', { cartaoId, mes, ano, diaCompra, diaFechamento: cartao.diaFechamento });
+    console.log('💳 Calculando fatura:', { cartaoId, mes, ano, diaFechamento: cartao.diaFechamento, userId, empresaId });
 
     // Verificar se a fatura já existe
     let fatura = await prisma.fatura.findUnique({
@@ -143,8 +135,15 @@ async function atualizarFaturaCartao(conta, cartaoId) {
     // Se não existe, criar
     if (!fatura) {
       // Calcular datas de fechamento e vencimento da fatura
-      const dataFechamento = new Date(ano, mes - 1, cartao.diaFechamento, 12, 0, 0);
-      const dataVencimentoFatura = new Date(ano, mes - 1, cartao.diaVencimento, 12, 0, 0);
+      // O fechamento e vencimento são no mês SEGUINTE ao mês de uso
+      let mesFechamento = mes + 1;
+      let anoFechamento = ano;
+      if (mesFechamento > 12) {
+        mesFechamento = 1;
+        anoFechamento += 1;
+      }
+      const dataFechamento = new Date(anoFechamento, mesFechamento - 1, cartao.diaFechamento, 12, 0, 0);
+      const dataVencimentoFatura = new Date(anoFechamento, mesFechamento - 1, cartao.diaVencimento, 12, 0, 0);
 
       fatura = await prisma.fatura.create({
         data: {
@@ -154,10 +153,12 @@ async function atualizarFaturaCartao(conta, cartaoId) {
           valorTotal: Number(conta.valor),
           dataFechamento,
           dataVencimento: dataVencimentoFatura,
+          userId: userId,
+          empresaId: empresaId || undefined,
         },
       });
 
-      console.log('✅ Nova fatura criada:', fatura.id);
+      console.log('✅ Nova fatura criada:', fatura.id, 'valor:', fatura.valorTotal);
     } else {
       // Atualizar valor total da fatura
       fatura = await prisma.fatura.update({
@@ -339,10 +340,8 @@ export async function POST(request) {
 
       console.log(`✅ Conta pai criada com ID: ${contaPai.id} - Valor total: ${valorTotal}`);
 
-      // Se a conta foi criada com cartão de crédito, criar/atualizar fatura (para o valor total)
-      if (data.cartaoId) {
-        await atualizarFaturaCartao(contaPai, data.cartaoId);
-      }
+      // NOTA: Para contas parceladas no cartão, cada parcela vai para sua própria fatura
+      // A fatura será atualizada abaixo para cada parcela individualmente
 
       // Atualizar previsto/descontoPrevisto do centro de custo com valor total
       if (data.codigoTipo) {
@@ -411,6 +410,11 @@ export async function POST(request) {
 
         console.log(`✅ Parcela ${i}/${totalParcelas} criada com ID: ${novaParcela.id}`);
         parcelasCriadas.push(novaParcela);
+
+        // Se a parcela foi criada com cartão de crédito, atualizar fatura do mês correspondente
+        if (data.cartaoId) {
+          await atualizarFaturaCartao(novaParcela, data.cartaoId, user.id, empresaId);
+        }
 
         // Se a parcela foi criada já paga, criar registro no fluxo de caixa
         if (estaPaga) {
@@ -520,7 +524,7 @@ export async function POST(request) {
 
     // Se a conta foi criada com cartão de crédito, criar/atualizar fatura
     if (data.cartaoId) {
-      await atualizarFaturaCartao(novaConta, data.cartaoId);
+      await atualizarFaturaCartao(novaConta, data.cartaoId, user.id, empresaId);
     }
 
     // Atualizar previsto/descontoPrevisto do centro de custo

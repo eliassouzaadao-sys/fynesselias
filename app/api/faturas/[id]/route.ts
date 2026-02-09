@@ -52,20 +52,38 @@ export async function GET(
       );
     }
 
-    // Buscar lançamentos (contas) vinculados ao cartão que caem nesta fatura
+    // Buscar lançamentos (contas) vinculados ao cartão que pertencem a este mês de uso
+    // A fatura é referenciada pelo mês de USO, então buscamos contas com vencimento nesse mês
+    const inicioMes = new Date(fatura.anoReferencia, fatura.mesReferencia - 1, 1, 0, 0, 0);
+    const fimMes = new Date(fatura.anoReferencia, fatura.mesReferencia, 0, 23, 59, 59);
+
+    // Excluir contas pai (totalParcelas > 0) pois são apenas agrupadores
     const lancamentosWhere: any = {
       userId: user.id,
       cartaoId: fatura.cartaoId,
       vencimento: {
-        gte: new Date(fatura.dataFechamento.getTime() - 30 * 24 * 60 * 60 * 1000), // 30 dias antes do fechamento
-        lte: fatura.dataFechamento
-      }
+        gte: inicioMes,
+        lte: fimMes
+      },
+      OR: [
+        { totalParcelas: null }, // Contas simples (sem parcelamento)
+        { parentId: { not: null } }, // Parcelas individuais
+      ]
     };
     if (empresaId) lancamentosWhere.empresaId = empresaId;
 
+    console.log("📅 Buscando lançamentos da fatura:", {
+      faturaId: fatura.id,
+      mes: fatura.mesReferencia,
+      ano: fatura.anoReferencia,
+      inicioMes: inicioMes.toISOString(),
+      fimMes: fimMes.toISOString(),
+      cartaoId: fatura.cartaoId
+    });
+
     const lancamentos = await prisma.conta.findMany({
       where: lancamentosWhere,
-      orderBy: { criadoEm: "desc" },
+      orderBy: { vencimento: "asc" },
       select: {
         id: true,
         descricao: true,
@@ -73,14 +91,33 @@ export async function GET(
         vencimento: true,
         beneficiario: true,
         numeroParcela: true,
+        codigoTipo: true,
         pago: true,
-        criadoEm: true
+        criadoEm: true,
+        pessoa: {
+          select: {
+            nome: true
+          }
+        }
       }
     });
 
+    console.log("📦 Lançamentos encontrados:", lancamentos.length, lancamentos.map((l: { id: number; descricao: string; valor: number; vencimento: Date }) => ({
+      id: l.id,
+      descricao: l.descricao,
+      valor: l.valor,
+      vencimento: l.vencimento
+    })));
+
+    // Calcular totais
+    const totalLancamentos = lancamentos.reduce((sum: number, l: { valor: number }) => sum + l.valor, 0);
+    const quantidadeLancamentos = lancamentos.length;
+
     return NextResponse.json({
       ...fatura,
-      lancamentos
+      lancamentos,
+      totalLancamentos,
+      quantidadeLancamentos
     });
   } catch (error) {
     console.error("❌ Erro ao buscar fatura:", error);
@@ -144,90 +181,103 @@ export async function PUT(
     ];
     const mesNome = meses[fatura.mesReferencia - 1];
 
-    // 1. Criar conta a pagar para a fatura
-    const contaFatura = await prisma.conta.create({
-      data: {
-        descricao: `Fatura ${fatura.cartao.nome} - ${mesNome}/${fatura.anoReferencia}`,
-        valor: fatura.valorTotal,
-        vencimento: fatura.dataVencimento,
-        tipo: "pagar",
-        pago: true,
-        dataPagamento: new Date(),
-        status: "pago",
-        noFluxoCaixa: true,
-        beneficiario: fatura.cartao.nome,
-        codigoTipo: `FAT-${fatura.cartao.id}`,
-        userId: user.id,
-        empresaId: empresaId || undefined
-      }
-    });
+    // Usar mesReferencia/anoReferencia para consistência com GET
+    const inicioMes = new Date(fatura.anoReferencia, fatura.mesReferencia - 1, 1, 0, 0, 0);
+    const fimMes = new Date(fatura.anoReferencia, fatura.mesReferencia, 0, 23, 59, 59);
 
-    // 2. Marcar todas as contas da fatura como pagas
-    const updateContasWhere: any = {
-      userId: user.id,
-      cartaoId: fatura.cartaoId,
-      vencimento: {
-        gte: new Date(fatura.dataFechamento.getTime() - 30 * 24 * 60 * 60 * 1000),
-        lte: fatura.dataFechamento
-      },
-      pago: false
-    };
-    if (empresaId) updateContasWhere.empresaId = empresaId;
-
-    await prisma.conta.updateMany({
-      where: updateContasWhere,
-      data: {
-        pago: true,
-        dataPagamento: new Date(),
-        status: "pago"
-      }
-    });
-
-    // 3. Atualizar fatura
-    const faturaAtualizada = await prisma.fatura.update({
-      where: { id: faturaId },
-      data: {
-        pago: true,
-        dataPagamento: new Date(),
-        contaFaturaId: contaFatura.id
-      },
-      include: { cartao: true }
-    });
-
-    // 4. Registrar no fluxo de caixa (se bancoId fornecido)
-    if (data.bancoId) {
-      // Buscar último fluxo para calcular saldo
-      const fluxoWhere: any = { userId: user.id };
-      if (empresaId) fluxoWhere.empresaId = empresaId;
-
-      const ultimoFluxo = await prisma.fluxoCaixa.findFirst({
-        where: fluxoWhere,
-        orderBy: { dia: "desc" }
-      });
-      const saldoAnterior = ultimoFluxo?.fluxo || 0;
-
-      await prisma.fluxoCaixa.create({
+    // Executar todas as operações em uma transação atômica
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Criar conta a pagar para a fatura
+      const contaFatura = await tx.conta.create({
         data: {
-          dia: new Date(),
-          codigoTipo: `FAT-${fatura.cartao.id}`,
-          fornecedorCliente: fatura.cartao.nome,
+          descricao: `Fatura ${fatura.cartao.nome} - ${mesNome}/${fatura.anoReferencia}`,
           valor: fatura.valorTotal,
-          tipo: "saida",
-          fluxo: saldoAnterior - fatura.valorTotal,
-          contaId: contaFatura.id,
-          bancoId: parseInt(data.bancoId),
+          vencimento: fatura.dataVencimento,
+          tipo: "pagar",
+          pago: true,
+          dataPagamento: new Date(),
+          status: "pago",
+          noFluxoCaixa: true,
+          beneficiario: fatura.cartao.nome,
+          codigoTipo: `FAT-${fatura.cartao.id}`,
           userId: user.id,
           empresaId: empresaId || undefined
         }
       });
-    }
+
+      // 2. Marcar todas as contas da fatura como pagas (usando mesmo critério do GET)
+      const updateContasWhere: any = {
+        userId: user.id,
+        cartaoId: fatura.cartaoId,
+        vencimento: {
+          gte: inicioMes,
+          lte: fimMes
+        },
+        pago: false,
+        OR: [
+          { totalParcelas: null },
+          { parentId: { not: null } },
+        ]
+      };
+      if (empresaId) updateContasWhere.empresaId = empresaId;
+
+      await tx.conta.updateMany({
+        where: updateContasWhere,
+        data: {
+          pago: true,
+          dataPagamento: new Date(),
+          status: "pago"
+        }
+      });
+
+      // 3. Atualizar fatura como paga
+      const faturaAtualizada = await tx.fatura.update({
+        where: { id: faturaId },
+        data: {
+          pago: true,
+          dataPagamento: new Date(),
+          contaFaturaId: contaFatura.id
+        },
+        include: { cartao: true }
+      });
+
+      // 4. Registrar no fluxo de caixa (se bancoId fornecido)
+      if (data.bancoId) {
+        const fluxoWhere: any = { userId: user.id };
+        if (empresaId) fluxoWhere.empresaId = empresaId;
+
+        const ultimoFluxo = await tx.fluxoCaixa.findFirst({
+          where: fluxoWhere,
+          orderBy: { dia: "desc" }
+        });
+        const saldoAnterior = ultimoFluxo?.fluxo || 0;
+
+        await tx.fluxoCaixa.create({
+          data: {
+            dia: new Date(),
+            codigoTipo: `FAT-${fatura.cartao.id}`,
+            fornecedorCliente: fatura.cartao.nome,
+            valor: fatura.valorTotal,
+            tipo: "saida",
+            fluxo: saldoAnterior - fatura.valorTotal,
+            contaId: contaFatura.id,
+            cartaoId: fatura.cartaoId, // Vincula o pagamento ao cartão
+            bancoId: parseInt(data.bancoId),
+            userId: user.id,
+            empresaId: empresaId || undefined
+          }
+        });
+      }
+
+      return { contaFatura, faturaAtualizada };
+    });
 
     console.log("✅ Fatura paga:", `${fatura.cartao.nome} - ${mesNome}/${fatura.anoReferencia}`);
 
     return NextResponse.json({
       success: true,
       message: "Fatura paga com sucesso",
-      fatura: faturaAtualizada
+      fatura: result.faturaAtualizada
     });
   } catch (error: any) {
     console.error("❌ Erro ao pagar fatura:", error);

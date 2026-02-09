@@ -82,7 +82,7 @@ export function ConfirmacaoParcelasModal({
 
   return (
     <Dialog open onOpenChange={onCancel}>
-      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0">
+      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
         {/* Header */}
         <DialogHeader className="p-6 pb-0 flex-shrink-0">
           <DialogTitle className="flex items-center gap-2">
@@ -141,8 +141,8 @@ export function ConfirmacaoParcelasModal({
         </div>
 
         {/* Lista de parcelas */}
-        <ScrollArea className="flex-1 min-h-0 px-6">
-          <div className="space-y-2 py-4">
+        <ScrollArea className="flex-1 min-h-0 max-h-[40vh] px-6 overflow-y-auto">
+          <div className="space-y-2 py-4 pb-2">
             {parcelas.map((parcela) => (
               <div
                 key={parcela.numero}
@@ -199,7 +199,7 @@ export function ConfirmacaoParcelasModal({
         </div>
 
         {/* Footer */}
-        <DialogFooter className="p-4 border-t flex-shrink-0">
+        <DialogFooter className="p-4 border-t flex-shrink-0 bg-background">
           <Button
             type="button"
             variant="outline"

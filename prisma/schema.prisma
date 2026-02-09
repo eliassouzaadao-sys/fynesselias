@@ -147,9 +147,9 @@ model Conta {
 model Banco {
   id           Int      @id @default(autoincrement())
   nome         String   // Nome do banco (ex: Bradesco, Itaú)
-  codigo       String   // Código do banco (ex: 001, 237, 341)
-  agencia      String   // Número da agência
-  conta        String   // Número da conta
+  codigo       String?  // Código do banco (ex: 001, 237, 341) - opcional
+  agencia      String?  // Número da agência - opcional
+  conta        String?  // Número da conta - opcional
   chavePix     String?  // Chave Pix
   tipoChavePix String?  // Tipo da chave: celular, email, cpf, cnpj, aleatoria
   saldoInicial Float    @default(0) // Saldo inicial da conta

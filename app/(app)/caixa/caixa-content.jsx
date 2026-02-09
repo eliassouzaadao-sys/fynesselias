@@ -1506,16 +1506,7 @@ export function FluxoCaixaContent() {
             <form onSubmit={handleSaveBanco} className="p-4 space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Codigo do Banco</label>
-                  <Input
-                    placeholder="237"
-                    value={bancoForm.codigo}
-                    onChange={(e) => setBancoForm({ ...bancoForm, codigo: e.target.value })}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Nome do Banco</label>
+                  <label className="text-sm font-medium text-foreground">Nome do Banco *</label>
                   <Input
                     placeholder="Bradesco"
                     value={bancoForm.nome}
@@ -1523,63 +1514,69 @@ export function FluxoCaixaContent() {
                     required
                   />
                 </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Saldo Inicial *</label>
+                  <CurrencyInput
+                    value={bancoForm.saldoInicial}
+                    onValueChange={(val) => setBancoForm({ ...bancoForm, saldoInicial: val })}
+                    placeholder="R$ 0,00"
+                    required
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Codigo do Banco</label>
+                  <Input
+                    placeholder="237"
+                    value={bancoForm.codigo}
+                    onChange={(e) => setBancoForm({ ...bancoForm, codigo: e.target.value })}
+                  />
+                </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-foreground">Agencia</label>
                   <Input
                     placeholder="1692"
                     value={bancoForm.agencia}
                     onChange={(e) => setBancoForm({ ...bancoForm, agencia: e.target.value })}
-                    required
                   />
                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-foreground">Conta</label>
                   <Input
                     placeholder="62419-1"
                     value={bancoForm.conta}
                     onChange={(e) => setBancoForm({ ...bancoForm, conta: e.target.value })}
-                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Chave Pix</label>
+                  <Input
+                    placeholder="email@exemplo.com ou celular"
+                    value={bancoForm.chavePix}
+                    onChange={(e) => setBancoForm({ ...bancoForm, chavePix: e.target.value })}
                   />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">Chave Pix</label>
-                <Input
-                  placeholder="email@exemplo.com ou celular"
-                  value={bancoForm.chavePix}
-                  onChange={(e) => setBancoForm({ ...bancoForm, chavePix: e.target.value })}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Tipo da Chave Pix</label>
-                  <select
-                    value={bancoForm.tipoChavePix}
-                    onChange={(e) => setBancoForm({ ...bancoForm, tipoChavePix: e.target.value })}
-                    className="w-full h-10 px-3 rounded-md border border-border bg-white text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    <option value="">Selecione...</option>
-                    <option value="celular">Celular</option>
-                    <option value="email">E-mail</option>
-                    <option value="cpf">CPF</option>
-                    <option value="cnpj">CNPJ</option>
-                    <option value="aleatoria">Chave Aleatoria</option>
-                  </select>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Saldo Inicial</label>
-                  <CurrencyInput
-                    value={bancoForm.saldoInicial}
-                    onValueChange={(val) => setBancoForm({ ...bancoForm, saldoInicial: val })}
-                    placeholder="R$ 0,00"
-                  />
-                </div>
+                <label className="text-sm font-medium text-foreground">Tipo da Chave Pix</label>
+                <select
+                  value={bancoForm.tipoChavePix}
+                  onChange={(e) => setBancoForm({ ...bancoForm, tipoChavePix: e.target.value })}
+                  className="w-full h-10 px-3 rounded-md border border-border bg-white text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">Selecione...</option>
+                  <option value="celular">Celular</option>
+                  <option value="email">E-mail</option>
+                  <option value="cpf">CPF</option>
+                  <option value="cnpj">CNPJ</option>
+                  <option value="aleatoria">Chave Aleatoria</option>
+                </select>
               </div>
 
               <div className="flex gap-3 pt-4">

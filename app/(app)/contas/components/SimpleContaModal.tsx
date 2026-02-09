@@ -635,7 +635,7 @@ export function SimpleContaModal({ tipo, onClose, onSuccess }: SimpleContaModalP
                             disabled={isSaving}
                           >
                             {fornecedorSelecionado ? (
-                              <span className="flex items-center gap-2">
+                              <span className="flex items-center gap-2 whitespace-nowrap">
                                 <Truck className="h-4 w-4 text-muted-foreground" />
                                 {fornecedorSelecionado.nome}
                               </span>
@@ -790,7 +790,7 @@ export function SimpleContaModal({ tipo, onClose, onSuccess }: SimpleContaModalP
                           <SelectItem value="none">Nenhum</SelectItem>
                           {centros.map((centro: any) => (
                             <SelectItem key={centro.id} value={centro.sigla} className={centro.level === 1 ? "pl-6" : ""}>
-                              <span className="flex items-center gap-2">
+                              <span className="flex items-center gap-2 whitespace-nowrap">
                                 {centro.level === 1 && <span className="text-muted-foreground">└</span>}
                                 <span className={centro.isParent ? "font-medium" : ""}>{centro.sigla}</span>
                                 <span className="text-muted-foreground">-</span>
@@ -816,7 +816,7 @@ export function SimpleContaModal({ tipo, onClose, onSuccess }: SimpleContaModalP
                           <SelectItem value="none">Nenhuma</SelectItem>
                           {bancos.map((banco) => (
                             <SelectItem key={banco.id} value={banco.id.toString()}>
-                              {banco.nome} - Ag: {banco.agencia}
+                              <span className="whitespace-nowrap">{banco.nome} - Ag: {banco.agencia}</span>
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -847,7 +847,7 @@ export function SimpleContaModal({ tipo, onClose, onSuccess }: SimpleContaModalP
                           <SelectItem value="none">Nenhum (pagamento normal)</SelectItem>
                           {cartoes.map((cartao) => (
                             <SelectItem key={cartao.id} value={cartao.id.toString()}>
-                              {cartao.nome} (**** {cartao.ultimos4Digitos})
+                              <span className="whitespace-nowrap">{cartao.nome} (**** {cartao.ultimos4Digitos})</span>
                             </SelectItem>
                           ))}
                         </SelectContent>

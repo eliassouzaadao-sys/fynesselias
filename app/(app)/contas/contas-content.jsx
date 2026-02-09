@@ -555,9 +555,9 @@ export function ContasContent() {
                           )}
                         </div>
                       </td>
-                      <td className="py-3 px-4 text-sm text-foreground">{conta.codigoTipo || "-"}</td>
-                      <td className="py-3 px-4 text-sm text-foreground">{conta.beneficiario || conta.pessoa?.nome || "-"}</td>
-                      <td className="py-3 px-4 text-sm text-foreground">
+                      <td className="py-3 px-4 text-sm text-foreground whitespace-nowrap">{conta.codigoTipo || "-"}</td>
+                      <td className="py-3 px-4 text-sm text-foreground whitespace-nowrap">{conta.beneficiario || conta.pessoa?.nome || "-"}</td>
+                      <td className="py-3 px-4 text-sm text-foreground whitespace-nowrap">
                         {conta.descricao || "-"}
                         {isContaParcelada(conta) && (
                           <span className="text-xs text-muted-foreground ml-2">
@@ -644,9 +644,9 @@ export function ContasContent() {
                             )}
                           </div>
                         </td>
-                        <td className="py-2 px-4 text-xs text-muted-foreground">{parcela.codigoTipo || "-"}</td>
-                        <td className="py-2 px-4 text-xs text-muted-foreground">{parcela.beneficiario || "-"}</td>
-                        <td className="py-2 px-4 text-xs text-muted-foreground">
+                        <td className="py-2 px-4 text-xs text-muted-foreground whitespace-nowrap">{parcela.codigoTipo || "-"}</td>
+                        <td className="py-2 px-4 text-xs text-muted-foreground whitespace-nowrap">{parcela.beneficiario || "-"}</td>
+                        <td className="py-2 px-4 text-xs text-muted-foreground whitespace-nowrap">
                           Parcela {parcela.numeroParcela}
                         </td>
                         <td className="py-2 px-4 text-xs text-muted-foreground">
@@ -700,9 +700,9 @@ export function ContasContent() {
                             <RefreshCw className="h-3.5 w-3.5 text-green-400" />
                           </div>
                         </td>
-                        <td className="py-2 px-4 text-xs text-muted-foreground">{recorrencia.codigoTipo || "-"}</td>
-                        <td className="py-2 px-4 text-xs text-muted-foreground">{recorrencia.beneficiario || "-"}</td>
-                        <td className="py-2 px-4 text-xs text-muted-foreground">
+                        <td className="py-2 px-4 text-xs text-muted-foreground whitespace-nowrap">{recorrencia.codigoTipo || "-"}</td>
+                        <td className="py-2 px-4 text-xs text-muted-foreground whitespace-nowrap">{recorrencia.beneficiario || "-"}</td>
+                        <td className="py-2 px-4 text-xs text-muted-foreground whitespace-nowrap">
                           {recorrencia.descricao}
                         </td>
                         <td className="py-2 px-4 text-xs text-muted-foreground">
@@ -1162,12 +1162,12 @@ function EditContaModal({ conta, onClose, onSuccess }) {
                       disabled={isSaving}
                     >
                       {fornecedorSelecionado ? (
-                        <span className="flex items-center gap-2">
+                        <span className="flex items-center gap-2 whitespace-nowrap">
                           <Truck className="h-4 w-4 text-muted-foreground" />
                           {fornecedorSelecionado.nome}
                         </span>
                       ) : beneficiario ? (
-                        <span className="flex items-center gap-2">
+                        <span className="flex items-center gap-2 whitespace-nowrap">
                           <Truck className="h-4 w-4 text-muted-foreground" />
                           {beneficiario}
                         </span>
@@ -1263,7 +1263,7 @@ function EditContaModal({ conta, onClose, onSuccess }) {
                         value={centro.sigla}
                         className={centro.level === 1 ? "pl-6" : ""}
                       >
-                        <span className="flex items-center gap-2">
+                        <span className="flex items-center gap-2 whitespace-nowrap">
                           {centro.level === 1 && (
                             <span className="text-muted-foreground">└</span>
                           )}
@@ -1316,7 +1316,7 @@ function EditContaModal({ conta, onClose, onSuccess }) {
                       <SelectItem value="none">Nenhum (pagamento normal)</SelectItem>
                       {cartoes.map((cartao) => (
                         <SelectItem key={cartao.id} value={cartao.id.toString()}>
-                          {cartao.nome} (**** {cartao.ultimos4Digitos})
+                          <span className="whitespace-nowrap">{cartao.nome} (**** {cartao.ultimos4Digitos})</span>
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -1338,7 +1338,7 @@ function EditContaModal({ conta, onClose, onSuccess }) {
                     <SelectItem value="none">Nenhuma</SelectItem>
                     {bancos.map((b) => (
                       <SelectItem key={b.id} value={b.id.toString()}>
-                        {b.nome} - Ag: {b.agencia} / Cc: {b.conta}
+                        <span className="whitespace-nowrap">{b.nome} - Ag: {b.agencia} / Cc: {b.conta}</span>
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1734,7 +1734,7 @@ function EditContaParceladaModal({ conta, onClose, onSuccess }) {
                         value={centro.sigla}
                         className={centro.level === 1 ? "pl-6" : ""}
                       >
-                        <span className="flex items-center gap-2">
+                        <span className="flex items-center gap-2 whitespace-nowrap">
                           {centro.level === 1 && (
                             <span className="text-muted-foreground">└</span>
                           )}
@@ -1817,7 +1817,7 @@ function EditContaParceladaModal({ conta, onClose, onSuccess }) {
                       <SelectItem value="none">Nenhum (pagamento normal)</SelectItem>
                       {cartoes.map((cartao) => (
                         <SelectItem key={cartao.id} value={cartao.id.toString()}>
-                          {cartao.nome} (**** {cartao.ultimos4Digitos})
+                          <span className="whitespace-nowrap">{cartao.nome} (**** {cartao.ultimos4Digitos})</span>
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -1839,7 +1839,7 @@ function EditContaParceladaModal({ conta, onClose, onSuccess }) {
                     <SelectItem value="none">Nenhuma</SelectItem>
                     {bancos.map((b) => (
                       <SelectItem key={b.id} value={b.id.toString()}>
-                        {b.nome} - Ag: {b.agencia} / Cc: {b.conta}
+                        <span className="whitespace-nowrap">{b.nome} - Ag: {b.agencia} / Cc: {b.conta}</span>
                       </SelectItem>
                     ))}
                   </SelectContent>
