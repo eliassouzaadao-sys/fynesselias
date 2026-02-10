@@ -86,7 +86,11 @@ function ContaItem({ conta }) {
   const isPagar = conta.tipo === "pagar"
 
   return (
-    <div className="flex items-center justify-between py-3 px-4 rounded-lg bg-muted/30 hover:bg-muted/50 border border-border hover:border-primary/30 transition-all cursor-pointer group">
+    <div className={`flex items-center justify-between py-3 px-4 rounded-lg transition-all cursor-pointer group ${
+      isVencida
+        ? "bg-red-50 hover:bg-red-100 border border-red-200"
+        : "bg-muted/30 hover:bg-muted/50 border border-border hover:border-primary/30"
+    }`}>
       <div className="flex items-center gap-3">
         <div className={`p-2 rounded-lg ${isPagar ? "bg-red-500/10" : "bg-emerald-500/10"}`}>
           {isPagar ? (

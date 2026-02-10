@@ -29,7 +29,18 @@
       "Bash(npx tsx:*)",
       "Bash(wc:*)",
       "Bash(npx ts-node:*)",
-      "Bash(git pull:*)"
+      "Bash(git pull:*)",
+      "Bash(timeout:*)",
+      "Bash(ping:*)",
+      "Bash(if exist .nextcache rmdir /s /q .nextcache)",
+      "Bash(powershell -Command:*)",
+      "Bash(del:*)",
+      "Bash(npx next lint)",
+      "Bash(npx eslint:*)",
+      "Bash(git checkout:*)",
+      "Bash(npm run lint)",
+      "Bash(npx next build)",
+      "Bash(findstr:*)"
     ]
   }
 }

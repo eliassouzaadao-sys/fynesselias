@@ -117,7 +117,20 @@ export async function GET(request: Request) {
       });
 
       const centrosComValores = centros.map((centro: any) => {
-        const contasDoCentro = contas.filter((c: any) => c.codigoTipo === centro.sigla);
+        // Para centros pai (sem parentId), incluir também contas dos subcentros
+        // Subcentros têm sigla no formato "PAI.FILHO", então buscamos todas que começam com a sigla do pai
+        const isParent = !centro.parentId;
+
+        const contasDoCentro = contas.filter((c: any) => {
+          if (isParent) {
+            // Centro pai: incluir contas próprias E dos subcentros (sigla começa com "SIGLA" ou "SIGLA.")
+            return c.codigoTipo === centro.sigla || c.codigoTipo?.startsWith(centro.sigla + ".");
+          } else {
+            // Subcentro: apenas contas próprias
+            return c.codigoTipo === centro.sigla;
+          }
+        });
+
         const previsto = contasDoCentro.reduce((sum: number, c: any) => sum + Number(c.valor), 0);
         const realizado = contasDoCentro
           .filter((c: any) => c.pago)

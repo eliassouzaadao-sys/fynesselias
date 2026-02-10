@@ -166,6 +166,152 @@ interface RouteContext {
   }>;
 }
 
+// ========================================
+// FUNÇÕES PARA HISTÓRICO DE PARCELAMENTO
+// ========================================
+
+// Interface do snapshot de parcelamento
+interface SnapshotParcelamento {
+  valorTotal: number;
+  totalParcelas: number;
+  descricao: string;
+  beneficiario: string | null;
+  codigoTipo: string | null;
+  parcelas: Array<{
+    id: number;
+    numeroParcela: string;
+    valor: number;
+    vencimento: string;
+    pago: boolean;
+    dataPagamento: string | null;
+    status: string;
+  }>;
+}
+
+// Criar snapshot do estado atual das parcelas
+function criarSnapshotParcelas(
+  todasParcelas: any[],
+  contaMacro: any | null
+): SnapshotParcelamento {
+  const valorTotal = todasParcelas.reduce((sum, p) => sum + (p.valor || 0), 0);
+
+  return {
+    valorTotal,
+    totalParcelas: todasParcelas.length,
+    descricao: contaMacro?.descricao || todasParcelas[0]?.descricao || '',
+    beneficiario: contaMacro?.beneficiario || todasParcelas[0]?.beneficiario || null,
+    codigoTipo: contaMacro?.codigoTipo || todasParcelas[0]?.codigoTipo || null,
+    parcelas: todasParcelas.map(p => ({
+      id: p.id,
+      numeroParcela: p.numeroParcela || '',
+      valor: p.valor,
+      vencimento: p.vencimento instanceof Date ? p.vencimento.toISOString() : String(p.vencimento),
+      pago: p.pago,
+      dataPagamento: p.dataPagamento ? (p.dataPagamento instanceof Date ? p.dataPagamento.toISOString() : String(p.dataPagamento)) : null,
+      status: p.status || 'pendente'
+    }))
+  };
+}
+
+// Detectar tipo de alteração significativa
+function detectarTipoAlteracao(
+  snapshotAnterior: SnapshotParcelamento,
+  novosDados: any
+): { tipo: string; descricao: string } | null {
+  const { valorTotal: novoValorTotal, novaQuantidade, totalParcelas: novoTotalParcelas, parcelasAtualizadas } = novosDados;
+
+  const qtdNova = novaQuantidade || novoTotalParcelas;
+
+  // Mudança de quantidade
+  if (qtdNova && qtdNova !== snapshotAnterior.totalParcelas) {
+    return {
+      tipo: 'QUANTIDADE',
+      descricao: `Alterado de ${snapshotAnterior.totalParcelas} para ${qtdNova} parcelas`
+    };
+  }
+
+  // Mudança de valor total
+  if (novoValorTotal !== undefined && Math.abs(novoValorTotal - snapshotAnterior.valorTotal) > 0.01) {
+    return {
+      tipo: 'VALOR_TOTAL',
+      descricao: `Valor total alterado de R$ ${snapshotAnterior.valorTotal.toFixed(2)} para R$ ${novoValorTotal.toFixed(2)}`
+    };
+  }
+
+  // Edição individual de parcelas
+  if (parcelasAtualizadas && Array.isArray(parcelasAtualizadas)) {
+    const alteracoes: string[] = [];
+    for (const pa of parcelasAtualizadas) {
+      const anterior = snapshotAnterior.parcelas.find(p => p.id === pa.id);
+      if (!anterior) {
+        // Nova parcela sendo adicionada
+        alteracoes.push(`Nova parcela adicionada`);
+        continue;
+      }
+      if (Math.abs(Number(pa.valor) - anterior.valor) > 0.01) {
+        alteracoes.push(`Parcela ${anterior.numeroParcela}: valor alterado`);
+      }
+      const vencAnterior = anterior.vencimento.split('T')[0];
+      const vencNovo = String(pa.vencimento).split('T')[0];
+      if (vencNovo !== vencAnterior) {
+        alteracoes.push(`Parcela ${anterior.numeroParcela}: vencimento alterado`);
+      }
+    }
+
+    // Verificar parcelas removidas
+    const idsRecebidos = new Set(parcelasAtualizadas.filter((p: any) => p.id).map((p: any) => p.id));
+    for (const parcelaAnterior of snapshotAnterior.parcelas) {
+      if (!idsRecebidos.has(parcelaAnterior.id)) {
+        alteracoes.push(`Parcela ${parcelaAnterior.numeroParcela} removida`);
+      }
+    }
+
+    if (alteracoes.length > 0) {
+      return {
+        tipo: 'EDICAO_INDIVIDUAL',
+        descricao: alteracoes.slice(0, 3).join('; ') + (alteracoes.length > 3 ? ` (+${alteracoes.length - 3})` : '')
+      };
+    }
+  }
+
+  return null;
+}
+
+// Salvar histórico de alteração do parcelamento
+async function salvarHistoricoParcelamento(
+  grupoParcelamentoId: string,
+  contaMacroId: number | null,
+  tipoAlteracao: string,
+  descricao: string,
+  snapshotAnterior: SnapshotParcelamento,
+  valorTotalNovo: number,
+  qtdParcelasNovo: number,
+  userId: number,
+  empresaId?: number | null
+) {
+  try {
+    await prisma.historicoParcelamento.create({
+      data: {
+        grupoParcelamentoId,
+        contaMacroId,
+        tipoAlteracao,
+        descricao,
+        snapshotAnterior: JSON.stringify(snapshotAnterior),
+        valorTotalAnterior: snapshotAnterior.valorTotal,
+        valorTotalNovo,
+        qtdParcelasAnterior: snapshotAnterior.totalParcelas,
+        qtdParcelasNovo,
+        userId,
+        empresaId: empresaId || undefined
+      }
+    });
+    console.log(`   📜 Histórico salvo: ${descricao}`);
+  } catch (error) {
+    console.error('Erro ao salvar histórico de parcelamento:', error);
+    // Não interrompe o fluxo principal se falhar ao salvar histórico
+  }
+}
+
 /**
  * PUT - Atualiza parcelas de um parcelamento
  * Suporta:
@@ -240,6 +386,12 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Parcelamento não encontrado' }, { status: 404 });
     }
 
+    // ========================================
+    // CAPTURAR SNAPSHOT ANTES DAS ALTERAÇÕES
+    // ========================================
+    const snapshotAnterior = criarSnapshotParcelas(todasParcelas, contaMacro);
+    const alteracaoDetectada = detectarTipoAlteracao(snapshotAnterior, data);
+
     // Calcular valor total anterior para comparação
     const valorTotalAnterior = todasParcelas.reduce((sum: number, p: any) => sum + (p.valor || 0), 0);
     const quantidadeAnterior = todasParcelas.length;
@@ -255,6 +407,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       valorTotal: novoValorTotal,
       novaQuantidade,
       parcelasAtualizadas,
+      tipoParcelamento, // Tipo explícito: "avista" | "valor_total" | "valor_parcela"
     } = data;
 
     const totalParcelas = novaQuantidade || novoTotalParcelas || quantidadeAnterior;
@@ -395,7 +548,7 @@ export async function PUT(request: NextRequest, context: RouteContext) {
         if (parcelasPendentes.length < parcelasParaRemover) {
           return NextResponse.json({
             error: `Não é possível reduzir para ${novaQuantidade} parcelas. Existem apenas ${parcelasPendentes.length} parcelas pendentes que podem ser removidas.`,
-            parcelasPagas: todasParcelas.filter(p => p.pago).length
+            parcelasPagas: todasParcelas.filter((p: any) => p.pago).length
           }, { status: 400 });
         }
 
@@ -612,11 +765,34 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       orderBy: { vencimento: 'asc' }
     });
 
+    // Detectar primeira parcela para valor_parcela
+    let primeiraParcelaNumero = 1;
+    if (tipoParcelamento === "valor_parcela" && parcelasFinais.length > 0) {
+      const primeiraParcela = parcelasFinais[0];
+      if (primeiraParcela.numeroParcela) {
+        const match = primeiraParcela.numeroParcela.match(/^(\d+)\/\d+$/);
+        if (match) {
+          primeiraParcelaNumero = parseInt(match[1]);
+        }
+      }
+    }
+
     for (let i = 0; i < parcelasFinais.length; i++) {
+      let novoNumeroParcela: string;
+
+      // Respeitar o tipo de parcelamento ao atualizar numeroParcela
+      if (tipoParcelamento === "valor_parcela") {
+        // Para valor_parcela, manter o número original da primeira parcela
+        novoNumeroParcela = `${primeiraParcelaNumero + i}/${primeiraParcelaNumero + parcelasFinais.length - 1}`;
+      } else {
+        // Para valor_total e avista, sempre começar de 1
+        novoNumeroParcela = `${i + 1}/${parcelasFinais.length}`;
+      }
+
       await prisma.conta.update({
         where: { id: parcelasFinais[i].id },
         data: {
-          numeroParcela: `${i + 1}/${parcelasFinais.length}`,
+          numeroParcela: novoNumeroParcela,
           totalParcelas: parcelasFinais.length
         }
       });
@@ -649,6 +825,23 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     console.log(`   - ${parcelasCriadas} parcelas criadas`);
     console.log(`   - ${parcelasRemovidas} parcelas removidas`);
     console.log(`   - Valor total: R$ ${valorTotalAnterior.toFixed(2)} → R$ ${valorTotalNovo.toFixed(2)}`);
+
+    // ========================================
+    // SALVAR HISTÓRICO SE HOUVE ALTERAÇÃO
+    // ========================================
+    if (alteracaoDetectada) {
+      await salvarHistoricoParcelamento(
+        grupoParcelamentoId,
+        contaMacro?.id || null,
+        alteracaoDetectada.tipo,
+        alteracaoDetectada.descricao,
+        snapshotAnterior,
+        valorTotalNovo,
+        parcelasFinais.length,
+        user.id,
+        empresaId
+      );
+    }
 
     return NextResponse.json({
       success: true,

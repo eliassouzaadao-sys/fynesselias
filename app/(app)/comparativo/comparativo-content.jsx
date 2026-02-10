@@ -8,7 +8,7 @@ import { Drawer } from "@/components/ui/drawer"
 import { Modal } from "@/components/ui/modal"
 import { Input } from "@/components/ui/input"
 import { formatCurrency, formatPercentage } from "@/lib/format"
-import { TrendingUp, TrendingDown, ArrowUpCircle, ArrowDownCircle, Calendar, Plus, Trash2, AlertTriangle, FolderPlus, ChevronRight, ChevronDown, Edit, PanelLeftClose, X, Loader2, Check, RefreshCw } from "lucide-react"
+import { TrendingUp, TrendingDown, ArrowUpCircle, ArrowDownCircle, Calendar, Plus, Trash2, AlertTriangle, FolderPlus, ChevronRight, ChevronDown, Edit, PanelLeftClose, X, Loader2, Check, RefreshCw, Filter, Building2 } from "lucide-react"
 
 // Componente de barra de progresso com suporte a valores acima de 100%
 function ProgressBar({ percentage, variant = "success", showOverflow = true }) {
@@ -361,6 +361,14 @@ export function ComparativoContent() {
   const [selectedTipo, setSelectedTipo] = useState("")
   const [centrosReceita, setCentrosReceita] = useState([])
   const [centrosCusto, setCentrosCusto] = useState([])
+
+  // Modal de filtro por centro de custo
+  const [filtroModalOpen, setFiltroModalOpen] = useState(false)
+  const [centroSelecionado, setCentroSelecionado] = useState(null)
+  const [contasCentro, setContasCentro] = useState([])
+  const [loadingContas, setLoadingContas] = useState(false)
+  const [todasContas, setTodasContas] = useState([])
+
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [centerToDelete, setCenterToDelete] = useState(null)
   const [parentCenterForSub, setParentCenterForSub] = useState(null)
@@ -421,9 +429,43 @@ export function ComparativoContent() {
     }
   };
 
+  // Load contas from API para o filtro por centro
+  const loadContas = async () => {
+    try {
+      const res = await fetch("/api/contas")
+      if (res.ok) {
+        const data = await res.json()
+        setTodasContas(Array.isArray(data) ? data : [])
+      }
+    } catch (error) {
+      console.error('Failed to load contas:', error)
+    }
+  }
+
+  // Selecionar centro de custo e filtrar contas
+  const selecionarCentro = (centro) => {
+    setCentroSelecionado(centro)
+    setLoadingContas(true)
+
+    // Filtrar contas pelo codigoTipo (sigla do centro)
+    const contasFiltradas = todasContas
+      .filter(conta => conta.codigoTipo === centro.sigla)
+      .sort((a, b) => b.valor - a.valor) // Ordenar do maior para o menor
+
+    setContasCentro(contasFiltradas)
+    setLoadingContas(false)
+  }
+
+  // Calcular total das contas do centro selecionado
+  const totalContasCentro = contasCentro.reduce((acc, conta) => acc + (conta.valor || 0), 0)
+
+  // Todos os centros combinados para o modal
+  const todosCentros = [...centrosReceita, ...centrosCusto]
+
   // Load data on mount
   useEffect(() => {
     loadCentros()
+    loadContas()
   }, [])
 
   // Detectar quando o filtro foi alterado
@@ -461,10 +503,11 @@ export function ComparativoContent() {
   }
 
   // Calculate totals from centros data
-  const totalReceitaPrevista = centrosReceita.reduce((acc, c) => acc + (c.previsto || 0), 0)
-  const totalReceitaRealizada = centrosReceita.reduce((acc, c) => acc + (c.realizado || 0), 0)
-  const totalCustoPrevisto = centrosCusto.reduce((acc, c) => acc + (c.previsto || 0), 0)
-  const totalCustoRealizado = centrosCusto.reduce((acc, c) => acc + (c.realizado || 0), 0)
+  // Soma apenas centros pai (sem parentId) pois eles já incluem os valores dos subcentros
+  const totalReceitaPrevista = centrosReceita.filter(c => !c.parentId).reduce((acc, c) => acc + (c.previsto || 0), 0)
+  const totalReceitaRealizada = centrosReceita.filter(c => !c.parentId).reduce((acc, c) => acc + (c.realizado || 0), 0)
+  const totalCustoPrevisto = centrosCusto.filter(c => !c.parentId).reduce((acc, c) => acc + (c.previsto || 0), 0)
+  const totalCustoRealizado = centrosCusto.filter(c => !c.parentId).reduce((acc, c) => acc + (c.realizado || 0), 0)
 
   const comparativoData = {
     entradas: {
@@ -665,6 +708,20 @@ export function ComparativoContent() {
               • Alterado
             </span>
           )}
+
+          {/* Separador */}
+          <div className="h-6 w-px bg-border mx-1" />
+
+          {/* Botão Filtro por Centro de Custo */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setFiltroModalOpen(true)}
+            className="h-9 flex items-center gap-2"
+          >
+            <Filter className="h-4 w-4" />
+            Filtro por Centro de Custo/Receita
+          </Button>
         </div>
       </Card>
 
@@ -1311,6 +1368,187 @@ export function ComparativoContent() {
           }}
         />
       </Drawer>
+
+      {/* Modal de Filtro por Centro de Custo */}
+      <Modal
+        isOpen={filtroModalOpen}
+        onClose={() => {
+          setFiltroModalOpen(false)
+          setCentroSelecionado(null)
+          setContasCentro([])
+        }}
+        title="Filtro por Centro de Custo/Receita"
+        description="Selecione um centro de custo ou receita para ver as contas relacionadas"
+        size="xl"
+      >
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-[400px]">
+          {/* Coluna Esquerda - Lista de Centros de Custo */}
+          <div className="border border-border rounded-lg p-4 overflow-auto max-h-[500px]">
+            <h4 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+              <Building2 className="h-4 w-4 text-primary" />
+              Centros de Custo e Receita
+            </h4>
+
+            {todosCentros.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-sm text-muted-foreground">Nenhum centro cadastrado</p>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {todosCentros.filter(c => !c.parentId).map((centro) => {
+                  const subcentros = todosCentros.filter(c => c.parentId === centro.id)
+                  const isSelected = centroSelecionado?.id === centro.id
+                  const isCusto = centro.tipo === 'despesa'
+
+                  return (
+                    <div key={centro.id}>
+                      <button
+                        onClick={() => selecionarCentro(centro)}
+                        className={`w-full text-left px-3 py-2 rounded-lg transition-colors flex items-center justify-between ${
+                          isSelected
+                            ? 'bg-primary/20 border border-primary text-foreground'
+                            : 'hover:bg-muted text-foreground'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          {isCusto ? (
+                            <ArrowDownCircle className="h-3.5 w-3.5 text-red-600" />
+                          ) : (
+                            <ArrowUpCircle className="h-3.5 w-3.5 text-emerald-600" />
+                          )}
+                          <span className="text-sm font-medium">{centro.nome}</span>
+                        </div>
+                        <span className="text-[10px] text-muted-foreground bg-card px-1.5 py-0.5 rounded">{centro.sigla}</span>
+                      </button>
+
+                      {/* Subcentros */}
+                      {subcentros.length > 0 && (
+                        <div className="ml-4 mt-1 space-y-1">
+                          {subcentros.map((sub) => {
+                            const isSubSelected = centroSelecionado?.id === sub.id
+                            return (
+                              <button
+                                key={sub.id}
+                                onClick={() => selecionarCentro(sub)}
+                                className={`w-full text-left px-3 py-1.5 rounded-lg transition-colors flex items-center justify-between ${
+                                  isSubSelected
+                                    ? 'bg-primary/20 border border-primary text-foreground'
+                                    : 'hover:bg-muted text-muted-foreground'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <span className="text-muted-foreground">↳</span>
+                                  <span className="text-xs">{sub.nome}</span>
+                                </div>
+                                <span className="text-[10px] text-muted-foreground bg-card px-1.5 py-0.5 rounded">{sub.sigla}</span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Coluna Direita - Detalhes do Centro Selecionado */}
+          <div className="border border-border rounded-lg p-4 overflow-auto max-h-[500px]">
+            {!centroSelecionado ? (
+              <div className="flex flex-col items-center justify-center h-full text-center py-12">
+                <Building2 className="h-12 w-12 text-muted-foreground/30 mb-3" />
+                <p className="text-sm text-muted-foreground">Selecione um centro</p>
+                <p className="text-xs text-muted-foreground/70 mt-1">para ver as contas relacionadas</p>
+              </div>
+            ) : (
+              <div>
+                {/* Header do Centro Selecionado */}
+                <div className="mb-4 pb-4 border-b border-border">
+                  <div className="flex items-center gap-2 mb-2">
+                    {centroSelecionado.tipo === 'despesa' ? (
+                      <ArrowDownCircle className="h-5 w-5 text-red-600" />
+                    ) : (
+                      <ArrowUpCircle className="h-5 w-5 text-emerald-600" />
+                    )}
+                    <h4 className="text-lg font-semibold text-foreground">{centroSelecionado.nome}</h4>
+                    <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">{centroSelecionado.sigla}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 mt-3">
+                    <div className="bg-muted/50 rounded-lg p-3">
+                      <p className="text-xs text-muted-foreground mb-1">Valor Total</p>
+                      <p className={`text-lg font-bold ${centroSelecionado.tipo === 'despesa' ? 'text-red-600' : 'text-emerald-600'}`}>
+                        {formatCurrency(totalContasCentro)}
+                      </p>
+                    </div>
+                    <div className="bg-muted/50 rounded-lg p-3">
+                      <p className="text-xs text-muted-foreground mb-1">Percentual do Total</p>
+                      <p className="text-lg font-bold text-primary">
+                        {formatPercentage(
+                          centroSelecionado.tipo === 'despesa'
+                            ? (comparativoData.saidas.previsto > 0 ? (totalContasCentro / comparativoData.saidas.previsto) * 100 : 0)
+                            : (comparativoData.entradas.previsto > 0 ? (totalContasCentro / comparativoData.entradas.previsto) * 100 : 0)
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tabela de Contas */}
+                {loadingContas ? (
+                  <div className="text-center py-8">
+                    <p className="text-sm text-muted-foreground">Carregando contas...</p>
+                  </div>
+                ) : contasCentro.length === 0 ? (
+                  <div className="text-center py-8">
+                    <p className="text-sm text-muted-foreground">Nenhuma conta vinculada a este centro</p>
+                  </div>
+                ) : (
+                  <div>
+                    <h5 className="text-xs font-medium text-muted-foreground uppercase mb-2">
+                      Contas ({contasCentro.length})
+                    </h5>
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-border">
+                          <th className="text-left py-2 px-2 text-xs font-medium text-muted-foreground">Descrição</th>
+                          <th className="text-right py-2 px-2 text-xs font-medium text-muted-foreground">Valor</th>
+                          <th className="text-right py-2 px-2 text-xs font-medium text-muted-foreground">%</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {contasCentro.map((conta) => {
+                          const percentualConta = totalContasCentro > 0 ? (conta.valor / totalContasCentro) * 100 : 0
+                          return (
+                            <tr key={conta.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
+                              <td className="py-2 px-2">
+                                <div>
+                                  <p className="text-sm text-foreground">{conta.descricao}</p>
+                                  {conta.beneficiario && (
+                                    <p className="text-xs text-muted-foreground">{conta.beneficiario}</p>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="py-2 px-2 text-right">
+                                <span className={`text-sm font-medium ${conta.tipo === 'pagar' ? 'text-red-600' : 'text-emerald-600'}`}>
+                                  {formatCurrency(conta.valor)}
+                                </span>
+                              </td>
+                              <td className="py-2 px-2 text-right">
+                                <span className="text-xs text-muted-foreground">{formatPercentage(percentualConta)}</span>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

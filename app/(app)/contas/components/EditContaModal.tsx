@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Plus, Loader2, CreditCard, Calculator, Receipt, Search, Truck, Check, UserPlus, RefreshCw, FileText } from "lucide-react";
+import { Plus, Loader2, CreditCard, Calculator, Receipt, Search, Truck, Check, UserPlus, RefreshCw, FileText, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -55,44 +55,84 @@ interface Fornecedor {
   status: string;
 }
 
-
-interface SimpleContaModalProps {
+interface Conta {
+  id: number;
+  descricao: string;
+  valor: number;
+  vencimento: string;
   tipo: "pagar" | "receber";
+  codigoTipo?: string;
+  beneficiario?: string;
+  numeroDocumento?: string;
+  numeroParcela?: string;
+  totalParcelas?: number;
+  cartaoId?: number;
+  bancoContaId?: number;
+  pessoaId?: number;
+  pessoa?: Fornecedor;
+  pago?: boolean;
+}
+
+interface EditContaModalProps {
+  conta: Conta;
   onClose: () => void;
   onSuccess: () => void;
 }
 
 type TipoParcelamento = "avista" | "valor_total" | "valor_parcela";
 
-export function SimpleContaModal({ tipo, onClose, onSuccess }: SimpleContaModalProps) {
-  const [codigoTipo, setCodigoTipo] = useState("");
-  const [beneficiario, setBeneficiario] = useState("");
-  const [descricao, setDescricao] = useState("");
-  const [numeroDocumento, setNumeroDocumento] = useState("");
-  const [vencimento, setVencimento] = useState("");
-  const [valor, setValor] = useState<number>(0);
+export function EditContaModal({ conta, onClose, onSuccess }: EditContaModalProps) {
+  // Detectar tipo de parcelamento existente
+  const detectarTipoParcelamento = (): { tipo: TipoParcelamento; parcelaAtual: string; totalParcelas: string } => {
+    if (!conta.numeroParcela) {
+      return { tipo: "avista", parcelaAtual: "", totalParcelas: "" };
+    }
+
+    const match = conta.numeroParcela.match(/^(\d+)\/(\d+)$/);
+    if (match) {
+      const atual = parseInt(match[1]);
+      const total = parseInt(match[2]);
+      // Se a primeira parcela começa em 1, era valor_total; senão era valor_parcela
+      if (atual === 1) {
+        return { tipo: "valor_total", parcelaAtual: "1", totalParcelas: total.toString() };
+      } else {
+        return { tipo: "valor_parcela", parcelaAtual: atual.toString(), totalParcelas: total.toString() };
+      }
+    }
+
+    return { tipo: "avista", parcelaAtual: "", totalParcelas: "" };
+  };
+
+  const dadosParcelamentoInicial = detectarTipoParcelamento();
+
+  const [codigoTipo, setCodigoTipo] = useState(conta.codigoTipo || "");
+  const [beneficiario, setBeneficiario] = useState(conta.beneficiario || conta.pessoa?.nome || "");
+  const [descricao, setDescricao] = useState(conta.descricao || "");
+  const [numeroDocumento, setNumeroDocumento] = useState(conta.numeroDocumento || "");
+  const [vencimento, setVencimento] = useState(conta.vencimento ? conta.vencimento.split("T")[0] : "");
+  const [valor, setValor] = useState<number>(conta.valor || 0);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [centros, setCentros] = useState<any[]>([]);
   const [loadingCentros, setLoadingCentros] = useState(false);
 
-  const [tipoParcelamento, setTipoParcelamento] = useState<TipoParcelamento>("avista");
-  const [totalParcelas, setTotalParcelas] = useState("");
-  const [parcelaAtual, setParcelaAtual] = useState("");
+  // Tipo de parcelamento: fixo baseado no detectado (nao pode ser alterado na edicao)
+  const tipoParcelamento: TipoParcelamento = dadosParcelamentoInicial.tipo;
+  const [totalParcelas, setTotalParcelas] = useState(dadosParcelamentoInicial.totalParcelas);
+  const [parcelaAtual, setParcelaAtual] = useState(dadosParcelamentoInicial.parcelaAtual);
 
   const [isRecorrente, setIsRecorrente] = useState(false);
   const [frequencia, setFrequencia] = useState("");
   const [dataInicioRecorrencia, setDataInicioRecorrencia] = useState("");
   const [dataFimRecorrencia, setDataFimRecorrencia] = useState("");
 
-  const [cartaoId, setCartaoId] = useState("");
+  const [cartaoId, setCartaoId] = useState(conta.cartaoId?.toString() || "");
   const [cartoes, setCartoes] = useState<CartaoCredito[]>([]);
   const [loadingCartoes, setLoadingCartoes] = useState(false);
 
-
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
   const [loadingFornecedores, setLoadingFornecedores] = useState(false);
-  const [fornecedorSelecionado, setFornecedorSelecionado] = useState<Fornecedor | null>(null);
+  const [fornecedorSelecionado, setFornecedorSelecionado] = useState<Fornecedor | null>(conta.pessoa || null);
   const [searchFornecedor, setSearchFornecedor] = useState("");
   const [openFornecedorPopover, setOpenFornecedorPopover] = useState(false);
   const inputFornecedorRef = useRef<HTMLInputElement>(null);
@@ -176,14 +216,14 @@ export function SimpleContaModal({ tipo, onClose, onSuccess }: SimpleContaModalP
     };
   }, [isRecorrente, frequencia, dataInicioRecorrencia, dataFimRecorrencia, valor]);
 
-  const titulo = tipo === "pagar" ? "Nova Conta a Pagar" : "Nova Conta a Receber";
-  const labelPessoa = tipo === "pagar" ? "Fornecedor" : "Cliente";
+  const titulo = `Editar Conta a ${conta.tipo === "pagar" ? "Pagar" : "Receber"}`;
+  const labelPessoa = conta.tipo === "pagar" ? "Fornecedor" : "Cliente";
 
   useEffect(() => {
     const fetchCentros = async () => {
       setLoadingCentros(true);
       try {
-        const tipoCentro = tipo === "pagar" ? "despesa" : "faturamento";
+        const tipoCentro = conta.tipo === "pagar" ? "despesa" : "faturamento";
         const res = await fetch(`/api/centros?tipo=${tipoCentro}&hierarquico=true`);
         const data = await res.json();
         setCentros(Array.isArray(data) ? data : []);
@@ -195,10 +235,10 @@ export function SimpleContaModal({ tipo, onClose, onSuccess }: SimpleContaModalP
       }
     };
     fetchCentros();
-  }, [tipo]);
+  }, [conta.tipo]);
 
   useEffect(() => {
-    if (tipo !== "pagar") return;
+    if (conta.tipo !== "pagar") return;
 
     const fetchCartoes = async () => {
       setLoadingCartoes(true);
@@ -214,14 +254,13 @@ export function SimpleContaModal({ tipo, onClose, onSuccess }: SimpleContaModalP
       }
     };
     fetchCartoes();
-  }, [tipo]);
-
+  }, [conta.tipo]);
 
   useEffect(() => {
     const fetchPessoas = async () => {
       setLoadingFornecedores(true);
       try {
-        const tipoPessoa = tipo === "pagar" ? "fornecedor" : "cliente";
+        const tipoPessoa = conta.tipo === "pagar" ? "fornecedor" : "cliente";
         const res = await fetch(`/api/fornecedores?status=ativo&tipo=${tipoPessoa}`);
         const data = await res.json();
         setFornecedores(Array.isArray(data) ? data : []);
@@ -233,7 +272,7 @@ export function SimpleContaModal({ tipo, onClose, onSuccess }: SimpleContaModalP
       }
     };
     fetchPessoas();
-  }, [tipo]);
+  }, [conta.tipo]);
 
   const fornecedoresFiltrados = useMemo(() => {
     if (!searchFornecedor.trim()) return fornecedores;
@@ -257,7 +296,7 @@ export function SimpleContaModal({ tipo, onClose, onSuccess }: SimpleContaModalP
 
     setSavingNovo(true);
     try {
-      const tipoPessoa = tipo === "pagar" ? "fornecedor" : "cliente";
+      const tipoPessoa = conta.tipo === "pagar" ? "fornecedor" : "cliente";
       const res = await fetch("/api/fornecedores", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -333,8 +372,8 @@ export function SimpleContaModal({ tipo, onClose, onSuccess }: SimpleContaModalP
 
     if (tipoParcelamento === "valor_total") {
       const numParcelas = parseInt(totalParcelas);
-      if (!numParcelas || numParcelas < 1) {
-        setError("Informe a quantidade de parcelas");
+      if (!numParcelas || numParcelas < 2) {
+        setError("Informe a quantidade de parcelas (minimo 2)");
         return;
       }
     }
@@ -373,10 +412,12 @@ export function SimpleContaModal({ tipo, onClose, onSuccess }: SimpleContaModalP
       }
     }
 
+    // Se mudou de avista para parcelamento ou recorrencia, mostra confirmacao
+    const temParcelamento = tipoParcelamento !== "avista";
     const temRecorrencia = isRecorrente;
-    const temParcelamentoMultiplo = tipoParcelamento !== "avista" && parseInt(totalParcelas) > 1;
+    const mudouParaMultiplas = (temParcelamento || temRecorrencia) && dadosParcelamentoInicial.tipo === "avista";
 
-    if (temParcelamentoMultiplo || temRecorrencia) {
+    if (mudouParaMultiplas) {
       const parcelas = gerarPreviewParcelas();
       if (parcelas.length > 0) {
         setParcelasPreview(parcelas);
@@ -385,7 +426,8 @@ export function SimpleContaModal({ tipo, onClose, onSuccess }: SimpleContaModalP
       }
     }
 
-    await criarContaSimples();
+    // Atualiza conta simples
+    await atualizarConta();
   };
 
   const gerarPreviewParcelas = (): ParcelaPreview[] => {
@@ -502,20 +544,29 @@ export function SimpleContaModal({ tipo, onClose, onSuccess }: SimpleContaModalP
     return parcelas;
   };
 
-  const criarContaSimples = async () => {
+  const atualizarConta = async () => {
     setIsSaving(true);
     try {
-      const response = await fetch("/api/contas", {
-        method: "POST",
+      // Formatar numero da parcela
+      let numeroParcela: string | null = null;
+      if (tipoParcelamento === "valor_total") {
+        numeroParcela = `1/${totalParcelas}`;
+      } else if (tipoParcelamento === "valor_parcela") {
+        numeroParcela = `${parcelaAtual}/${totalParcelas}`;
+      }
+
+      const response = await fetch(`/api/contas/${conta.id}`, {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           descricao: descricao.trim(),
           valor: Number(valor),
           vencimento,
-          tipo,
           codigoTipo: codigoTipo.trim() || null,
           beneficiario: fornecedorSelecionado?.nome || null,
           numeroDocumento: numeroDocumento.trim() || null,
+          numeroParcela,
+          totalParcelas: totalParcelas ? parseInt(totalParcelas) : null,
           cartaoId: cartaoId && cartaoId !== "none" ? parseInt(cartaoId) : null,
           pessoaId: fornecedorSelecionado?.id || null,
         }),
@@ -523,13 +574,13 @@ export function SimpleContaModal({ tipo, onClose, onSuccess }: SimpleContaModalP
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || "Erro ao criar conta");
+        throw new Error(errorData.error || "Erro ao atualizar conta");
       }
 
       onSuccess();
       onClose();
     } catch (err: any) {
-      setError(err.message || "Erro ao criar conta");
+      setError(err.message || "Erro ao atualizar conta");
     } finally {
       setIsSaving(false);
     }
@@ -538,12 +589,16 @@ export function SimpleContaModal({ tipo, onClose, onSuccess }: SimpleContaModalP
   const handleConfirmarParcelas = async (parcelasComStatus: ParcelaPreview[]) => {
     setIsSaving(true);
     try {
+      // Primeiro deleta a conta atual
+      await fetch(`/api/contas/${conta.id}`, { method: "DELETE" });
+
+      // Depois cria as novas parcelas
       const contas = parcelasComStatus.map((p) => ({
         descricao: p.descricao,
         valor: p.valor,
         vencimento: p.vencimento.toISOString().split("T")[0],
         pago: p.pago,
-        tipo,
+        tipo: conta.tipo,
         codigoTipo: codigoTipo.trim() || undefined,
         beneficiario: fornecedorSelecionado?.nome || undefined,
         numeroDocumento: numeroDocumento.trim() || undefined,
@@ -578,7 +633,7 @@ export function SimpleContaModal({ tipo, onClose, onSuccess }: SimpleContaModalP
         <DialogContent className="max-w-2xl max-h-[90vh] p-0">
           <DialogHeader className="p-6 pb-4">
             <DialogTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5 text-primary" />
+              <Pencil className="h-5 w-5 text-primary" />
               {titulo}
             </DialogTitle>
           </DialogHeader>
@@ -753,7 +808,7 @@ export function SimpleContaModal({ tipo, onClose, onSuccess }: SimpleContaModalP
                   <div className="grid gap-4 md:grid-cols-2">
                     {/* Centro de Custo/Receita */}
                     <div className="min-w-0 md:col-span-2">
-                      <Label htmlFor="centro">Centro de {tipo === "pagar" ? "Custo" : "Receita"}</Label>
+                      <Label htmlFor="centro">Centro de {conta.tipo === "pagar" ? "Custo" : "Receita"}</Label>
                       <Select value={codigoTipo || "none"} onValueChange={(v) => setCodigoTipo(v === "none" ? "" : v)} disabled={isSaving || loadingCentros}>
                         <SelectTrigger id="centro" className="mt-1">
                           <SelectValue placeholder={loadingCentros ? "Carregando..." : "Selecione"} className="truncate" />
@@ -784,30 +839,13 @@ export function SimpleContaModal({ tipo, onClose, onSuccess }: SimpleContaModalP
                   </div>
 
                   {/* Cartao de Credito (apenas para tipo pagar) */}
-                  {tipo === "pagar" && (
+                  {conta.tipo === "pagar" && (
                     <div>
                       <Label htmlFor="cartao" className="flex items-center gap-2">
                         <CreditCard className="h-4 w-4" />
                         Cartao de Credito
                       </Label>
-                      <Select
-                        value={cartaoId}
-                        onValueChange={(value) => {
-                          setCartaoId(value);
-                          // Se desmarcar o cartão, voltar para "à vista"
-                          if (!value || value === "none") {
-                            setTipoParcelamento("avista");
-                            setTotalParcelas("");
-                            setParcelaAtual("");
-                          } else {
-                            // Se selecionar um cartão e estiver em "à vista", mudar para "valor_total"
-                            if (tipoParcelamento === "avista") {
-                              setTipoParcelamento("valor_total");
-                            }
-                          }
-                        }}
-                        disabled={isSaving || loadingCartoes}
-                      >
+                      <Select value={cartaoId} onValueChange={setCartaoId} disabled={isSaving || loadingCartoes}>
                         <SelectTrigger id="cartao" className="mt-1">
                           <SelectValue placeholder={loadingCartoes ? "Carregando..." : "Selecione (opcional)"} />
                         </SelectTrigger>
@@ -828,47 +866,47 @@ export function SimpleContaModal({ tipo, onClose, onSuccess }: SimpleContaModalP
                     </div>
                   )}
 
-                  {/* Tipo de Parcelamento - Só aparece se cartão selecionado (tipo pagar) */}
-                  {tipo === "pagar" && cartaoId && cartaoId !== "none" && (
-                    <div>
-                      <Label>Tipo de Parcelamento no Cartão</Label>
-                      <div className="flex gap-2 flex-wrap mt-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setTipoParcelamento("valor_total");
-                            setParcelaAtual("1");
-                          }}
-                          disabled={isSaving}
-                          className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg border transition-colors ${
-                            tipoParcelamento === "valor_total"
-                              ? "border-primary bg-primary/10 text-primary"
-                              : "border-border text-muted-foreground hover:border-primary/50"
-                          }`}
-                        >
-                          <Calculator className="h-4 w-4" />
-                          Valor Total
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setTipoParcelamento("valor_parcela")}
-                          disabled={isSaving}
-                          className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg border transition-colors ${
-                            tipoParcelamento === "valor_parcela"
-                              ? "border-primary bg-primary/10 text-primary"
-                              : "border-border text-muted-foreground hover:border-primary/50"
-                          }`}
-                        >
-                          <Receipt className="h-4 w-4" />
-                          Valor da Parcela
-                        </button>
+                  {/* Tipo de Parcelamento - Fixo na edicao */}
+                  <div>
+                    <Label>Parcelamento</Label>
+                    <div className="flex gap-2 flex-wrap mt-2">
+                      <div
+                        className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg border ${
+                          tipoParcelamento === "avista"
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border text-muted-foreground opacity-50"
+                        }`}
+                      >
+                        <Receipt className="h-4 w-4" />
+                        A vista
                       </div>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {tipoParcelamento === "valor_total" && "Informe o valor total e a quantidade de parcelas"}
-                        {tipoParcelamento === "valor_parcela" && "Informe o valor de uma parcela especifica"}
-                      </p>
+                      <div
+                        className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg border ${
+                          tipoParcelamento === "valor_total"
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border text-muted-foreground opacity-50"
+                        }`}
+                      >
+                        <Calculator className="h-4 w-4" />
+                        Valor Total
+                      </div>
+                      <div
+                        className={`flex items-center gap-2 px-3 py-2 text-sm rounded-lg border ${
+                          tipoParcelamento === "valor_parcela"
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border text-muted-foreground opacity-50"
+                        }`}
+                      >
+                        <Receipt className="h-4 w-4" />
+                        Valor da Parcela
+                      </div>
                     </div>
-                  )}
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {tipoParcelamento === "avista" && "Pagamento unico, sem parcelamento"}
+                      {tipoParcelamento === "valor_total" && "O valor informado e dividido igualmente entre as parcelas"}
+                      {tipoParcelamento === "valor_parcela" && "Cada parcela tem o valor informado"}
+                    </p>
+                  </div>
 
                   {/* Recorrencia (apenas para pagamento a vista) */}
                   {tipoParcelamento === "avista" && (
@@ -1102,15 +1140,10 @@ export function SimpleContaModal({ tipo, onClose, onSuccess }: SimpleContaModalP
                     <Loader2 className="animate-spin h-4 w-4 mr-2" />
                     Salvando...
                   </>
-                ) : tipoParcelamento !== "avista" || isRecorrente ? (
-                  <>
-                    <Check className="mr-2 h-4 w-4" />
-                    Continuar
-                  </>
                 ) : (
                   <>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Adicionar
+                    <Check className="mr-2 h-4 w-4" />
+                    Salvar
                   </>
                 )}
               </Button>
@@ -1121,7 +1154,7 @@ export function SimpleContaModal({ tipo, onClose, onSuccess }: SimpleContaModalP
 
       {showConfirmacao && parcelasPreview.length > 0 && (
         <ConfirmacaoParcelasModal
-          tipo={tipo}
+          tipo={conta.tipo}
           parcelas={parcelasPreview}
           onConfirm={handleConfirmarParcelas}
           onCancel={() => setShowConfirmacao(false)}

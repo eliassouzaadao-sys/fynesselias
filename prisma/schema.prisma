@@ -341,7 +341,7 @@ model DescontoRecorrente {
 model FluxoCaixa {
   id                 Int      @id @default(autoincrement())
   dia                DateTime // data da movimentação
-  codigoTipo         String   // código do tipo (ex: REC-001, PAG-045)
+  codigoTipo         String?  // código do tipo (ex: REC-001, PAG-045)
   fornecedorCliente  String   // nome do fornecedor ou cliente
   descricao          String?  // descrição opcional (ex: Tarifa de manutenção, Taxa DOC)
   valor              Float    // valor da movimentação
@@ -538,6 +538,7 @@ model User {
   historicoProLabore HistoricoProLabore[]
   whatsappMessages  WhatsAppMessage[]
   descontosRecorrentes DescontoRecorrente[]
+  historicoParcelas    HistoricoParcelamento[]
 
   @@index([email])
 }
@@ -574,6 +575,7 @@ model Empresa {
   historicoProLabore HistoricoProLabore[]
   whatsappMessages   WhatsAppMessage[]
   descontosRecorrentes DescontoRecorrente[]
+  historicoParcelas    HistoricoParcelamento[]
 
   @@index([userId])
 }
@@ -589,4 +591,45 @@ model PasswordResetToken {
 
   @@index([token])
   @@index([userId])
+}
+
+// Histórico de alterações de parcelamentos
+model HistoricoParcelamento {
+  id                    Int       @id @default(autoincrement())
+
+  // Referência ao parcelamento
+  grupoParcelamentoId   String    // UUID do grupo de parcelas
+  contaMacroId          Int?      // ID da conta macro (se existir)
+
+  // Tipo de alteração
+  tipoAlteracao         String    // QUANTIDADE | VALOR_TOTAL | EDICAO_INDIVIDUAL
+
+  // Descrição legível
+  descricao             String    // Ex: "Alterado de 6 para 10 parcelas"
+
+  // Snapshot JSON do estado anterior
+  snapshotAnterior      String    // JSON com { valorTotal, totalParcelas, parcelas: [...] }
+
+  // Valores para consulta rápida (sem parsing JSON)
+  valorTotalAnterior    Float?
+  valorTotalNovo        Float?
+  qtdParcelasAnterior   Int?
+  qtdParcelasNovo       Int?
+
+  // Metadata
+  dataAlteracao         DateTime  @default(now())
+
+  // Relacionamento com usuário
+  userId                Int
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Relacionamento com empresa
+  empresaId             Int?
+  empresa               Empresa?  @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  @@index([grupoParcelamentoId])
+  @@index([contaMacroId])
+  @@index([dataAlteracao])
+  @@index([userId])
+  @@index([empresaId])
 }

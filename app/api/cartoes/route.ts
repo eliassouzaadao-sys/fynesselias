@@ -19,24 +19,41 @@ export async function GET() {
     const cartoes = await prisma.cartaoCredito.findMany({
       where: whereClause,
       include: {
-        banco: true,
-        faturas: {
-          where: { pago: false },
-          select: { valorTotal: true }
-        }
+        banco: true
       },
       orderBy: { nome: "asc" }
     });
 
-    const cartoesComLimite = cartoes.map((cartao: typeof cartoes[number]) => {
-      const limiteUtilizado = cartao.faturas.reduce((acc: number, f: { valorTotal: number }) => acc + f.valorTotal, 0);
-      return {
-        ...cartao,
-        faturas: undefined,
-        limiteUtilizado,
-        limiteDisponivel: cartao.limite - limiteUtilizado
-      };
-    });
+    // Calcular limite utilizado baseado nas contas reais (não nas faturas)
+    // Isso evita problemas com valorTotal desatualizado quando contas são excluídas
+    const cartoesComLimite = await Promise.all(
+      cartoes.map(async (cartao: typeof cartoes[number]) => {
+        // Buscar todas as contas não pagas vinculadas ao cartão
+        const contasWhere: any = {
+          cartaoId: cartao.id,
+          userId: user.id,
+          pago: false,
+          OR: [
+            { totalParcelas: null }, // Contas simples
+            { parentId: { not: null } }, // Parcelas individuais
+          ]
+        };
+        if (empresaId) contasWhere.empresaId = empresaId;
+
+        const contas = await prisma.conta.findMany({
+          where: contasWhere,
+          select: { valor: true }
+        });
+
+        const limiteUtilizado = contas.reduce((acc: number, conta: { valor: number }) => acc + conta.valor, 0);
+
+        return {
+          ...cartao,
+          limiteUtilizado,
+          limiteDisponivel: cartao.limite - limiteUtilizado
+        };
+      })
+    );
 
     return NextResponse.json(cartoesComLimite);
   } catch (error) {
@@ -64,24 +81,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!data.bandeira?.trim()) {
-      return NextResponse.json(
-        { error: "Bandeira é obrigatória" },
-        { status: 400 }
-      );
-    }
-
     const bandeirasValidas = ["visa", "mastercard", "elo", "amex", "hipercard", "diners"];
-    if (!bandeirasValidas.includes(data.bandeira.toLowerCase())) {
+    if (data.bandeira && !bandeirasValidas.includes(data.bandeira.toLowerCase())) {
       return NextResponse.json(
         { error: "Bandeira inválida" },
-        { status: 400 }
-      );
-    }
-
-    if (!data.ultimos4Digitos || data.ultimos4Digitos.length !== 4) {
-      return NextResponse.json(
-        { error: "Últimos 4 dígitos são obrigatórios" },
         { status: 400 }
       );
     }
@@ -113,8 +116,8 @@ export async function POST(request: NextRequest) {
     const cartao = await prisma.cartaoCredito.create({
       data: {
         nome: data.nome.trim(),
-        bandeira: data.bandeira.toLowerCase(),
-        ultimos4Digitos: data.ultimos4Digitos,
+        bandeira: data.bandeira ? data.bandeira.toLowerCase() : "",
+        ultimos4Digitos: data.ultimos4Digitos || "",
         diaVencimento,
         diaFechamento,
         limite,
@@ -188,14 +191,8 @@ export async function PUT(request: NextRequest) {
       updateData.bandeira = data.bandeira.toLowerCase();
     }
 
-    if (data.ultimos4Digitos) {
-      if (data.ultimos4Digitos.length !== 4) {
-        return NextResponse.json(
-          { error: "Últimos 4 dígitos devem ter exatamente 4 caracteres" },
-          { status: 400 }
-        );
-      }
-      updateData.ultimos4Digitos = data.ultimos4Digitos;
+    if (data.ultimos4Digitos !== undefined) {
+      updateData.ultimos4Digitos = data.ultimos4Digitos || "";
     }
 
     if (data.diaVencimento !== undefined) {

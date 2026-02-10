@@ -240,6 +240,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
     let parcelasExcluidas = 0;
     let fluxosExcluidos = 0;
+    const faturasParaRecalcular = new Set<number>(); // IDs de faturas que precisam ser recalculadas
 
     // Se for conta macro ou tiver parcelas filhas, excluir elas primeiro
     if (existingConta.isContaMacro || (existingConta.parcelas && existingConta.parcelas.length > 0)) {
@@ -256,13 +257,36 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
           ],
           userId: user.id,
         },
-        select: { id: true, pago: true }
+        select: { id: true, pago: true, cartaoId: true, vencimento: true }
       });
 
       console.log(`   Encontradas ${parcelasFilhas.length} parcelas filhas`);
 
-      // Excluir fluxo de caixa das parcelas pagas
+      // Coletar faturas afetadas pelas parcelas
       for (const parcela of parcelasFilhas) {
+        if (parcela.cartaoId) {
+          const mesVencimento = new Date(parcela.vencimento).getMonth() + 1;
+          const anoVencimento = new Date(parcela.vencimento).getFullYear();
+
+          const faturaWhere: any = {
+            cartaoId: parcela.cartaoId,
+            mesReferencia: mesVencimento,
+            anoReferencia: anoVencimento,
+            userId: user.id
+          };
+          if (empresaId) faturaWhere.empresaId = empresaId;
+
+          const fatura = await prisma.fatura.findFirst({
+            where: faturaWhere,
+            select: { id: true }
+          });
+
+          if (fatura) {
+            faturasParaRecalcular.add(fatura.id);
+          }
+        }
+
+        // Excluir fluxo de caixa das parcelas pagas
         if (parcela.pago) {
           const deleted = await prisma.fluxoCaixa.deleteMany({
             where: { contaId: parcela.id }
@@ -295,14 +319,82 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       });
     }
 
-    // Guardar referências do sócio ANTES de deletar a conta
+    // Guardar referências do sócio e cartão ANTES de deletar a conta
     const socioResponsavelId = existingConta.socioResponsavelId;
     const codigoTipo = existingConta.codigoTipo;
+    const cartaoId = existingConta.cartaoId;
+    const mesVencimento = new Date(existingConta.vencimento).getMonth() + 1;
+    const anoVencimento = new Date(existingConta.vencimento).getFullYear();
 
     // Excluir a conta
     await prisma.conta.delete({
       where: { id },
     });
+
+    // Se a conta estava vinculada a um cartão, adicionar sua fatura à lista
+    if (cartaoId) {
+      const faturaWhere: any = {
+        cartaoId,
+        mesReferencia: mesVencimento,
+        anoReferencia: anoVencimento,
+        userId: user.id
+      };
+      if (empresaId) faturaWhere.empresaId = empresaId;
+
+      const fatura = await prisma.fatura.findFirst({
+        where: faturaWhere,
+        select: { id: true }
+      });
+
+      if (fatura) {
+        faturasParaRecalcular.add(fatura.id);
+      }
+    }
+
+    // Recalcular todas as faturas afetadas
+    if (faturasParaRecalcular.size > 0) {
+      console.log(`💳 Recalculando ${faturasParaRecalcular.size} fatura(s)...`);
+
+      for (const faturaId of faturasParaRecalcular) {
+        const fatura = await prisma.fatura.findUnique({
+          where: { id: faturaId },
+          select: { id: true, cartaoId: true, mesReferencia: true, anoReferencia: true }
+        });
+
+        if (fatura) {
+          const inicioMes = new Date(fatura.anoReferencia, fatura.mesReferencia - 1, 1, 0, 0, 0);
+          const fimMes = new Date(fatura.anoReferencia, fatura.mesReferencia, 0, 23, 59, 59);
+
+          const contasFaturaWhere: any = {
+            userId: user.id,
+            cartaoId: fatura.cartaoId,
+            vencimento: {
+              gte: inicioMes,
+              lte: fimMes
+            },
+            OR: [
+              { totalParcelas: null },
+              { parentId: { not: null } },
+            ]
+          };
+          if (empresaId) contasFaturaWhere.empresaId = empresaId;
+
+          const contasRestantes = await prisma.conta.findMany({
+            where: contasFaturaWhere,
+            select: { valor: true }
+          });
+
+          const novoValorTotal = contasRestantes.reduce((acc, conta) => acc + conta.valor, 0);
+
+          await prisma.fatura.update({
+            where: { id: fatura.id },
+            data: { valorTotal: novoValorTotal }
+          });
+
+          console.log(`   ✅ Fatura ${fatura.id}: ${novoValorTotal.toFixed(2)}`);
+        }
+      }
+    }
 
     // Atualizar pró-labore do sócio vinculado (após a exclusão)
     if (socioResponsavelId) {

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { formatCurrency, formatDate } from "@/lib/format"
 import { CurrencyInput } from "@/components/ui/currency-input"
-import { TrendingUp, TrendingDown, Building2, Plus, X, Trash2, Edit, Copy, ChevronDown, Calendar, Clock, CheckCircle2, ArrowDownCircle, ArrowUpCircle, Filter, Search, CreditCard, Wallet, Loader2, Eye, Truck, Check, UserPlus, Circle } from "lucide-react"
+import { TrendingUp, TrendingDown, Building2, Plus, X, Trash2, Edit, Copy, ChevronDown, Calendar, Clock, CheckCircle2, ArrowDownCircle, ArrowUpCircle, Filter, Search, CreditCard, Wallet, Loader2, Eye, Truck, Check, UserPlus, Circle, RotateCcw } from "lucide-react"
 import {
   Popover,
   PopoverContent,
@@ -77,6 +77,7 @@ export function FluxoCaixaContent() {
   const [filtroDescricao, setFiltroDescricao] = useState("")
   const [filtroBancoId, setFiltroBancoId] = useState("")
   const [filtroTipoFluxo, setFiltroTipoFluxo] = useState("") // "", "entrada", "saida"
+  const [filtroStatus, setFiltroStatus] = useState("") // "", "pendente", "pago", "vencido", "cancelado"
   const [filtroValorMin, setFiltroValorMin] = useState("")
   const [filtroValorMax, setFiltroValorMax] = useState("")
   const [showFiltrosAvancados, setShowFiltrosAvancados] = useState(false)
@@ -95,6 +96,26 @@ export function FluxoCaixaContent() {
     tipoChavePix: "",
     saldoInicial: 0
   })
+
+  // Função para calcular o status real de uma conta baseado em vencimento
+  const getContaStatus = (conta) => {
+    if (!conta) return 'pago' // Lançamento direto sem conta vinculada
+
+    const hoje = new Date()
+    const hojeStr = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`
+
+    // Normalizar data de vencimento
+    const vencimentoDate = new Date(conta.vencimento)
+    const vencimentoStr = `${vencimentoDate.getFullYear()}-${String(vencimentoDate.getMonth() + 1).padStart(2, '0')}-${String(vencimentoDate.getDate()).padStart(2, '0')}`
+
+    const vencido = vencimentoStr < hojeStr
+
+    // Prioridade: cancelado > pago > vencido > pendente
+    if (conta.status === "cancelado") return "cancelado"
+    if (conta.pago) return "pago"
+    if (vencido) return "vencido"
+    return "pendente"
+  }
 
   // Estados para cartões de crédito
   const [cartoes, setCartoes] = useState([])
@@ -561,6 +582,7 @@ export function FluxoCaixaContent() {
       dia: new Date().toISOString().split('T')[0],
       codigoTipo: "",
       fornecedorCliente: "",
+      descricao: "",
       valor: 0,
       bancoId: "",
       cartaoId: ""
@@ -635,6 +657,43 @@ export function FluxoCaixaContent() {
     } catch (error) {
       console.error('Erro ao excluir movimentação:', error)
       alert(error.message || 'Erro ao excluir movimentação')
+    }
+  }
+
+  // Desfazer transação paga/recebida (reverte para pendente ao invés de excluir)
+  async function handleDesfazerTransacao(id, contaId, tipo) {
+    const acao = tipo === 'entrada' ? 'recebimento' : 'pagamento'
+    const mensagem = contaId
+      ? `Tem certeza que deseja desfazer este ${acao}?\n\nA conta será revertida para status PENDENTE e a movimentação será removida do fluxo de caixa.`
+      : `Tem certeza que deseja excluir este lançamento direto?`
+
+    if (!confirm(mensagem)) return
+
+    try {
+      const response = await fetch('/api/fluxo-caixa', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Erro ao desfazer transação')
+      }
+
+      // Recarregar dados do fluxo e contas pendentes
+      const [fluxoRes, contasRes] = await Promise.all([
+        fetch('/api/fluxo-caixa'),
+        fetch('/api/contas?modo=individual')
+      ])
+      const fluxoData = await fluxoRes.json()
+      const contasData = await contasRes.json()
+      setFluxoCaixa(Array.isArray(fluxoData) ? fluxoData : [])
+      setContasPendentes(Array.isArray(contasData) ? contasData.filter(c => !c.pago) : [])
+      setSelectedRow(null)
+    } catch (error) {
+      console.error('Erro ao desfazer transação:', error)
+      alert(error.message || 'Erro ao desfazer transação')
     }
   }
 
@@ -742,6 +801,13 @@ export function FluxoCaixaContent() {
     // Filtro por tipo (entrada/saida)
     if (filtroTipoFluxo && item.tipo !== filtroTipoFluxo) return false
 
+    // Filtro por status
+    if (filtroStatus) {
+      // Calcular status dinamicamente (considera vencimento)
+      const statusItem = getContaStatus(item.conta)
+      if (statusItem !== filtroStatus) return false
+    }
+
     // Filtro por valor (range)
     if (filtroValorMin) {
       const valorMin = parseFloat(filtroValorMin)
@@ -755,10 +821,18 @@ export function FluxoCaixaContent() {
     return true
   })
 
-  // Filtrar contas pendentes por período
+  // Filtrar contas pendentes por período e status
   // Uma conta pendente aparece se a data de vencimento está no período selecionado
   const contasPendentesFiltradas = contasPendentes.filter(conta => {
-    if (!dataInicio && !dataFim) return true // Sem filtro de data, mostra todas
+    // Filtro por status
+    if (filtroStatus) {
+      // Calcular status dinamicamente (considera vencimento)
+      const statusConta = getContaStatus(conta)
+      if (statusConta !== filtroStatus) return false
+    }
+
+    // Sem filtro de data, mostra todas (que passaram pelo filtro de status)
+    if (!dataInicio && !dataFim) return true
 
     const dataVencimentoStr = normalizarData(conta.vencimento)
 
@@ -814,6 +888,7 @@ export function FluxoCaixaContent() {
     setFiltroDescricao("")
     setFiltroBancoId("")
     setFiltroTipoFluxo("")
+    setFiltroStatus("")
     setFiltroValorMin("")
     setFiltroValorMax("")
   }
@@ -829,7 +904,7 @@ export function FluxoCaixaContent() {
     setFiltroAtivo("personalizado")
   }
 
-  const temFiltro = searchTerm || dataInicio || dataFim || filtroCodigo || filtroDescricao || filtroBancoId || filtroTipoFluxo || filtroValorMin || filtroValorMax
+  const temFiltro = searchTerm || dataInicio || dataFim || filtroCodigo || filtroDescricao || filtroBancoId || filtroTipoFluxo || filtroStatus || filtroValorMin || filtroValorMax
 
   // Calcular saldo do período filtrado (entradas - saídas)
   const saldoPeriodo = fluxoFiltrado.reduce((acc, item) => {
@@ -1005,9 +1080,9 @@ export function FluxoCaixaContent() {
                 >
                   <Filter className="h-3 w-3 mr-1" />
                   Filtros
-                  {(dataInicio || dataFim || filtroCodigo || filtroDescricao || filtroBancoId || filtroTipoFluxo || filtroValorMin || filtroValorMax) && (
+                  {(dataInicio || dataFim || filtroCodigo || filtroDescricao || filtroBancoId || filtroTipoFluxo || filtroStatus || filtroValorMin || filtroValorMax) && (
                     <span className="ml-1 bg-primary text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px]">
-                      {[dataInicio, dataFim, filtroCodigo, filtroDescricao, filtroBancoId, filtroTipoFluxo, filtroValorMin, filtroValorMax].filter(Boolean).length}
+                      {[dataInicio, dataFim, filtroCodigo, filtroDescricao, filtroBancoId, filtroTipoFluxo, filtroStatus, filtroValorMin, filtroValorMax].filter(Boolean).length}
                     </span>
                   )}
                 </Button>
@@ -1024,7 +1099,7 @@ export function FluxoCaixaContent() {
             {/* Filtros Avancados */}
             {showFiltrosAvancados && (
               <div className="mt-4 pt-4 border-t border-border">
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
                   {/* Tipo */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-muted-foreground">Tipo</label>
@@ -1036,6 +1111,22 @@ export function FluxoCaixaContent() {
                       <option value="">Todos</option>
                       <option value="entrada">Entradas</option>
                       <option value="saida">Saídas</option>
+                    </select>
+                  </div>
+
+                  {/* Status */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">Status</label>
+                    <select
+                      value={filtroStatus}
+                      onChange={(e) => setFiltroStatus(e.target.value)}
+                      className="w-full h-8 px-2 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="">Todos</option>
+                      <option value="pendente">Pendente</option>
+                      <option value="pago">Pago</option>
+                      <option value="vencido">Vencido</option>
+                      <option value="cancelado">Cancelado</option>
                     </select>
                   </div>
 
@@ -1126,7 +1217,7 @@ export function FluxoCaixaContent() {
 
                   {/* Botão Limpar */}
                   <div className="space-y-1.5 flex items-end">
-                    {(filtroCodigo || filtroDescricao || filtroBancoId || filtroTipoFluxo || filtroValorMin || filtroValorMax) && (
+                    {(filtroCodigo || filtroDescricao || filtroBancoId || filtroTipoFluxo || filtroStatus || filtroValorMin || filtroValorMax) && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -1135,6 +1226,7 @@ export function FluxoCaixaContent() {
                           setFiltroDescricao("")
                           setFiltroBancoId("")
                           setFiltroTipoFluxo("")
+                          setFiltroStatus("")
                           setFiltroValorMin("")
                           setFiltroValorMax("")
                         }}
@@ -1240,19 +1332,24 @@ export function FluxoCaixaContent() {
                 <tbody>
                   {/* Contas Pendentes primeiro (filtradas pelo período) */}
                   {contasPendentesFiltradas.map((conta) => {
-                    const vencido = new Date(conta.vencimento) < new Date()
+                    const statusConta = getContaStatus(conta)
+                    const vencido = statusConta === 'vencido'
                     return (
                       <tr
                         key={`pendente-${conta.id}`}
-                        className="border-b border-border hover:bg-yellow-50/50 transition-colors bg-yellow-50/30"
+                        className={`border-b border-border transition-colors ${
+                          vencido
+                            ? 'bg-red-50 hover:bg-red-100/80'
+                            : 'bg-yellow-50 hover:bg-yellow-100/80'
+                        }`}
                       >
                         <td className="py-3 px-4 text-center">
                           <div className={`p-1.5 rounded-full border-2 inline-block ${
                             vencido
-                              ? 'border-red-300 bg-red-50'
-                              : 'border-yellow-300 bg-yellow-50'
+                              ? 'border-red-200 bg-red-100'
+                              : 'border-yellow-200 bg-yellow-100'
                           }`}>
-                            <Clock className={`h-4 w-4 ${vencido ? 'text-red-500' : 'text-yellow-500'}`} />
+                            <Clock className={`h-4 w-4 ${vencido ? 'text-red-600' : 'text-yellow-600'}`} />
                           </div>
                         </td>
                         <td className="py-3 px-4 text-sm text-foreground whitespace-nowrap">
@@ -1280,7 +1377,7 @@ export function FluxoCaixaContent() {
                             size="sm"
                             variant="outline"
                             onClick={() => abrirSeletorBanco(conta)}
-                            className={`text-xs h-7 px-2 ${vencido ? 'border-red-300 text-red-600 hover:bg-red-50' : 'border-yellow-400 text-yellow-700 hover:bg-yellow-50'}`}
+                            className={`text-xs h-7 px-2 ${vencido ? 'border-red-200 text-red-700 hover:bg-red-100' : 'border-yellow-200 text-yellow-700 hover:bg-yellow-100'}`}
                           >
                             <CheckCircle2 className="h-3 w-3 mr-1" />
                             {conta.tipo === "pagar" ? "Pagar" : "Receber"}
@@ -1301,14 +1398,14 @@ export function FluxoCaixaContent() {
                     fluxoFiltrado.map((item) => (
                     <tr
                       key={item.id}
-                      className={`border-b border-border hover:bg-muted/50 transition-colors cursor-pointer ${
-                        selectedRow === item.id ? 'bg-muted' : ''
+                      className={`border-b border-border transition-colors cursor-pointer ${
+                        selectedRow === item.id ? 'bg-blue-100' : 'bg-blue-50 hover:bg-blue-100/80'
                       }`}
                       onClick={() => setSelectedRow(item.id)}
                     >
                       <td className="py-3 px-4 text-center">
-                        <div className="p-1.5 rounded-full border-2 border-green-300 bg-green-50 inline-block">
-                          <CheckCircle2 className="h-4 w-4 text-green-600" />
+                        <div className="p-1.5 rounded-full border-2 border-blue-200 bg-blue-100 inline-block">
+                          <CheckCircle2 className="h-4 w-4 text-blue-600" />
                         </div>
                       </td>
                       <td className="py-3 px-4 text-sm text-foreground whitespace-nowrap">
@@ -1374,16 +1471,16 @@ export function FluxoCaixaContent() {
                           >
                             <Edit className="h-4 w-4" />
                           </button>
-                          {/* Botão Excluir */}
+                          {/* Botão Desfazer Transação */}
                           <button
                             onClick={(e) => {
                               e.stopPropagation()
-                              handleDeleteMovimentacao(item.id, item.contaId)
+                              handleDesfazerTransacao(item.id, item.contaId, item.tipo)
                             }}
-                            className="text-muted-foreground hover:text-red-600 transition-colors"
-                            title={item.contaId ? "Excluir e reverter para pendente" : "Excluir movimentação"}
+                            className="text-muted-foreground hover:text-orange-600 transition-colors"
+                            title={item.contaId ? "Desfazer transação e reverter para pendente" : "Excluir lançamento direto"}
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <RotateCcw className="h-4 w-4" />
                           </button>
                         </div>
                       </td>
@@ -1826,7 +1923,7 @@ export function FluxoCaixaContent() {
                 </label>
                 <CurrencyInput
                   value={valorPago}
-                  onChange={(value) => setValorPago(value)}
+                  onValueChange={(value) => setValorPago(value)}
                   className="w-full"
                 />
                 {valorPago !== contaParaPagar.valor && (

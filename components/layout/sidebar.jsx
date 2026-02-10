@@ -9,8 +9,6 @@ import {
   GitCompare,
   ChevronLeft,
   ChevronRight,
-  ClipboardList,
-  ClipboardCheck,
   BarChart3,
   Users,
   Truck,
@@ -21,8 +19,6 @@ import { EmpresaSelector } from "@/components/layout/empresa-selector"
 const menuItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/comparativo", label: "Comparativo", icon: GitCompare },
-  { href: "/balancete-simples", label: "Bal Simpl Previsto", icon: ClipboardList },
-  { href: "/balancete-real", label: "Bal Simpl Real", icon: ClipboardCheck },
   { href: "/contas", label: "Contas a Pagar e Receber", icon: FileText },
   { href: "/caixa", label: "Fluxo de Caixa", icon: Wallet },
   { href: "/socios", label: "Sócios", icon: Users },

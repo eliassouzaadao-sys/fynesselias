@@ -74,16 +74,6 @@ export function NovoCartaoModal({ cartao, onClose, onSuccess }: NovoCartaoModalP
       return
     }
 
-    if (!bandeira) {
-      setError("Selecione a bandeira do cartao")
-      return
-    }
-
-    if (!ultimos4Digitos || ultimos4Digitos.length !== 4) {
-      setError("Informe os ultimos 4 digitos do cartao")
-      return
-    }
-
     if (!diaVencimento) {
       setError("Selecione o dia de vencimento")
       return
@@ -165,7 +155,7 @@ export function NovoCartaoModal({ cartao, onClose, onSuccess }: NovoCartaoModalP
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="bandeira">Bandeira *</Label>
+                <Label htmlFor="bandeira">Bandeira</Label>
                 <Select value={bandeira} onValueChange={setBandeira} disabled={isSaving}>
                   <SelectTrigger id="bandeira">
                     <SelectValue placeholder="Selecione" />
@@ -181,7 +171,7 @@ export function NovoCartaoModal({ cartao, onClose, onSuccess }: NovoCartaoModalP
               </div>
 
               <div>
-                <Label htmlFor="digitos">Ultimos 4 Digitos *</Label>
+                <Label htmlFor="digitos">Ultimos 4 Digitos</Label>
                 <Input
                   id="digitos"
                   placeholder="1234"
