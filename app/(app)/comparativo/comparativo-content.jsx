@@ -8,7 +8,7 @@ import { Drawer } from "@/components/ui/drawer"
 import { Modal } from "@/components/ui/modal"
 import { Input } from "@/components/ui/input"
 import { formatCurrency, formatPercentage } from "@/lib/format"
-import { TrendingUp, TrendingDown, ArrowUpCircle, ArrowDownCircle, Calendar, Plus, Trash2, AlertTriangle, FolderPlus, ChevronRight, ChevronDown, Edit, PanelLeftClose, X, Loader2, Check, RefreshCw, Filter, Building2 } from "lucide-react"
+import { TrendingUp, TrendingDown, ArrowUpCircle, ArrowDownCircle, Calendar, Plus, Trash2, AlertTriangle, FolderPlus, ChevronRight, ChevronDown, Edit, PanelLeftClose, X, Loader2, Check, RefreshCw, Filter, Building2, Eye } from "lucide-react"
 
 // Componente de barra de progresso com suporte a valores acima de 100%
 function ProgressBar({ percentage, variant = "success", showOverflow = true }) {
@@ -379,6 +379,10 @@ export function ComparativoContent() {
   const [showDicaVisualizacao, setShowDicaVisualizacao] = useState(false)
   const [dicaHover, setDicaHover] = useState(false)
 
+  // Filtros de visualização (previsto/realizado)
+  const [filtroVisualizacao, setFiltroVisualizacao] = useState("ambos") // "ambos" | "previsto" | "realizado"
+  const [filtroStatusModal, setFiltroStatusModal] = useState("previsto") // "previsto" | "realizado"
+
   // Carregar preferência da dica do localStorage (apenas primeira visita)
   useEffect(() => {
     const dicaOculta = localStorage.getItem('fyness_dica_comparativo_oculta')
@@ -443,14 +447,21 @@ export function ComparativoContent() {
   }
 
   // Selecionar centro de custo e filtrar contas
-  const selecionarCentro = (centro) => {
+  const selecionarCentro = (centro, statusFiltro = filtroStatusModal) => {
     setCentroSelecionado(centro)
     setLoadingContas(true)
 
     // Filtrar contas pelo codigoTipo (sigla do centro)
-    const contasFiltradas = todasContas
-      .filter(conta => conta.codigoTipo === centro.sigla)
-      .sort((a, b) => b.valor - a.valor) // Ordenar do maior para o menor
+    let contasFiltradas = todasContas.filter(conta => conta.codigoTipo === centro.sigla)
+
+    // Aplicar filtro de status
+    if (statusFiltro === "previsto") {
+      contasFiltradas = contasFiltradas.filter(conta => !conta.pago)
+    } else if (statusFiltro === "realizado") {
+      contasFiltradas = contasFiltradas.filter(conta => conta.pago)
+    }
+
+    contasFiltradas = contasFiltradas.sort((a, b) => b.valor - a.valor) // Ordenar do maior para o menor
 
     setContasCentro(contasFiltradas)
     setLoadingContas(false)
@@ -467,6 +478,13 @@ export function ComparativoContent() {
     loadCentros()
     loadContas()
   }, [])
+
+  // Reaplicar filtro quando status do modal mudar
+  useEffect(() => {
+    if (centroSelecionado) {
+      selecionarCentro(centroSelecionado, filtroStatusModal)
+    }
+  }, [filtroStatusModal])
 
   // Detectar quando o filtro foi alterado
   useEffect(() => {
@@ -509,21 +527,31 @@ export function ComparativoContent() {
   const totalCustoPrevisto = centrosCusto.filter(c => !c.parentId).reduce((acc, c) => acc + (c.previsto || 0), 0)
   const totalCustoRealizado = centrosCusto.filter(c => !c.parentId).reduce((acc, c) => acc + (c.realizado || 0), 0)
 
+  // Função para aplicar filtro de visualização
+  const getFilteredValue = (previsto, realizado) => {
+    if (filtroVisualizacao === "previsto") return { previsto, realizado: 0 }
+    if (filtroVisualizacao === "realizado") return { previsto: 0, realizado }
+    return { previsto, realizado }
+  }
+
+  const receitaFiltrada = getFilteredValue(totalReceitaPrevista, totalReceitaRealizada)
+  const custoFiltrado = getFilteredValue(totalCustoPrevisto, totalCustoRealizado)
+
   const comparativoData = {
     entradas: {
-      previsto: totalReceitaPrevista,
-      realizado: totalReceitaRealizada,
-      diferenca: totalReceitaRealizada - totalReceitaPrevista,
+      previsto: receitaFiltrada.previsto,
+      realizado: receitaFiltrada.realizado,
+      diferenca: receitaFiltrada.realizado - receitaFiltrada.previsto,
     },
     saidas: {
-      previsto: totalCustoPrevisto,
-      realizado: totalCustoRealizado,
-      diferenca: totalCustoRealizado - totalCustoPrevisto,
+      previsto: custoFiltrado.previsto,
+      realizado: custoFiltrado.realizado,
+      diferenca: custoFiltrado.realizado - custoFiltrado.previsto,
     },
     resultado: {
-      previsto: totalReceitaPrevista - totalCustoPrevisto,
-      realizado: totalReceitaRealizada - totalCustoRealizado,
-      diferenca: (totalReceitaRealizada - totalCustoRealizado) - (totalReceitaPrevista - totalCustoPrevisto),
+      previsto: receitaFiltrada.previsto - custoFiltrado.previsto,
+      realizado: receitaFiltrada.realizado - custoFiltrado.realizado,
+      diferenca: (receitaFiltrada.realizado - custoFiltrado.realizado) - (receitaFiltrada.previsto - custoFiltrado.previsto),
     },
   }
 
@@ -722,6 +750,47 @@ export function ComparativoContent() {
             <Filter className="h-4 w-4" />
             Filtro por Centro de Custo/Receita
           </Button>
+
+          {/* Separador */}
+          <div className="h-6 w-px bg-border mx-1" />
+
+          {/* Filtro Previsto/Realizado */}
+          <div className="flex items-center gap-2">
+            <Eye className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">Visualizar:</span>
+            <div className="flex rounded-md overflow-hidden border border-border">
+              <button
+                onClick={() => setFiltroVisualizacao("ambos")}
+                className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                  filtroVisualizacao === "ambos"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-card text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                Ambos
+              </button>
+              <button
+                onClick={() => setFiltroVisualizacao("previsto")}
+                className={`px-3 py-1.5 text-xs font-medium transition-colors border-l border-border ${
+                  filtroVisualizacao === "previsto"
+                    ? "bg-amber-500 text-white"
+                    : "bg-card text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                Previsto
+              </button>
+              <button
+                onClick={() => setFiltroVisualizacao("realizado")}
+                className={`px-3 py-1.5 text-xs font-medium transition-colors border-l border-border ${
+                  filtroVisualizacao === "realizado"
+                    ? "bg-emerald-500 text-white"
+                    : "bg-card text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                Realizado
+              </button>
+            </div>
+          </div>
         </div>
       </Card>
 
@@ -964,9 +1033,15 @@ export function ComparativoContent() {
                     <th className="w-[72px]"></th>
                     <th className="text-left py-2 px-2 text-xs font-medium text-muted-foreground uppercase">Centro</th>
                     <th className="text-left py-2 px-1 text-xs font-medium text-muted-foreground uppercase">Sigla</th>
-                    <th className="text-right py-2 px-1 text-xs font-medium text-muted-foreground uppercase whitespace-nowrap">Previsto</th>
-                    <th className="text-right py-2 px-1 text-xs font-medium text-muted-foreground uppercase whitespace-nowrap">Realizado</th>
-                    <th className="text-right py-2 px-1 text-xs font-medium text-muted-foreground uppercase whitespace-nowrap">Variação</th>
+                    {(filtroVisualizacao === "ambos" || filtroVisualizacao === "previsto") && (
+                      <th className="text-right py-2 px-1 text-xs font-medium text-muted-foreground uppercase whitespace-nowrap">Previsto</th>
+                    )}
+                    {(filtroVisualizacao === "ambos" || filtroVisualizacao === "realizado") && (
+                      <th className="text-right py-2 px-1 text-xs font-medium text-muted-foreground uppercase whitespace-nowrap">Realizado</th>
+                    )}
+                    {filtroVisualizacao === "ambos" && (
+                      <th className="text-right py-2 px-1 text-xs font-medium text-muted-foreground uppercase whitespace-nowrap">Variação</th>
+                    )}
                     <th className="w-[68px]"></th>
                   </tr>
                 </thead>
@@ -1010,11 +1085,17 @@ export function ComparativoContent() {
                           <td className="py-2 px-1">
                             <span className="text-[10px] text-muted-foreground bg-muted px-1 py-0.5 rounded">{centro.sigla}</span>
                           </td>
-                          <td className="py-2 px-1 text-xs text-foreground text-right tabular-nums whitespace-nowrap">{formatCurrency(centro.previsto)}</td>
-                          <td className="py-2 px-1 text-xs font-medium text-foreground text-right tabular-nums whitespace-nowrap">{formatCurrency(centro.realizado)}</td>
-                          <td className={`py-2 px-1 text-xs font-medium text-right tabular-nums whitespace-nowrap ${variacao >= 0 ? "text-emerald-600" : "text-amber-600"}`}>
-                            {variacao >= 0 ? "+" : ""}{formatCurrency(variacao)}
-                          </td>
+                          {(filtroVisualizacao === "ambos" || filtroVisualizacao === "previsto") && (
+                            <td className="py-2 px-1 text-xs text-foreground text-right tabular-nums whitespace-nowrap">{formatCurrency(centro.previsto)}</td>
+                          )}
+                          {(filtroVisualizacao === "ambos" || filtroVisualizacao === "realizado") && (
+                            <td className="py-2 px-1 text-xs font-medium text-foreground text-right tabular-nums whitespace-nowrap">{formatCurrency(centro.realizado)}</td>
+                          )}
+                          {filtroVisualizacao === "ambos" && (
+                            <td className={`py-2 px-1 text-xs font-medium text-right tabular-nums whitespace-nowrap ${variacao >= 0 ? "text-emerald-600" : "text-amber-600"}`}>
+                              {variacao >= 0 ? "+" : ""}{formatCurrency(variacao)}
+                            </td>
+                          )}
                           <td className="py-2 px-1">
                             <div className="flex items-center justify-end">
                               <ActionButton
@@ -1048,11 +1129,17 @@ export function ComparativoContent() {
                               <td className="py-2 px-1">
                                 <span className="text-[10px] text-muted-foreground bg-card px-1 py-0.5 rounded">{subcentro.sigla}</span>
                               </td>
-                              <td className="py-2 px-1 text-xs text-foreground text-right tabular-nums whitespace-nowrap">{formatCurrency(subcentro.previsto)}</td>
-                              <td className="py-2 px-1 text-xs font-medium text-foreground text-right tabular-nums whitespace-nowrap">{formatCurrency(subcentro.realizado)}</td>
-                              <td className={`py-2 px-1 text-xs font-medium text-right tabular-nums whitespace-nowrap ${subVariacao >= 0 ? "text-emerald-600" : "text-amber-600"}`}>
-                                {subVariacao >= 0 ? "+" : ""}{formatCurrency(subVariacao)}
-                              </td>
+                              {(filtroVisualizacao === "ambos" || filtroVisualizacao === "previsto") && (
+                                <td className="py-2 px-1 text-xs text-foreground text-right tabular-nums whitespace-nowrap">{formatCurrency(subcentro.previsto)}</td>
+                              )}
+                              {(filtroVisualizacao === "ambos" || filtroVisualizacao === "realizado") && (
+                                <td className="py-2 px-1 text-xs font-medium text-foreground text-right tabular-nums whitespace-nowrap">{formatCurrency(subcentro.realizado)}</td>
+                              )}
+                              {filtroVisualizacao === "ambos" && (
+                                <td className={`py-2 px-1 text-xs font-medium text-right tabular-nums whitespace-nowrap ${subVariacao >= 0 ? "text-emerald-600" : "text-amber-600"}`}>
+                                  {subVariacao >= 0 ? "+" : ""}{formatCurrency(subVariacao)}
+                                </td>
+                              )}
                               <td className="py-2 px-1">
                                 <div className="flex items-center justify-end">
                                   <ActionButton
@@ -1149,9 +1236,15 @@ export function ComparativoContent() {
                     <th className="w-[72px]"></th>
                     <th className="text-left py-2 px-2 text-xs font-medium text-muted-foreground uppercase">Centro</th>
                     <th className="text-left py-2 px-1 text-xs font-medium text-muted-foreground uppercase">Sigla</th>
-                    <th className="text-right py-2 px-1 text-xs font-medium text-muted-foreground uppercase whitespace-nowrap">Previsto</th>
-                    <th className="text-right py-2 px-1 text-xs font-medium text-muted-foreground uppercase whitespace-nowrap">Realizado</th>
-                    <th className="text-right py-2 px-1 text-xs font-medium text-muted-foreground uppercase whitespace-nowrap">Variação</th>
+                    {(filtroVisualizacao === "ambos" || filtroVisualizacao === "previsto") && (
+                      <th className="text-right py-2 px-1 text-xs font-medium text-muted-foreground uppercase whitespace-nowrap">Previsto</th>
+                    )}
+                    {(filtroVisualizacao === "ambos" || filtroVisualizacao === "realizado") && (
+                      <th className="text-right py-2 px-1 text-xs font-medium text-muted-foreground uppercase whitespace-nowrap">Realizado</th>
+                    )}
+                    {filtroVisualizacao === "ambos" && (
+                      <th className="text-right py-2 px-1 text-xs font-medium text-muted-foreground uppercase whitespace-nowrap">Variação</th>
+                    )}
                     <th className="w-[68px]"></th>
                   </tr>
                 </thead>
@@ -1195,11 +1288,17 @@ export function ComparativoContent() {
                           <td className="py-2 px-1">
                             <span className="text-[10px] text-muted-foreground bg-muted px-1 py-0.5 rounded">{centro.sigla}</span>
                           </td>
-                          <td className="py-2 px-1 text-xs text-foreground text-right tabular-nums whitespace-nowrap">{formatCurrency(centro.previsto)}</td>
-                          <td className="py-2 px-1 text-xs font-medium text-foreground text-right tabular-nums whitespace-nowrap">{formatCurrency(centro.realizado)}</td>
-                          <td className={`py-2 px-1 text-xs font-medium text-right tabular-nums whitespace-nowrap ${variacao <= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                            {variacao >= 0 ? "+" : ""}{formatCurrency(variacao)}
-                          </td>
+                          {(filtroVisualizacao === "ambos" || filtroVisualizacao === "previsto") && (
+                            <td className="py-2 px-1 text-xs text-foreground text-right tabular-nums whitespace-nowrap">{formatCurrency(centro.previsto)}</td>
+                          )}
+                          {(filtroVisualizacao === "ambos" || filtroVisualizacao === "realizado") && (
+                            <td className="py-2 px-1 text-xs font-medium text-foreground text-right tabular-nums whitespace-nowrap">{formatCurrency(centro.realizado)}</td>
+                          )}
+                          {filtroVisualizacao === "ambos" && (
+                            <td className={`py-2 px-1 text-xs font-medium text-right tabular-nums whitespace-nowrap ${variacao <= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                              {variacao >= 0 ? "+" : ""}{formatCurrency(variacao)}
+                            </td>
+                          )}
                           <td className="py-2 px-1">
                             <div className="flex items-center justify-end">
                               <ActionButton
@@ -1233,11 +1332,17 @@ export function ComparativoContent() {
                               <td className="py-2 px-1">
                                 <span className="text-[10px] text-muted-foreground bg-card px-1 py-0.5 rounded">{subcentro.sigla}</span>
                               </td>
-                              <td className="py-2 px-1 text-xs text-foreground text-right tabular-nums whitespace-nowrap">{formatCurrency(subcentro.previsto)}</td>
-                              <td className="py-2 px-1 text-xs font-medium text-foreground text-right tabular-nums whitespace-nowrap">{formatCurrency(subcentro.realizado)}</td>
-                              <td className={`py-2 px-1 text-xs font-medium text-right tabular-nums whitespace-nowrap ${subVariacao <= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                                {subVariacao >= 0 ? "+" : ""}{formatCurrency(subVariacao)}
-                              </td>
+                              {(filtroVisualizacao === "ambos" || filtroVisualizacao === "previsto") && (
+                                <td className="py-2 px-1 text-xs text-foreground text-right tabular-nums whitespace-nowrap">{formatCurrency(subcentro.previsto)}</td>
+                              )}
+                              {(filtroVisualizacao === "ambos" || filtroVisualizacao === "realizado") && (
+                                <td className="py-2 px-1 text-xs font-medium text-foreground text-right tabular-nums whitespace-nowrap">{formatCurrency(subcentro.realizado)}</td>
+                              )}
+                              {filtroVisualizacao === "ambos" && (
+                                <td className={`py-2 px-1 text-xs font-medium text-right tabular-nums whitespace-nowrap ${subVariacao <= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                                  {subVariacao >= 0 ? "+" : ""}{formatCurrency(subVariacao)}
+                                </td>
+                              )}
                               <td className="py-2 px-1">
                                 <div className="flex items-center justify-end">
                                   <ActionButton
@@ -1376,6 +1481,7 @@ export function ComparativoContent() {
           setFiltroModalOpen(false)
           setCentroSelecionado(null)
           setContasCentro([])
+          setFiltroStatusModal("previsto") // Reset do filtro
         }}
         title="Filtro por Centro de Custo/Receita"
         description="Selecione um centro de custo ou receita para ver as contas relacionadas"
@@ -1388,6 +1494,33 @@ export function ComparativoContent() {
               <Building2 className="h-4 w-4 text-primary" />
               Centros de Custo e Receita
             </h4>
+
+            {/* Filtro por Status no Modal */}
+            <div className="flex items-center gap-2 mb-3 pb-3 border-b border-border">
+              <span className="text-xs text-muted-foreground">Mostrar:</span>
+              <div className="flex gap-1">
+                <button
+                  onClick={() => setFiltroStatusModal("previsto")}
+                  className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
+                    filtroStatusModal === "previsto"
+                      ? "bg-amber-500 text-white"
+                      : "bg-muted text-muted-foreground hover:bg-muted/80"
+                  }`}
+                >
+                  Previsto
+                </button>
+                <button
+                  onClick={() => setFiltroStatusModal("realizado")}
+                  className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
+                    filtroStatusModal === "realizado"
+                      ? "bg-emerald-500 text-white"
+                      : "bg-muted text-muted-foreground hover:bg-muted/80"
+                  }`}
+                >
+                  Realizado
+                </button>
+              </div>
+            </div>
 
             {todosCentros.length === 0 ? (
               <div className="text-center py-8">
@@ -1474,21 +1607,19 @@ export function ComparativoContent() {
                     <h4 className="text-lg font-semibold text-foreground">{centroSelecionado.nome}</h4>
                     <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">{centroSelecionado.sigla}</span>
                   </div>
-                  <div className="grid grid-cols-2 gap-4 mt-3">
-                    <div className="bg-muted/50 rounded-lg p-3">
-                      <p className="text-xs text-muted-foreground mb-1">Valor Total</p>
-                      <p className={`text-lg font-bold ${centroSelecionado.tipo === 'despesa' ? 'text-red-600' : 'text-emerald-600'}`}>
+                  <div className="grid grid-cols-2 gap-3 mt-3">
+                    <div className={`rounded-lg p-3 ${filtroStatusModal === "previsto" ? "bg-amber-500/10" : "bg-emerald-500/10"}`}>
+                      <p className="text-xs text-muted-foreground mb-1">
+                        {filtroStatusModal === "previsto" ? "Total Previsto" : "Total Realizado"}
+                      </p>
+                      <p className={`text-lg font-bold ${filtroStatusModal === "previsto" ? "text-amber-600" : "text-emerald-600"}`}>
                         {formatCurrency(totalContasCentro)}
                       </p>
                     </div>
                     <div className="bg-muted/50 rounded-lg p-3">
-                      <p className="text-xs text-muted-foreground mb-1">Percentual do Total</p>
-                      <p className="text-lg font-bold text-primary">
-                        {formatPercentage(
-                          centroSelecionado.tipo === 'despesa'
-                            ? (comparativoData.saidas.previsto > 0 ? (totalContasCentro / comparativoData.saidas.previsto) * 100 : 0)
-                            : (comparativoData.entradas.previsto > 0 ? (totalContasCentro / comparativoData.entradas.previsto) * 100 : 0)
-                        )}
+                      <p className="text-xs text-muted-foreground mb-1">Qtd. de Contas</p>
+                      <p className="text-lg font-bold text-foreground">
+                        {contasCentro.length}
                       </p>
                     </div>
                   </div>
@@ -1514,6 +1645,7 @@ export function ComparativoContent() {
                           <th className="text-left py-2 px-2 text-xs font-medium text-muted-foreground">Descrição</th>
                           <th className="text-right py-2 px-2 text-xs font-medium text-muted-foreground">Valor</th>
                           <th className="text-right py-2 px-2 text-xs font-medium text-muted-foreground">%</th>
+                          <th className="text-center py-2 px-2 text-xs font-medium text-muted-foreground">Status</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1536,6 +1668,15 @@ export function ComparativoContent() {
                               </td>
                               <td className="py-2 px-2 text-right">
                                 <span className="text-xs text-muted-foreground">{formatPercentage(percentualConta)}</span>
+                              </td>
+                              <td className="py-2 px-2 text-center">
+                                <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                                  conta.pago
+                                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                                    : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                                }`}>
+                                  {conta.pago ? 'Realizado' : 'Previsto'}
+                                </span>
                               </td>
                             </tr>
                           )
