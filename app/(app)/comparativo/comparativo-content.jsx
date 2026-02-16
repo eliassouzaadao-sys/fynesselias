@@ -8,7 +8,7 @@ import { Drawer } from "@/components/ui/drawer"
 import { Modal } from "@/components/ui/modal"
 import { Input } from "@/components/ui/input"
 import { formatCurrency, formatPercentage } from "@/lib/format"
-import { TrendingUp, TrendingDown, ArrowUpCircle, ArrowDownCircle, Calendar, Plus, Trash2, AlertTriangle, FolderPlus, ChevronRight, ChevronDown, Edit, PanelLeftClose, X, Loader2, Check, RefreshCw, Filter, Building2, Eye } from "lucide-react"
+import { TrendingUp, TrendingDown, ArrowUpCircle, ArrowDownCircle, Calendar, Plus, Trash2, AlertTriangle, FolderPlus, ChevronRight, ChevronDown, Edit, PanelLeftClose, X, Filter, Building2, Eye } from "lucide-react"
 
 // Componente de barra de progresso com suporte a valores acima de 100%
 function ProgressBar({ percentage, variant = "success", showOverflow = true }) {
@@ -309,13 +309,6 @@ export function ComparativoContent() {
   const [dataInicial, setDataInicial] = useState(datasIniciais.inicio)
   const [dataFinal, setDataFinal] = useState(datasIniciais.fim)
 
-  // Estados para controle do filtro com feedback
-  const [dataInicialAplicada, setDataInicialAplicada] = useState(datasIniciais.inicio)
-  const [dataFinalAplicada, setDataFinalAplicada] = useState(datasIniciais.fim)
-  const [filtroAlterado, setFiltroAlterado] = useState(false)
-  const [aplicandoFiltro, setAplicandoFiltro] = useState(false)
-  const [filtroAplicadoSucesso, setFiltroAplicadoSucesso] = useState(false)
-
   // Nomes dos meses abreviados
   const meses = [
     { nome: "Jan", completo: "Janeiro" },
@@ -451,8 +444,31 @@ export function ComparativoContent() {
     setCentroSelecionado(centro)
     setLoadingContas(true)
 
-    // Filtrar contas pelo codigoTipo (sigla do centro)
-    let contasFiltradas = todasContas.filter(conta => conta.codigoTipo === centro.sigla)
+    // Datas do período selecionado
+    const dataInicioFiltro = new Date(dataInicial + "T00:00:00")
+    const dataFimFiltro = new Date(dataFinal + "T23:59:59")
+
+    // Filtrar contas pelo codigoTipo (sigla do centro) E pelo período selecionado
+    let contasFiltradas = todasContas.filter(conta => {
+      // Filtrar por centro
+      if (conta.codigoTipo !== centro.sigla) return false
+
+      // Filtrar por período - aplicar o mesmo filtro usado na API dos centros
+      if (conta.vencimento) {
+        const dataVencimento = new Date(conta.vencimento)
+        if (dataVencimento < dataInicioFiltro || dataVencimento > dataFimFiltro) {
+          return false
+        }
+      }
+
+      // Filtrar apenas contas individuais (parcelas ou contas simples)
+      // Excluir contas pai que são apenas agrupadores de parcelas
+      if (conta.parentId === null && conta.totalParcelas !== null) {
+        return false
+      }
+
+      return true
+    })
 
     // Aplicar filtro de status
     if (statusFiltro === "previsto") {
@@ -473,52 +489,22 @@ export function ComparativoContent() {
   // Todos os centros combinados para o modal
   const todosCentros = [...centrosReceita, ...centrosCusto]
 
-  // Load data on mount
+  // Load contas on mount
   useEffect(() => {
-    loadCentros()
     loadContas()
   }, [])
 
-  // Reaplicar filtro quando status do modal mudar
+  // Carregar centros automaticamente quando período mudar
+  useEffect(() => {
+    loadCentros(dataInicial, dataFinal)
+  }, [dataInicial, dataFinal])
+
+  // Reaplicar filtro do modal quando status ou período mudar
   useEffect(() => {
     if (centroSelecionado) {
       selecionarCentro(centroSelecionado, filtroStatusModal)
     }
-  }, [filtroStatusModal])
-
-  // Detectar quando o filtro foi alterado
-  useEffect(() => {
-    const alterado = dataInicial !== dataInicialAplicada || dataFinal !== dataFinalAplicada
-    setFiltroAlterado(alterado)
-    // Limpar o estado de sucesso quando alterar novamente
-    if (alterado) {
-      setFiltroAplicadoSucesso(false)
-    }
-  }, [dataInicial, dataFinal, dataInicialAplicada, dataFinalAplicada])
-
-  // Função para aplicar o filtro
-  const aplicarFiltro = async () => {
-    setAplicandoFiltro(true)
-    setFiltroAplicadoSucesso(false)
-
-    try {
-      await loadCentros()
-      // Atualizar as datas aplicadas
-      setDataInicialAplicada(dataInicial)
-      setDataFinalAplicada(dataFinal)
-      setFiltroAlterado(false)
-      setFiltroAplicadoSucesso(true)
-
-      // Remover o indicador de sucesso após 3 segundos
-      setTimeout(() => {
-        setFiltroAplicadoSucesso(false)
-      }, 3000)
-    } catch (error) {
-      console.error("Erro ao aplicar filtro:", error)
-    } finally {
-      setAplicandoFiltro(false)
-    }
-  }
+  }, [filtroStatusModal, dataInicial, dataFinal])
 
   // Calculate totals from centros data
   // Soma apenas centros pai (sem parentId) pois eles já incluem os valores dos subcentros
@@ -692,49 +678,6 @@ export function ComparativoContent() {
                 className="h-9 w-36"
               />
             </>
-          )}
-
-          {/* Botão Aplicar */}
-          <Button
-            size="sm"
-            onClick={aplicarFiltro}
-            disabled={aplicandoFiltro || (!filtroAlterado && !filtroAplicadoSucesso)}
-            className={`h-9 min-w-[100px] transition-all ${
-              filtroAplicadoSucesso
-                ? "bg-emerald-500 hover:bg-emerald-500/90 text-white"
-                : filtroAlterado
-                  ? "bg-amber-500 hover:bg-amber-500/90 text-white animate-pulse"
-                  : ""
-            }`}
-          >
-            {aplicandoFiltro ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-                Aplicando...
-              </>
-            ) : filtroAplicadoSucesso ? (
-              <>
-                <Check className="h-4 w-4 mr-1.5" />
-                Aplicado
-              </>
-            ) : filtroAlterado ? (
-              <>
-                <RefreshCw className="h-4 w-4 mr-1.5" />
-                Aplicar
-              </>
-            ) : (
-              <>
-                <Check className="h-4 w-4 mr-1.5" />
-                Ativo
-              </>
-            )}
-          </Button>
-
-          {/* Indicador de filtro pendente */}
-          {filtroAlterado && (
-            <span className="text-xs text-amber-600 font-medium animate-pulse">
-              • Alterado
-            </span>
           )}
 
           {/* Separador */}

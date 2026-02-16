@@ -241,17 +241,7 @@ export function DashboardContent() {
   // Para calcular A Pagar e A Receber corretamente:
   // - Excluir contas pai de parcelamento (que têm totalParcelas definido)
   // - Para parcelamentos, usar as parcelas individuais (que estão dentro de cada conta pai)
-  // - Aplicar filtro de data
-
-  // Obter datas do período selecionado
-  const dataInicioFiltro = new Date(dataInicial + "T00:00:00")
-  const dataFimFiltro = new Date(dataFinal + "T23:59:59")
-
-  // Função para verificar se uma conta está no período
-  const contaNoPeriodo = (conta) => {
-    const vencimento = new Date(conta.vencimento)
-    return vencimento >= dataInicioFiltro && vencimento <= dataFimFiltro
-  }
+  // - Aplicar filtro de data rigorosamente
 
   // Extrair todas as contas individuais (excluindo pais de parcelamento) - memoizado
   // Para cada conta pai com parcelas, usamos as parcelas individuais
@@ -270,7 +260,24 @@ export function DashboardContent() {
   }), [contas])
 
   // Filtrar por tipo e período - memoizado
+  // A função de verificação de período está dentro do useMemo para garantir valores corretos
   const contasCalculadas = useMemo(() => {
+    // Converter datas do filtro para comparação (usando apenas a parte da data, sem hora)
+    const inicioFiltro = dataInicial ? new Date(dataInicial + "T00:00:00") : null
+    const fimFiltro = dataFinal ? new Date(dataFinal + "T23:59:59") : null
+
+    // Função para verificar se uma conta está dentro do período selecionado
+    const contaNoPeriodo = (conta) => {
+      if (!inicioFiltro || !fimFiltro) return true
+      if (!conta.vencimento) return false
+
+      // Normalizar a data de vencimento
+      const vencimentoStr = conta.vencimento.split('T')[0] // Pegar apenas YYYY-MM-DD
+      const vencimento = new Date(vencimentoStr + "T12:00:00") // Usar meio-dia para evitar problemas de timezone
+
+      return vencimento >= inicioFiltro && vencimento <= fimFiltro
+    }
+
     const contasPagar = todasContasIndividuais.filter((c) => c.tipo === "pagar" && contaNoPeriodo(c))
     const contasReceber = todasContasIndividuais.filter((c) => c.tipo === "receber" && contaNoPeriodo(c))
     const totalAPagar = contasPagar.filter((c) => !c.pago).reduce((acc, c) => acc + (c.valor || 0), 0)
@@ -295,7 +302,24 @@ export function DashboardContent() {
       .slice(0, 5)
   }, [todasContasIndividuais])
 
-  const saldoCaixa = fluxoCaixa[0]?.fluxo || 0
+  // Calcular saldo de caixa considerando o período selecionado
+  const saldoCaixa = useMemo(() => {
+    if (!fluxoCaixa.length) return 0
+
+    // Se não há filtro de data, usar o saldo mais recente
+    if (!dataFinal) return fluxoCaixa[0]?.fluxo || 0
+
+    // Filtrar registros até a data final do período
+    const dataFimFiltro = new Date(dataFinal + "T23:59:59")
+
+    // Encontrar o registro mais recente dentro do período
+    const fluxosFiltrados = fluxoCaixa
+      .filter(f => new Date(f.dia) <= dataFimFiltro)
+      .sort((a, b) => new Date(b.dia) - new Date(a.dia))
+
+    // Retornar o saldo do último dia dentro do período
+    return fluxosFiltrados[0]?.fluxo || 0
+  }, [fluxoCaixa, dataFinal])
 
   // Calculate trends
   const receitaTrend = totalReceitaPrevista > 0

@@ -71,14 +71,14 @@ export function FluxoCaixaContent() {
     }
   }
 
-  // Estados para filtros avancados
+  // Estados para filtros avancados (arrays para seleção múltipla)
   const [searchTerm, setSearchTerm] = useState("")
-  const [filtroCodigo, setFiltroCodigo] = useState("")
-  const [filtroDescricao, setFiltroDescricao] = useState("")
-  const [filtroBancoId, setFiltroBancoId] = useState("")
-  const [filtroTipoFluxo, setFiltroTipoFluxo] = useState("") // "", "entrada", "saida"
-  const [filtroStatus, setFiltroStatus] = useState("") // "", "pendente", "pago", "vencido", "cancelado"
-  const [filtroValor, setFiltroValor] = useState("") // Valor único selecionado
+  const [filtroCodigos, setFiltroCodigos] = useState([])
+  const [filtroDescricoes, setFiltroDescricoes] = useState([])
+  const [filtroBancoIds, setFiltroBancoIds] = useState([])
+  const [filtroTipoFluxo, setFiltroTipoFluxo] = useState([]) // ["entrada", "saida"]
+  const [filtroStatus, setFiltroStatus] = useState([]) // ["em_dia", "atencao", "atrasado", "pago", "cancelado"]
+  const [filtroValores, setFiltroValores] = useState([])
   const [showFiltrosAvancados, setShowFiltrosAvancados] = useState(false)
 
   // Estados para opções de filtros automáticos
@@ -112,13 +112,12 @@ export function FluxoCaixaContent() {
     const vencimentoDate = new Date(conta.vencimento)
     const vencimentoStr = `${vencimentoDate.getFullYear()}-${String(vencimentoDate.getMonth() + 1).padStart(2, '0')}-${String(vencimentoDate.getDate()).padStart(2, '0')}`
 
-    const vencido = vencimentoStr < hojeStr
-
-    // Prioridade: cancelado > pago > vencido > pendente
+    // Prioridade: cancelado > pago > atrasado > atencao > em_dia
     if (conta.status === "cancelado") return "cancelado"
     if (conta.pago) return "pago"
-    if (vencido) return "vencido"
-    return "pendente"
+    if (vencimentoStr < hojeStr) return "atrasado" // Vencido = Atrasado
+    if (vencimentoStr === hojeStr) return "atencao" // Vence hoje = Atenção
+    return "em_dia" // Vence no futuro = Em dia
   }
 
   // Estados para cartões de crédito
@@ -316,11 +315,14 @@ export function FluxoCaixaContent() {
 
   // Helper para badge de status
   function getStatusBadge(conta) {
-    const vencido = new Date(conta.vencimento) < new Date()
-    if (vencido) {
-      return <Badge variant="destructive" className="bg-red-100 text-red-700">Vencida</Badge>
+    const status = getContaStatus(conta)
+    if (status === "atrasado") {
+      return <Badge variant="destructive" className="bg-red-100 text-red-700">Atrasado</Badge>
     }
-    return <Badge variant="warning" className="bg-yellow-100 text-yellow-700">Pendente</Badge>
+    if (status === "atencao") {
+      return <Badge variant="warning" className="bg-yellow-100 text-yellow-700">Atenção</Badge>
+    }
+    return <Badge variant="outline" className="bg-gray-100 text-gray-700">Em dia</Badge>
   }
 
   // Atualizar banco de uma movimentacao
@@ -827,36 +829,34 @@ export function FluxoCaixaContent() {
     if (dataInicio && dataItemStr < dataInicio) return false
     if (dataFim && dataItemStr > dataFim) return false
 
-    // Filtro por codigo (centro de custo)
-    if (filtroCodigo) {
-      if (!item.codigoTipo || item.codigoTipo !== filtroCodigo) return false
+    // Filtro por codigo (centro de custo) - seleção múltipla
+    if (filtroCodigos.length > 0) {
+      if (!item.codigoTipo || !filtroCodigos.includes(item.codigoTipo)) return false
     }
 
-    // Filtro por fornecedor/cliente
-    if (filtroDescricao) {
-      if (!item.fornecedorCliente || item.fornecedorCliente !== filtroDescricao) return false
+    // Filtro por fornecedor/cliente - seleção múltipla
+    if (filtroDescricoes.length > 0) {
+      if (!item.fornecedorCliente || !filtroDescricoes.includes(item.fornecedorCliente)) return false
     }
 
-    // Filtro por banco (comparação segura para strings e números)
-    if (filtroBancoId) {
-      const bancoIdNum = parseInt(filtroBancoId)
-      if (!item.bancoId || parseInt(item.bancoId) !== bancoIdNum) return false
+    // Filtro por banco - seleção múltipla
+    if (filtroBancoIds.length > 0) {
+      if (!item.bancoId || !filtroBancoIds.includes(String(item.bancoId))) return false
     }
 
-    // Filtro por tipo (entrada/saida)
-    if (filtroTipoFluxo && item.tipo !== filtroTipoFluxo) return false
+    // Filtro por tipo (entrada/saida) - seleção múltipla
+    if (filtroTipoFluxo.length > 0 && !filtroTipoFluxo.includes(item.tipo)) return false
 
-    // Filtro por status
-    if (filtroStatus) {
-      // Calcular status dinamicamente (considera vencimento)
+    // Filtro por status - seleção múltipla
+    if (filtroStatus.length > 0) {
       const statusItem = getContaStatus(item.conta)
-      if (statusItem !== filtroStatus) return false
+      if (!filtroStatus.includes(statusItem)) return false
     }
 
-    // Filtro por valor (valor exato)
-    if (filtroValor) {
-      const valorFiltro = parseFloat(filtroValor)
-      if (!isNaN(valorFiltro) && Math.abs(item.valor) !== valorFiltro) return false
+    // Filtro por valor - seleção múltipla
+    if (filtroValores.length > 0) {
+      const valorItem = Math.abs(item.valor)
+      if (!filtroValores.some(v => parseFloat(v) === valorItem)) return false
     }
 
     return true
@@ -878,36 +878,36 @@ export function FluxoCaixaContent() {
     if (dataInicio && dataVencimentoStr < dataInicio) return false
     if (dataFim && dataVencimentoStr > dataFim) return false
 
-    // Filtro por codigo (centro de custo)
-    if (filtroCodigo) {
-      if (!conta.codigoTipo || conta.codigoTipo !== filtroCodigo) return false
+    // Filtro por codigo (centro de custo) - seleção múltipla
+    if (filtroCodigos.length > 0) {
+      if (!conta.codigoTipo || !filtroCodigos.includes(conta.codigoTipo)) return false
     }
 
-    // Filtro por fornecedor/cliente
-    if (filtroDescricao) {
+    // Filtro por fornecedor/cliente - seleção múltipla
+    if (filtroDescricoes.length > 0) {
       const nomeConta = conta.beneficiario || conta.pessoa?.nome
-      if (!nomeConta || nomeConta !== filtroDescricao) return false
+      if (!nomeConta || !filtroDescricoes.includes(nomeConta)) return false
     }
 
     // Filtro por banco - contas pendentes não têm banco, então não aparecem se filtrar por banco
-    if (filtroBancoId) return false
+    if (filtroBancoIds.length > 0) return false
 
-    // Filtro por tipo (entrada/saida) - receber = entrada, pagar = saida
-    if (filtroTipoFluxo) {
+    // Filtro por tipo (entrada/saida) - seleção múltipla
+    if (filtroTipoFluxo.length > 0) {
       const tipoEquivalente = conta.tipo === 'receber' ? 'entrada' : 'saida'
-      if (tipoEquivalente !== filtroTipoFluxo) return false
+      if (!filtroTipoFluxo.includes(tipoEquivalente)) return false
     }
 
-    // Filtro por status
-    if (filtroStatus) {
+    // Filtro por status - seleção múltipla
+    if (filtroStatus.length > 0) {
       const statusConta = getContaStatus(conta)
-      if (statusConta !== filtroStatus) return false
+      if (!filtroStatus.includes(statusConta)) return false
     }
 
-    // Filtro por valor (valor exato)
-    if (filtroValor) {
-      const valorFiltro = parseFloat(filtroValor)
-      if (!isNaN(valorFiltro) && Math.abs(conta.valor) !== valorFiltro) return false
+    // Filtro por valor - seleção múltipla
+    if (filtroValores.length > 0) {
+      const valorConta = Math.abs(conta.valor)
+      if (!filtroValores.some(v => parseFloat(v) === valorConta)) return false
     }
 
     return true
@@ -953,12 +953,12 @@ export function FluxoCaixaContent() {
     setDataInicio("")
     setDataFim("")
     setFiltroAtivo("todos")
-    setFiltroCodigo("")
-    setFiltroDescricao("")
-    setFiltroBancoId("")
-    setFiltroTipoFluxo("")
-    setFiltroStatus("")
-    setFiltroValor("")
+    setFiltroCodigos([])
+    setFiltroDescricoes([])
+    setFiltroBancoIds([])
+    setFiltroTipoFluxo([])
+    setFiltroStatus([])
+    setFiltroValores([])
   }
 
   // Ao mudar manualmente as datas, marca como personalizado
@@ -972,7 +972,16 @@ export function FluxoCaixaContent() {
     setFiltroAtivo("personalizado")
   }
 
-  const temFiltro = searchTerm || dataInicio || dataFim || filtroCodigo || filtroDescricao || filtroBancoId || filtroTipoFluxo || filtroStatus || filtroValor
+  // Helper para toggle de seleção múltipla
+  const toggleFiltroMultiplo = (array, setArray, value) => {
+    if (array.includes(value)) {
+      setArray(array.filter(v => v !== value))
+    } else {
+      setArray([...array, value])
+    }
+  }
+
+  const temFiltro = searchTerm || dataInicio || dataFim || filtroCodigos.length > 0 || filtroDescricoes.length > 0 || filtroBancoIds.length > 0 || filtroTipoFluxo.length > 0 || filtroStatus.length > 0 || filtroValores.length > 0
 
   // Calcular saldo do período filtrado (entradas - saídas)
   const saldoPeriodo = fluxoFiltrado.reduce((acc, item) => {
@@ -1148,11 +1157,14 @@ export function FluxoCaixaContent() {
                 >
                   <Filter className="h-3 w-3 mr-1" />
                   Filtros
-                  {(dataInicio || dataFim || filtroCodigo || filtroDescricao || filtroBancoId || filtroTipoFluxo || filtroStatus || filtroValor) && (
-                    <span className="ml-1 bg-primary text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px]">
-                      {[dataInicio, dataFim, filtroCodigo, filtroDescricao, filtroBancoId, filtroTipoFluxo, filtroStatus, filtroValor].filter(Boolean).length}
-                    </span>
-                  )}
+                  {(() => {
+                    const count = (dataInicio ? 1 : 0) + (dataFim ? 1 : 0) + filtroCodigos.length + filtroDescricoes.length + filtroBancoIds.length + filtroTipoFluxo.length + filtroStatus.length + filtroValores.length
+                    return count > 0 ? (
+                      <span className="ml-1 bg-primary text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px]">
+                        {count}
+                      </span>
+                    ) : null
+                  })()}
                 </Button>
 
                 {temFiltro && (
@@ -1168,34 +1180,95 @@ export function FluxoCaixaContent() {
             {showFiltrosAvancados && (
               <div className="mt-4 pt-4 border-t border-border">
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
-                  {/* Tipo */}
+                  {/* Tipo - Seleção Múltipla */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-muted-foreground">Tipo</label>
-                    <select
-                      value={filtroTipoFluxo}
-                      onChange={(e) => setFiltroTipoFluxo(e.target.value)}
-                      className="w-full h-8 px-2 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                    >
-                      <option value="">Todos</option>
-                      <option value="entrada">Entradas</option>
-                      <option value="saida">Saídas</option>
-                    </select>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" size="sm" className="w-full h-8 justify-between text-xs font-normal">
+                          <span className="truncate">
+                            {filtroTipoFluxo.length === 0 ? "Todos" :
+                             filtroTipoFluxo.length === 1 ? (filtroTipoFluxo[0] === "entrada" ? "Entradas" : "Saídas") :
+                             `${filtroTipoFluxo.length} selecionados`}
+                          </span>
+                          <ChevronDown className="h-3 w-3 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-48 p-2" align="start">
+                        <div className="space-y-1">
+                          <label className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={filtroTipoFluxo.includes("entrada")}
+                              onChange={() => toggleFiltroMultiplo(filtroTipoFluxo, setFiltroTipoFluxo, "entrada")}
+                              className="rounded border-border"
+                            />
+                            <span className="text-sm">Entradas</span>
+                          </label>
+                          <label className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={filtroTipoFluxo.includes("saida")}
+                              onChange={() => toggleFiltroMultiplo(filtroTipoFluxo, setFiltroTipoFluxo, "saida")}
+                              className="rounded border-border"
+                            />
+                            <span className="text-sm">Saídas</span>
+                          </label>
+                          {filtroTipoFluxo.length > 0 && (
+                            <Button variant="ghost" size="sm" onClick={() => setFiltroTipoFluxo([])} className="w-full mt-1 h-7 text-xs text-muted-foreground">
+                              Limpar seleção
+                            </Button>
+                          )}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
                   </div>
 
-                  {/* Status */}
+                  {/* Status - Seleção Múltipla */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-muted-foreground">Status</label>
-                    <select
-                      value={filtroStatus}
-                      onChange={(e) => setFiltroStatus(e.target.value)}
-                      className="w-full h-8 px-2 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                    >
-                      <option value="">Todos</option>
-                      <option value="pendente">Pendente</option>
-                      <option value="pago">Pago</option>
-                      <option value="vencido">Vencido</option>
-                      <option value="cancelado">Cancelado</option>
-                    </select>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" size="sm" className="w-full h-8 justify-between text-xs font-normal">
+                          <span className="truncate">
+                            {filtroStatus.length === 0 ? "Todos" :
+                             filtroStatus.length === 1 ?
+                               (filtroStatus[0] === "em_dia" ? "Em dia" :
+                                filtroStatus[0] === "atencao" ? "Atenção" :
+                                filtroStatus[0] === "atrasado" ? "Atrasado" :
+                                filtroStatus[0] === "pago" ? "Pago" : "Cancelado") :
+                             `${filtroStatus.length} selecionados`}
+                          </span>
+                          <ChevronDown className="h-3 w-3 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-48 p-2" align="start">
+                        <div className="space-y-1">
+                          {[
+                            { value: "em_dia", label: "Em dia" },
+                            { value: "atencao", label: "Atenção" },
+                            { value: "atrasado", label: "Atrasado" },
+                            { value: "pago", label: "Pago" },
+                            { value: "cancelado", label: "Cancelado" }
+                          ].map(status => (
+                            <label key={status.value} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={filtroStatus.includes(status.value)}
+                                onChange={() => toggleFiltroMultiplo(filtroStatus, setFiltroStatus, status.value)}
+                                className="rounded border-border"
+                              />
+                              <span className="text-sm">{status.label}</span>
+                            </label>
+                          ))}
+                          {filtroStatus.length > 0 && (
+                            <Button variant="ghost" size="sm" onClick={() => setFiltroStatus([])} className="w-full mt-1 h-7 text-xs text-muted-foreground">
+                              Limpar seleção
+                            </Button>
+                          )}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
                   </div>
 
                   {/* Data De */}
@@ -1220,87 +1293,167 @@ export function FluxoCaixaContent() {
                     />
                   </div>
 
-                  {/* Codigo (Centro de Custo) */}
+                  {/* Codigo (Centro de Custo) - Seleção Múltipla */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-muted-foreground">Cód Tipo</label>
-                    <select
-                      value={filtroCodigo}
-                      onChange={(e) => setFiltroCodigo(e.target.value)}
-                      className="w-full h-8 px-2 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                    >
-                      <option value="">Todos</option>
-                      {centrosFiltro.map((centro) => (
-                        <option key={centro.id} value={centro.sigla}>
-                          {centro.sigla} - {centro.nome}
-                        </option>
-                      ))}
-                    </select>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" size="sm" className="w-full h-8 justify-between text-xs font-normal">
+                          <span className="truncate">
+                            {filtroCodigos.length === 0 ? "Todos" :
+                             filtroCodigos.length === 1 ? filtroCodigos[0] :
+                             `${filtroCodigos.length} selecionados`}
+                          </span>
+                          <ChevronDown className="h-3 w-3 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-56 p-2" align="start">
+                        <div className="max-h-48 overflow-y-auto space-y-1">
+                          {centrosFiltro.map((centro) => (
+                            <label key={centro.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={filtroCodigos.includes(centro.sigla)}
+                                onChange={() => toggleFiltroMultiplo(filtroCodigos, setFiltroCodigos, centro.sigla)}
+                                className="rounded border-border"
+                              />
+                              <span className="text-sm truncate">{centro.sigla} - {centro.nome}</span>
+                            </label>
+                          ))}
+                          {filtroCodigos.length > 0 && (
+                            <Button variant="ghost" size="sm" onClick={() => setFiltroCodigos([])} className="w-full mt-1 h-7 text-xs text-muted-foreground">
+                              Limpar seleção
+                            </Button>
+                          )}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
                   </div>
 
-                  {/* Fornecedor/Cliente */}
+                  {/* Fornecedor/Cliente - Seleção Múltipla */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-muted-foreground">Fornecedor/Cliente</label>
-                    <select
-                      value={filtroDescricao}
-                      onChange={(e) => setFiltroDescricao(e.target.value)}
-                      className="w-full h-8 px-2 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                    >
-                      <option value="">Todos</option>
-                      {fornecedoresFiltro.map((pessoa) => (
-                        <option key={pessoa.id} value={pessoa.nome}>
-                          {pessoa.nome}
-                        </option>
-                      ))}
-                    </select>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" size="sm" className="w-full h-8 justify-between text-xs font-normal">
+                          <span className="truncate">
+                            {filtroDescricoes.length === 0 ? "Todos" :
+                             filtroDescricoes.length === 1 ? filtroDescricoes[0] :
+                             `${filtroDescricoes.length} selecionados`}
+                          </span>
+                          <ChevronDown className="h-3 w-3 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-56 p-2" align="start">
+                        <div className="max-h-48 overflow-y-auto space-y-1">
+                          {fornecedoresFiltro.map((pessoa) => (
+                            <label key={pessoa.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={filtroDescricoes.includes(pessoa.nome)}
+                                onChange={() => toggleFiltroMultiplo(filtroDescricoes, setFiltroDescricoes, pessoa.nome)}
+                                className="rounded border-border"
+                              />
+                              <span className="text-sm truncate">{pessoa.nome}</span>
+                            </label>
+                          ))}
+                          {filtroDescricoes.length > 0 && (
+                            <Button variant="ghost" size="sm" onClick={() => setFiltroDescricoes([])} className="w-full mt-1 h-7 text-xs text-muted-foreground">
+                              Limpar seleção
+                            </Button>
+                          )}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
                   </div>
 
-                  {/* Banco */}
+                  {/* Banco - Seleção Múltipla */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-muted-foreground">Banco</label>
-                    <select
-                      value={filtroBancoId}
-                      onChange={(e) => setFiltroBancoId(e.target.value)}
-                      className="w-full h-8 px-2 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                    >
-                      <option value="">Todos</option>
-                      {bancos.map((banco) => (
-                        <option key={banco.id} value={banco.id}>
-                          {banco.nome}
-                        </option>
-                      ))}
-                    </select>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" size="sm" className="w-full h-8 justify-between text-xs font-normal">
+                          <span className="truncate">
+                            {filtroBancoIds.length === 0 ? "Todos" :
+                             filtroBancoIds.length === 1 ? bancos.find(b => String(b.id) === filtroBancoIds[0])?.nome || filtroBancoIds[0] :
+                             `${filtroBancoIds.length} selecionados`}
+                          </span>
+                          <ChevronDown className="h-3 w-3 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-56 p-2" align="start">
+                        <div className="max-h-48 overflow-y-auto space-y-1">
+                          {bancos.map((banco) => (
+                            <label key={banco.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={filtroBancoIds.includes(String(banco.id))}
+                                onChange={() => toggleFiltroMultiplo(filtroBancoIds, setFiltroBancoIds, String(banco.id))}
+                                className="rounded border-border"
+                              />
+                              <span className="text-sm truncate">{banco.nome}</span>
+                            </label>
+                          ))}
+                          {filtroBancoIds.length > 0 && (
+                            <Button variant="ghost" size="sm" onClick={() => setFiltroBancoIds([])} className="w-full mt-1 h-7 text-xs text-muted-foreground">
+                              Limpar seleção
+                            </Button>
+                          )}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
                   </div>
 
-                  {/* Valor */}
+                  {/* Valor - Seleção Múltipla */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-muted-foreground">Valor</label>
-                    <select
-                      value={filtroValor}
-                      onChange={(e) => setFiltroValor(e.target.value)}
-                      className="w-full h-8 px-2 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                    >
-                      <option value="">Todos</option>
-                      {valoresUnicos.map((valor) => (
-                        <option key={valor} value={valor}>
-                          {formatCurrency(valor)}
-                        </option>
-                      ))}
-                    </select>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" size="sm" className="w-full h-8 justify-between text-xs font-normal">
+                          <span className="truncate">
+                            {filtroValores.length === 0 ? "Todos" :
+                             filtroValores.length === 1 ? formatCurrency(parseFloat(filtroValores[0])) :
+                             `${filtroValores.length} selecionados`}
+                          </span>
+                          <ChevronDown className="h-3 w-3 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-48 p-2" align="start">
+                        <div className="max-h-48 overflow-y-auto space-y-1">
+                          {valoresUnicos.map((valor) => (
+                            <label key={valor} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={filtroValores.includes(String(valor))}
+                                onChange={() => toggleFiltroMultiplo(filtroValores, setFiltroValores, String(valor))}
+                                className="rounded border-border"
+                              />
+                              <span className="text-sm">{formatCurrency(valor)}</span>
+                            </label>
+                          ))}
+                          {filtroValores.length > 0 && (
+                            <Button variant="ghost" size="sm" onClick={() => setFiltroValores([])} className="w-full mt-1 h-7 text-xs text-muted-foreground">
+                              Limpar seleção
+                            </Button>
+                          )}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
                   </div>
 
-                  {/* Botão Limpar */}
+                  {/* Botão Limpar Tudo */}
                   <div className="space-y-1.5 flex items-end">
-                    {(filtroCodigo || filtroDescricao || filtroBancoId || filtroTipoFluxo || filtroStatus || filtroValor) && (
+                    {(filtroCodigos.length > 0 || filtroDescricoes.length > 0 || filtroBancoIds.length > 0 || filtroTipoFluxo.length > 0 || filtroStatus.length > 0 || filtroValores.length > 0) && (
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => {
-                          setFiltroCodigo("")
-                          setFiltroDescricao("")
-                          setFiltroBancoId("")
-                          setFiltroTipoFluxo("")
-                          setFiltroStatus("")
-                          setFiltroValor("")
+                          setFiltroCodigos([])
+                          setFiltroDescricoes([])
+                          setFiltroBancoIds([])
+                          setFiltroTipoFluxo([])
+                          setFiltroStatus([])
+                          setFiltroValores([])
                         }}
                         className="h-8 text-xs text-destructive hover:text-destructive"
                       >
@@ -1405,23 +1558,28 @@ export function FluxoCaixaContent() {
                   {/* Contas Pendentes primeiro (filtradas pelo período) */}
                   {contasPendentesFiltradas.map((conta) => {
                     const statusConta = getContaStatus(conta)
-                    const vencido = statusConta === 'vencido'
+                    const atrasado = statusConta === 'atrasado'
+                    const atencao = statusConta === 'atencao'
                     return (
                       <tr
                         key={`pendente-${conta.id}`}
                         className={`border-b border-border transition-colors ${
-                          vencido
+                          atrasado
                             ? 'bg-red-50 hover:bg-red-100/80'
-                            : 'bg-yellow-50 hover:bg-yellow-100/80'
+                            : atencao
+                              ? 'bg-yellow-50 hover:bg-yellow-100/80'
+                              : 'bg-gray-50 hover:bg-gray-100/80'
                         }`}
                       >
                         <td className="py-3 px-4 text-center">
                           <div className={`p-1.5 rounded-full border-2 inline-block ${
-                            vencido
+                            atrasado
                               ? 'border-red-200 bg-red-100'
-                              : 'border-yellow-200 bg-yellow-100'
+                              : atencao
+                                ? 'border-yellow-200 bg-yellow-100'
+                                : 'border-gray-200 bg-gray-100'
                           }`}>
-                            <Clock className={`h-4 w-4 ${vencido ? 'text-red-600' : 'text-yellow-600'}`} />
+                            <Clock className={`h-4 w-4 ${atrasado ? 'text-red-600' : atencao ? 'text-yellow-600' : 'text-gray-600'}`} />
                           </div>
                         </td>
                         <td className="py-3 px-4 text-sm text-foreground whitespace-nowrap">
@@ -1449,7 +1607,7 @@ export function FluxoCaixaContent() {
                             size="sm"
                             variant="outline"
                             onClick={() => abrirSeletorBanco(conta)}
-                            className={`text-xs h-7 px-2 ${vencido ? 'border-red-200 text-red-700 hover:bg-red-100' : 'border-yellow-200 text-yellow-700 hover:bg-yellow-100'}`}
+                            className={`text-xs h-7 px-2 ${atrasado ? 'border-red-200 text-red-700 hover:bg-red-100' : atencao ? 'border-yellow-200 text-yellow-700 hover:bg-yellow-100' : 'border-gray-200 text-gray-700 hover:bg-gray-100'}`}
                           >
                             <CheckCircle2 className="h-3 w-3 mr-1" />
                             {conta.tipo === "pagar" ? "Pagar" : "Receber"}
@@ -1471,13 +1629,13 @@ export function FluxoCaixaContent() {
                     <tr
                       key={item.id}
                       className={`border-b border-border transition-colors cursor-pointer ${
-                        selectedRow === item.id ? 'bg-blue-100' : 'bg-blue-50 hover:bg-blue-100/80'
+                        selectedRow === item.id ? 'bg-emerald-100' : 'bg-emerald-50 hover:bg-emerald-100/80'
                       }`}
                       onClick={() => setSelectedRow(item.id)}
                     >
                       <td className="py-3 px-4 text-center">
-                        <div className="p-1.5 rounded-full border-2 border-blue-200 bg-blue-100 inline-block">
-                          <CheckCircle2 className="h-4 w-4 text-blue-600" />
+                        <div className="p-1.5 rounded-full border-2 border-emerald-200 bg-emerald-100 inline-block">
+                          <CheckCircle2 className="h-4 w-4 text-emerald-600" />
                         </div>
                       </td>
                       <td className="py-3 px-4 text-sm text-foreground whitespace-nowrap">

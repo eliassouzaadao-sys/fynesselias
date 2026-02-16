@@ -42,7 +42,7 @@ export interface Pessoa {
 }
 
 // Conta (Bill/Transaction) types
-export type StatusConta = 'pago' | 'pendente' | 'vencido' | 'cancelado';
+export type StatusConta = 'pago' | 'em_dia' | 'atencao' | 'atrasado' | 'cancelado';
 export type TipoConta = 'pagar' | 'receber';
 export type FormaPagamento = 'dinheiro' | 'pix' | 'transferencia' | 'cartao_credito' | 'cartao_debito' | 'boleto' | 'cheque';
 

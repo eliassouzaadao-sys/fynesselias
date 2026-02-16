@@ -3,9 +3,16 @@
 import { Check, Clock, AlertCircle, XCircle, Zap, Ban, Circle, ArrowUpCircle, ArrowDownCircle } from "lucide-react"
 
 const statusConfig = {
+  // Status de contas - padrão
   pago: { bg: "bg-emerald-100", text: "text-emerald-600", icon: Check },
-  pendente: { bg: "bg-amber-100", text: "text-amber-600", icon: Clock },
+  em_dia: { bg: "bg-muted", text: "text-muted-foreground", icon: Clock },
+  emdia: { bg: "bg-muted", text: "text-muted-foreground", icon: Clock },
+  atencao: { bg: "bg-amber-100", text: "text-amber-600", icon: AlertCircle },
+  atrasado: { bg: "bg-red-100", text: "text-red-600", icon: AlertCircle },
+  // Legado - manter compatibilidade
+  pendente: { bg: "bg-muted", text: "text-muted-foreground", icon: Clock },
   vencido: { bg: "bg-red-100", text: "text-red-600", icon: AlertCircle },
+  // Outros status
   conciliado: { bg: "bg-emerald-100", text: "text-emerald-600", icon: Check },
   divergente: { bg: "bg-red-100", text: "text-red-600", icon: XCircle },
   ativo: { bg: "bg-emerald-100", text: "text-emerald-600", icon: Zap },

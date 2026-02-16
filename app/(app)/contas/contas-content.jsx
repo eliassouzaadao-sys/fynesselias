@@ -7,6 +7,11 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { formatCurrency, formatDate } from "@/lib/format"
 import { Plus, Download, Search, ArrowUpCircle, ArrowDownCircle, X, Trash2, Edit, ChevronRight, ChevronDown, Layers, RefreshCw, Filter } from "lucide-react"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { useContas } from "@/lib/hooks/use-cached-fetch"
 
 // Lazy load modais para reduzir bundle inicial
@@ -38,12 +43,12 @@ export function ContasContent() {
   const [contaParceladaToEdit, setContaParceladaToEdit] = useState(null)
   const [expandedContas, setExpandedContas] = useState({}) // {contaId: true/false}
 
-  // Estados para filtros - com persistência no localStorage
+  // Estados para filtros - com persistência no localStorage (arrays para seleção múltipla)
   const [dataInicio, setDataInicioState] = useState("")
   const [dataFim, setDataFimState] = useState("")
-  const [filtroTipo, setFiltroTipo] = useState("") // "", "pagar", "receber"
-  const [filtroStatus, setFiltroStatus] = useState("") // "", "pendente", "vencida", "paga", "cancelada"
-  const [filtroCentro, setFiltroCentro] = useState("")
+  const [filtroTipo, setFiltroTipo] = useState([]) // ["pagar", "receber"]
+  const [filtroStatus, setFiltroStatus] = useState([]) // ["em_dia", "atencao", "atrasada", "paga", "cancelada"]
+  const [filtroCentro, setFiltroCentro] = useState([])
   const [filtroAtivo, setFiltroAtivoState] = useState("todos") // todos, hoje, amanha, semana, personalizado
 
   // Carregar filtros do localStorage na inicialização
@@ -89,12 +94,12 @@ export function ContasContent() {
     }
   }
 
-  // Filtros avançados por coluna
-  const [filtroCodigoTipo, setFiltroCodigoTipo] = useState("")
-  const [filtroFornecedor, setFiltroFornecedor] = useState("")
+  // Filtros avançados por coluna (arrays para seleção múltipla)
+  const [filtroCodigoTipo, setFiltroCodigoTipo] = useState([])
+  const [filtroFornecedor, setFiltroFornecedor] = useState([])
   const [filtroDescricao, setFiltroDescricao] = useState("")
   const [filtroNfParcela, setFiltroNfParcela] = useState("")
-  const [filtroValor, setFiltroValor] = useState("") // Valor único selecionado
+  const [filtroValor, setFiltroValor] = useState([])
   const [showFiltrosAvancados, setShowFiltrosAvancados] = useState(false)
 
   // Estados para opções de filtros automáticos
@@ -184,17 +189,17 @@ export function ContasContent() {
     return `${ano}-${mes}-${dia}`
   }
 
-  // Retorna o status da conta (paga, vencida, pendente, cancelada)
+  // Retorna o status da conta (paga, atrasada, atencao, em_dia, cancelada)
   const getContaStatus = (conta) => {
     const hoje = new Date()
     const hojeStr = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`
     const vencimentoStr = normalizarData(conta.vencimento)
-    const vencido = vencimentoStr < hojeStr
 
     if (conta.status === "cancelado") return "cancelada"
     if (conta.pago) return "paga"
-    if (vencido) return "vencida"
-    return "pendente"
+    if (vencimentoStr < hojeStr) return "atrasada" // Vencido = Atrasado
+    if (vencimentoStr === hojeStr) return "atencao" // Vence hoje = Atenção
+    return "em_dia" // Vence no futuro = Em dia
   }
 
   // Funções de filtro rápido
@@ -315,21 +320,21 @@ export function ContasContent() {
         if (!algumaParcelaNoPeriodo) return false
       }
 
-      // Filtro por status para contas parceladas
-      if (filtroStatus) {
+      // Filtro por status para contas parceladas - seleção múltipla
+      if (filtroStatus.length > 0) {
         const parcelasStatus = getParcelasStatus(conta)
 
         // Se filtrar por "paga", mostrar apenas parcelamentos quitados
-        if (filtroStatus === "paga" && !parcelasStatus?.todasPagas) return false
-
-        // Se filtrar por "pendente", "vencida" ou "cancelada", verificar se alguma parcela corresponde
-        if (filtroStatus !== "paga") {
+        if (filtroStatus.includes("paga") && parcelasStatus?.todasPagas) {
+          // OK, passa no filtro de paga
+        } else {
+          // Verificar se alguma parcela corresponde a algum dos status selecionados
           const temParcelaComStatus = conta.parcelas.some(parcela => {
             const statusParcela = getContaStatus(parcela)
-            return statusParcela === filtroStatus
+            return filtroStatus.includes(statusParcela)
           })
 
-          if (!temParcelaComStatus) return false
+          if (!temParcelaComStatus && !(filtroStatus.includes("paga") && parcelasStatus?.todasPagas)) return false
         }
       }
     } else {
@@ -349,29 +354,29 @@ export function ContasContent() {
         if (!vencimentoNoPeriodo && !pagamentoNoPeriodo) return false
       }
 
-      // Filtro por status para contas simples
-      if (filtroStatus) {
+      // Filtro por status para contas simples - seleção múltipla
+      if (filtroStatus.length > 0) {
         const status = getContaStatus(conta)
-        if (status !== filtroStatus) return false
+        if (!filtroStatus.includes(status)) return false
       }
     }
 
-    // Filtro por tipo (pagar/receber)
-    if (filtroTipo && conta.tipo !== filtroTipo) return false
+    // Filtro por tipo (pagar/receber) - seleção múltipla
+    if (filtroTipo.length > 0 && !filtroTipo.includes(conta.tipo)) return false
 
-    // Filtro por centro de custo
-    if (filtroCentro && conta.codigoTipo !== filtroCentro) return false
+    // Filtro por centro de custo - seleção múltipla
+    if (filtroCentro.length > 0 && !filtroCentro.includes(conta.codigoTipo)) return false
 
     // Filtros por coluna (inline)
-    // Filtro por Código Tipo (comparação exata)
-    if (filtroCodigoTipo) {
-      if (!conta.codigoTipo || conta.codigoTipo !== filtroCodigoTipo) return false
+    // Filtro por Código Tipo - seleção múltipla
+    if (filtroCodigoTipo.length > 0) {
+      if (!conta.codigoTipo || !filtroCodigoTipo.includes(conta.codigoTipo)) return false
     }
 
-    // Filtro por Fornecedor/Cliente (comparação exata)
-    if (filtroFornecedor) {
+    // Filtro por Fornecedor/Cliente - seleção múltipla
+    if (filtroFornecedor.length > 0) {
       const fornecedor = conta.beneficiario || conta.pessoa?.nome || ""
-      if (fornecedor !== filtroFornecedor) return false
+      if (!filtroFornecedor.includes(fornecedor)) return false
     }
 
     // Filtro por Descrição
@@ -386,10 +391,10 @@ export function ContasContent() {
       if (!nfParcela.includes(filtroNfParcela.toLowerCase())) return false
     }
 
-    // Filtro por Valor (valor exato)
-    if (filtroValor) {
-      const valorFiltro = parseFloat(filtroValor)
-      if (!isNaN(valorFiltro) && Math.abs(conta.valor) !== valorFiltro) return false
+    // Filtro por Valor - seleção múltipla
+    if (filtroValor.length > 0) {
+      const valorConta = Math.abs(conta.valor)
+      if (!filtroValor.some(v => parseFloat(v) === valorConta)) return false
     }
 
     return true
@@ -404,21 +409,30 @@ export function ContasContent() {
   function limparFiltros() {
     setDataInicio("")
     setDataFim("")
-    setFiltroTipo("")
-    setFiltroStatus("")
-    setFiltroCentro("")
+    setFiltroTipo([])
+    setFiltroStatus([])
+    setFiltroCentro([])
     setFiltroAtivo("todos")
     // Limpar filtros de coluna
-    setFiltroCodigoTipo("")
-    setFiltroFornecedor("")
+    setFiltroCodigoTipo([])
+    setFiltroFornecedor([])
     setFiltroDescricao("")
     setFiltroNfParcela("")
-    setFiltroValor("")
+    setFiltroValor([])
     setVisibleCount(ITEMS_PER_PAGE)
   }
 
-  const temFiltro = dataInicio || dataFim || filtroTipo || filtroStatus || filtroCentro ||
-    filtroCodigoTipo || filtroFornecedor || filtroDescricao || filtroNfParcela || filtroValor
+  // Helper para toggle de seleção múltipla
+  const toggleFiltroMultiplo = (array, setArray, value) => {
+    if (array.includes(value)) {
+      setArray(array.filter(v => v !== value))
+    } else {
+      setArray([...array, value])
+    }
+  }
+
+  const temFiltro = dataInicio || dataFim || filtroTipo.length > 0 || filtroStatus.length > 0 || filtroCentro.length > 0 ||
+    filtroCodigoTipo.length > 0 || filtroFornecedor.length > 0 || filtroDescricao || filtroNfParcela || filtroValor.length > 0
 
   const getStatusBadge = (conta) => {
     // Para contas parceladas
@@ -426,7 +440,7 @@ export function ContasContent() {
       const parcelasStatus = getParcelasStatus(conta)
       if (parcelasStatus) {
         if (parcelasStatus.todasPagas) {
-          return <Badge variant="success" className="bg-blue-100 text-blue-700">Quitada</Badge>
+          return <Badge variant="success" className="bg-emerald-100 text-emerald-700">Quitada</Badge>
         }
         return (
           <Badge variant="outline" className="bg-gray-100 text-gray-700 border-gray-300">
@@ -447,7 +461,7 @@ export function ContasContent() {
       const status = getRecorrenciaStatus(conta)
       if (status) {
         if (status.todasPagas) {
-          return <Badge variant="success" className="bg-blue-100 text-blue-700">Quitada</Badge>
+          return <Badge variant="success" className="bg-emerald-100 text-emerald-700">Quitada</Badge>
         }
         return (
           <Badge variant="outline" className="bg-green-100 text-green-700 border-green-300">
@@ -463,11 +477,13 @@ export function ContasContent() {
     if (status === "cancelada") {
       return <Badge variant="secondary" className="bg-gray-100 text-gray-700">Cancelada</Badge>
     } else if (status === "paga") {
-      return <Badge variant="success" className="bg-blue-100 text-blue-700">Paga</Badge>
-    } else if (status === "vencida") {
-      return <Badge variant="destructive" className="bg-red-100 text-red-700">Vencida</Badge>
+      return <Badge variant="success" className="bg-emerald-100 text-emerald-700">Pago</Badge>
+    } else if (status === "atrasada") {
+      return <Badge variant="destructive" className="bg-red-100 text-red-700">Atrasado</Badge>
+    } else if (status === "atencao") {
+      return <Badge variant="warning" className="bg-yellow-100 text-yellow-700">Atenção</Badge>
     } else {
-      return <Badge variant="warning" className="bg-yellow-100 text-yellow-700">Pendente</Badge>
+      return <Badge variant="outline" className="bg-gray-100 text-gray-700">Em dia</Badge>
     }
   }
 
@@ -477,31 +493,39 @@ export function ContasContent() {
     if (isContaParcelada(conta)) {
       const parcelasStatus = getParcelasStatus(conta)
       if (parcelasStatus?.todasPagas) {
-        return "bg-blue-50 hover:bg-blue-100/80"
+        return "bg-emerald-50 hover:bg-emerald-100/80" // Pago = Verde
       }
-      // Verificar se alguma parcela está vencida
+      // Verificar se alguma parcela está atrasada ou em atenção
       if (conta.parcelas && conta.parcelas.length > 0) {
         const hoje = new Date()
         const hojeStr = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`
-        const temVencida = conta.parcelas.some(p => {
+        const temAtrasada = conta.parcelas.some(p => {
           if (p.pago) return false
           const vencimentoStr = normalizarData(p.vencimento)
           return vencimentoStr < hojeStr
         })
-        if (temVencida) {
-          return "bg-red-50 hover:bg-red-100/80"
+        if (temAtrasada) {
+          return "bg-red-50 hover:bg-red-100/80" // Atrasado = Vermelho
+        }
+        const temAtencao = conta.parcelas.some(p => {
+          if (p.pago) return false
+          const vencimentoStr = normalizarData(p.vencimento)
+          return vencimentoStr === hojeStr
+        })
+        if (temAtencao) {
+          return "bg-yellow-50 hover:bg-yellow-100/80" // Atenção = Amarelo
         }
       }
-      return "bg-yellow-50 hover:bg-yellow-100/80"
+      return "bg-gray-50 hover:bg-gray-100/80" // Em dia = Neutro
     }
 
     // Para contas recorrentes (template)
     if (isContaRecorrente(conta)) {
       const status = getRecorrenciaStatus(conta)
       if (status?.todasPagas) {
-        return "bg-blue-50 hover:bg-blue-100/80"
+        return "bg-emerald-50 hover:bg-emerald-100/80" // Pago = Verde
       }
-      return "bg-green-50 hover:bg-green-100/80"
+      return "bg-gray-50 hover:bg-gray-100/80" // Em dia = Neutro
     }
 
     // Para contas simples
@@ -510,11 +534,13 @@ export function ContasContent() {
     if (status === "cancelada") {
       return "bg-gray-50 hover:bg-gray-100/80"
     } else if (status === "paga") {
-      return "bg-blue-50 hover:bg-blue-100/80"
-    } else if (status === "vencida") {
-      return "bg-red-50 hover:bg-red-100/80"
+      return "bg-emerald-50 hover:bg-emerald-100/80" // Pago = Verde
+    } else if (status === "atrasada") {
+      return "bg-red-50 hover:bg-red-100/80" // Atrasado = Vermelho
+    } else if (status === "atencao") {
+      return "bg-yellow-50 hover:bg-yellow-100/80" // Atenção = Amarelo
     } else {
-      return "bg-yellow-50 hover:bg-yellow-100/80"
+      return "bg-gray-50 hover:bg-gray-100/80" // Em dia = Neutro
     }
   }
 
@@ -634,11 +660,14 @@ export function ContasContent() {
           >
             <Filter className="h-4 w-4 mr-2" />
             Filtros
-            {(filtroTipo || filtroStatus || filtroCodigoTipo || filtroFornecedor || filtroDescricao || filtroNfParcela || filtroValor || dataInicio || dataFim) && (
-              <Badge className="ml-2 h-5 w-5 p-0 flex items-center justify-center text-xs">
-                {[filtroTipo, filtroStatus, filtroCodigoTipo, filtroFornecedor, filtroDescricao, filtroNfParcela, filtroValor, dataInicio, dataFim].filter(Boolean).length}
-              </Badge>
-            )}
+            {(() => {
+              const count = (dataInicio ? 1 : 0) + (dataFim ? 1 : 0) + filtroTipo.length + filtroStatus.length + filtroCodigoTipo.length + filtroFornecedor.length + (filtroDescricao ? 1 : 0) + (filtroNfParcela ? 1 : 0) + filtroValor.length
+              return count > 0 ? (
+                <Badge className="ml-2 h-5 w-5 p-0 flex items-center justify-center text-xs">
+                  {count}
+                </Badge>
+              ) : null
+            })()}
           </Button>
 
           {temFiltro && (
@@ -652,35 +681,96 @@ export function ContasContent() {
         {/* Filtros Avançados (Expansível) */}
         {showFiltrosAvancados && (
           <div className="mt-4 pt-4 border-t border-border">
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-              {/* Tipo */}
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+              {/* Tipo - Seleção Múltipla */}
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">Tipo</label>
-                <select
-                  value={filtroTipo}
-                  onChange={(e) => setFiltroTipo(e.target.value)}
-                  className="w-full h-8 px-2 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                >
-                  <option value="">Todos</option>
-                  <option value="pagar">A Pagar</option>
-                  <option value="receber">A Receber</option>
-                </select>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className="w-full h-8 justify-between text-xs font-normal">
+                      <span className="truncate">
+                        {filtroTipo.length === 0 ? "Todos" :
+                         filtroTipo.length === 1 ? (filtroTipo[0] === "pagar" ? "A Pagar" : "A Receber") :
+                         `${filtroTipo.length} selecionados`}
+                      </span>
+                      <ChevronDown className="h-3 w-3 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-48 p-2" align="start">
+                    <div className="space-y-1">
+                      <label className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={filtroTipo.includes("pagar")}
+                          onChange={() => toggleFiltroMultiplo(filtroTipo, setFiltroTipo, "pagar")}
+                          className="rounded border-border"
+                        />
+                        <span className="text-sm">A Pagar</span>
+                      </label>
+                      <label className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={filtroTipo.includes("receber")}
+                          onChange={() => toggleFiltroMultiplo(filtroTipo, setFiltroTipo, "receber")}
+                          className="rounded border-border"
+                        />
+                        <span className="text-sm">A Receber</span>
+                      </label>
+                      {filtroTipo.length > 0 && (
+                        <Button variant="ghost" size="sm" onClick={() => setFiltroTipo([])} className="w-full mt-1 h-7 text-xs text-muted-foreground">
+                          Limpar seleção
+                        </Button>
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
 
-              {/* Status */}
+              {/* Status - Seleção Múltipla */}
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">Status</label>
-                <select
-                  value={filtroStatus}
-                  onChange={(e) => setFiltroStatus(e.target.value)}
-                  className="w-full h-8 px-2 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                >
-                  <option value="">Todos</option>
-                  <option value="pendente">Pendente</option>
-                  <option value="vencida">Vencida</option>
-                  <option value="paga">Paga</option>
-                  <option value="cancelada">Cancelada</option>
-                </select>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className="w-full h-8 justify-between text-xs font-normal">
+                      <span className="truncate">
+                        {filtroStatus.length === 0 ? "Todos" :
+                         filtroStatus.length === 1 ?
+                           (filtroStatus[0] === "em_dia" ? "Em dia" :
+                            filtroStatus[0] === "atencao" ? "Atenção" :
+                            filtroStatus[0] === "atrasada" ? "Atrasado" :
+                            filtroStatus[0] === "paga" ? "Paga" : "Cancelada") :
+                         `${filtroStatus.length} selecionados`}
+                      </span>
+                      <ChevronDown className="h-3 w-3 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-48 p-2" align="start">
+                    <div className="space-y-1">
+                      {[
+                        { value: "em_dia", label: "Em dia" },
+                        { value: "atencao", label: "Atenção" },
+                        { value: "atrasada", label: "Atrasado" },
+                        { value: "paga", label: "Paga" },
+                        { value: "cancelada", label: "Cancelada" }
+                      ].map(status => (
+                        <label key={status.value} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={filtroStatus.includes(status.value)}
+                            onChange={() => toggleFiltroMultiplo(filtroStatus, setFiltroStatus, status.value)}
+                            className="rounded border-border"
+                          />
+                          <span className="text-sm">{status.label}</span>
+                        </label>
+                      ))}
+                      {filtroStatus.length > 0 && (
+                        <Button variant="ghost" size="sm" onClick={() => setFiltroStatus([])} className="w-full mt-1 h-7 text-xs text-muted-foreground">
+                          Limpar seleção
+                        </Button>
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
 
               {/* Período */}
@@ -703,38 +793,78 @@ export function ContasContent() {
                 />
               </div>
 
-              {/* Código Tipo (Centro de Custo) */}
+              {/* Código Tipo (Centro de Custo) - Seleção Múltipla */}
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">Cód Tipo</label>
-                <select
-                  value={filtroCodigoTipo}
-                  onChange={(e) => setFiltroCodigoTipo(e.target.value)}
-                  className="w-full h-8 px-2 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                >
-                  <option value="">Todos</option>
-                  {centrosFiltro.map((centro) => (
-                    <option key={centro.id} value={centro.sigla}>
-                      {centro.sigla} - {centro.nome}
-                    </option>
-                  ))}
-                </select>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className="w-full h-8 justify-between text-xs font-normal">
+                      <span className="truncate">
+                        {filtroCodigoTipo.length === 0 ? "Todos" :
+                         filtroCodigoTipo.length === 1 ? filtroCodigoTipo[0] :
+                         `${filtroCodigoTipo.length} selecionados`}
+                      </span>
+                      <ChevronDown className="h-3 w-3 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-56 p-2" align="start">
+                    <div className="max-h-48 overflow-y-auto space-y-1">
+                      {centrosFiltro.map((centro) => (
+                        <label key={centro.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={filtroCodigoTipo.includes(centro.sigla)}
+                            onChange={() => toggleFiltroMultiplo(filtroCodigoTipo, setFiltroCodigoTipo, centro.sigla)}
+                            className="rounded border-border"
+                          />
+                          <span className="text-sm truncate">{centro.sigla} - {centro.nome}</span>
+                        </label>
+                      ))}
+                      {filtroCodigoTipo.length > 0 && (
+                        <Button variant="ghost" size="sm" onClick={() => setFiltroCodigoTipo([])} className="w-full mt-1 h-7 text-xs text-muted-foreground">
+                          Limpar seleção
+                        </Button>
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
 
-              {/* Fornecedor/Cliente */}
+              {/* Fornecedor/Cliente - Seleção Múltipla */}
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">Fornecedor/Cliente</label>
-                <select
-                  value={filtroFornecedor}
-                  onChange={(e) => setFiltroFornecedor(e.target.value)}
-                  className="w-full h-8 px-2 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                >
-                  <option value="">Todos</option>
-                  {fornecedoresFiltro.map((pessoa) => (
-                    <option key={pessoa.id} value={pessoa.nome}>
-                      {pessoa.nome}
-                    </option>
-                  ))}
-                </select>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className="w-full h-8 justify-between text-xs font-normal">
+                      <span className="truncate">
+                        {filtroFornecedor.length === 0 ? "Todos" :
+                         filtroFornecedor.length === 1 ? filtroFornecedor[0] :
+                         `${filtroFornecedor.length} selecionados`}
+                      </span>
+                      <ChevronDown className="h-3 w-3 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-56 p-2" align="start">
+                    <div className="max-h-48 overflow-y-auto space-y-1">
+                      {fornecedoresFiltro.map((pessoa) => (
+                        <label key={pessoa.id} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={filtroFornecedor.includes(pessoa.nome)}
+                            onChange={() => toggleFiltroMultiplo(filtroFornecedor, setFiltroFornecedor, pessoa.nome)}
+                            className="rounded border-border"
+                          />
+                          <span className="text-sm truncate">{pessoa.nome}</span>
+                        </label>
+                      ))}
+                      {filtroFornecedor.length > 0 && (
+                        <Button variant="ghost" size="sm" onClick={() => setFiltroFornecedor([])} className="w-full mt-1 h-7 text-xs text-muted-foreground">
+                          Limpar seleção
+                        </Button>
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
 
               {/* Descrição */}
@@ -748,21 +878,41 @@ export function ContasContent() {
                 />
               </div>
 
-              {/* Valor */}
+              {/* Valor - Seleção Múltipla */}
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">Valor</label>
-                <select
-                  value={filtroValor}
-                  onChange={(e) => setFiltroValor(e.target.value)}
-                  className="w-full h-8 px-2 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                >
-                  <option value="">Todos</option>
-                  {valoresUnicos.map((valor) => (
-                    <option key={valor} value={valor}>
-                      {formatCurrency(valor)}
-                    </option>
-                  ))}
-                </select>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className="w-full h-8 justify-between text-xs font-normal">
+                      <span className="truncate">
+                        {filtroValor.length === 0 ? "Todos" :
+                         filtroValor.length === 1 ? formatCurrency(parseFloat(filtroValor[0])) :
+                         `${filtroValor.length} selecionados`}
+                      </span>
+                      <ChevronDown className="h-3 w-3 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-48 p-2" align="start">
+                    <div className="max-h-48 overflow-y-auto space-y-1">
+                      {valoresUnicos.map((valor) => (
+                        <label key={valor} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={filtroValor.includes(String(valor))}
+                            onChange={() => toggleFiltroMultiplo(filtroValor, setFiltroValor, String(valor))}
+                            className="rounded border-border"
+                          />
+                          <span className="text-sm">{formatCurrency(valor)}</span>
+                        </label>
+                      ))}
+                      {filtroValor.length > 0 && (
+                        <Button variant="ghost" size="sm" onClick={() => setFiltroValor([])} className="w-full mt-1 h-7 text-xs text-muted-foreground">
+                          Limpar seleção
+                        </Button>
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
             </div>
           </div>
@@ -969,11 +1119,13 @@ export function ContasContent() {
                         </td>
                         <td className="py-2 px-4">
                           {parcela.pago ? (
-                            <Badge variant="success" className="bg-blue-100 text-blue-700 text-xs">Paga</Badge>
-                          ) : getContaStatus(parcela) === "vencida" ? (
-                            <Badge variant="destructive" className="bg-red-100 text-red-700 text-xs">Vencida</Badge>
+                            <Badge variant="success" className="bg-emerald-100 text-emerald-700 text-xs">Pago</Badge>
+                          ) : getContaStatus(parcela) === "atrasada" ? (
+                            <Badge variant="destructive" className="bg-red-100 text-red-700 text-xs">Atrasado</Badge>
+                          ) : getContaStatus(parcela) === "atencao" ? (
+                            <Badge variant="warning" className="bg-yellow-100 text-yellow-700 text-xs">Atenção</Badge>
                           ) : (
-                            <Badge variant="warning" className="bg-yellow-100 text-yellow-700 text-xs">Pendente</Badge>
+                            <Badge variant="outline" className="bg-gray-100 text-gray-700 text-xs">Em dia</Badge>
                           )}
                         </td>
                         <td className="py-2 px-4">
@@ -1026,11 +1178,13 @@ export function ContasContent() {
                         </td>
                         <td className="py-2 px-4">
                           {recorrencia.pago ? (
-                            <Badge variant="success" className="bg-blue-100 text-blue-700 text-xs">Paga</Badge>
-                          ) : getContaStatus(recorrencia) === "vencida" ? (
-                            <Badge variant="destructive" className="bg-red-100 text-red-700 text-xs">Vencida</Badge>
+                            <Badge variant="success" className="bg-emerald-100 text-emerald-700 text-xs">Pago</Badge>
+                          ) : getContaStatus(recorrencia) === "atrasada" ? (
+                            <Badge variant="destructive" className="bg-red-100 text-red-700 text-xs">Atrasado</Badge>
+                          ) : getContaStatus(recorrencia) === "atencao" ? (
+                            <Badge variant="warning" className="bg-yellow-100 text-yellow-700 text-xs">Atenção</Badge>
                           ) : (
-                            <Badge variant="warning" className="bg-yellow-100 text-yellow-700 text-xs">Pendente</Badge>
+                            <Badge variant="outline" className="bg-gray-100 text-gray-700 text-xs">Em dia</Badge>
                           )}
                         </td>
                         <td className="py-2 px-4">

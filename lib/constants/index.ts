@@ -4,9 +4,10 @@
 
 // Status options
 export const STATUS_OPTIONS = [
-  { value: 'pendente', label: 'Pendente', color: 'yellow' },
+  { value: 'em_dia', label: 'Em dia', color: 'gray' },
+  { value: 'atencao', label: 'Atenção', color: 'yellow' },
+  { value: 'atrasado', label: 'Atrasado', color: 'red' },
   { value: 'pago', label: 'Pago', color: 'green' },
-  { value: 'vencido', label: 'Vencido', color: 'red' },
   { value: 'cancelado', label: 'Cancelado', color: 'gray' },
 ] as const;
 
