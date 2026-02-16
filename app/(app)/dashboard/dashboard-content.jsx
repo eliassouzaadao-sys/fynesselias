@@ -33,7 +33,7 @@ function KpiCard({ label, value, trend, trendValue, subtitle }) {
   const isNegative = trend === "down"
 
   return (
-    <Card className="p-5 bg-card border-border hover:border-primary/30 transition-all duration-300">
+    <Card className="p-5 bg-card border-border">
       <div className="flex items-start justify-between">
         <div className="space-y-1">
           <p className="text-sm text-muted-foreground">{label}</p>
@@ -86,10 +86,10 @@ function ContaItem({ conta }) {
   const isPagar = conta.tipo === "pagar"
 
   return (
-    <div className={`flex items-center justify-between py-3 px-4 rounded-lg transition-all cursor-pointer group ${
+    <div className={`flex items-center justify-between py-3 px-4 rounded-lg cursor-pointer group ${
       isVencida
         ? "bg-red-50 hover:bg-red-100 border border-red-200"
-        : "bg-muted/30 hover:bg-muted/50 border border-border hover:border-primary/30"
+        : "bg-muted/30 hover:bg-muted/50 border border-border"
     }`}>
       <div className="flex items-center gap-3">
         <div className={`p-2 rounded-lg ${isPagar ? "bg-red-500/10" : "bg-emerald-500/10"}`}>
@@ -225,14 +225,18 @@ export function DashboardContent() {
     fetchData(dataInicial, dataFinal)
   }
 
-  // Calculate KPIs
-  const totalReceitaPrevista = centrosReceita.reduce((acc, c) => acc + (c.previsto || 0), 0)
-  const totalReceitaRealizada = centrosReceita.reduce((acc, c) => acc + (c.realizado || 0), 0)
-  const totalCustoPrevisto = centrosCusto.reduce((acc, c) => acc + (c.previsto || 0), 0)
-  const totalCustoRealizado = centrosCusto.reduce((acc, c) => acc + (c.realizado || 0), 0)
+  // Calculate KPIs (memoizado para evitar recálculos desnecessários)
+  const kpis = useMemo(() => {
+    const totalReceitaPrevista = centrosReceita.reduce((acc, c) => acc + (c.previsto || 0), 0)
+    const totalReceitaRealizada = centrosReceita.reduce((acc, c) => acc + (c.realizado || 0), 0)
+    const totalCustoPrevisto = centrosCusto.reduce((acc, c) => acc + (c.previsto || 0), 0)
+    const totalCustoRealizado = centrosCusto.reduce((acc, c) => acc + (c.realizado || 0), 0)
+    const resultadoPrevisto = totalReceitaPrevista - totalCustoPrevisto
+    const resultadoRealizado = totalReceitaRealizada - totalCustoRealizado
+    return { totalReceitaPrevista, totalReceitaRealizada, totalCustoPrevisto, totalCustoRealizado, resultadoPrevisto, resultadoRealizado }
+  }, [centrosReceita, centrosCusto])
 
-  const resultadoPrevisto = totalReceitaPrevista - totalCustoPrevisto
-  const resultadoRealizado = totalReceitaRealizada - totalCustoRealizado
+  const { totalReceitaPrevista, totalReceitaRealizada, totalCustoPrevisto, totalCustoRealizado, resultadoPrevisto, resultadoRealizado } = kpis
 
   // Para calcular A Pagar e A Receber corretamente:
   // - Excluir contas pai de parcelamento (que têm totalParcelas definido)
@@ -249,10 +253,10 @@ export function DashboardContent() {
     return vencimento >= dataInicioFiltro && vencimento <= dataFimFiltro
   }
 
-  // Extrair todas as contas individuais (excluindo pais de parcelamento)
+  // Extrair todas as contas individuais (excluindo pais de parcelamento) - memoizado
   // Para cada conta pai com parcelas, usamos as parcelas individuais
   // Para contas simples (sem totalParcelas), usamos a própria conta
-  const todasContasIndividuais = contas.flatMap((conta) => {
+  const todasContasIndividuais = useMemo(() => contas.flatMap((conta) => {
     // Se é uma conta pai de parcelamento (tem totalParcelas > 0), usar as parcelas
     if (conta.totalParcelas && conta.totalParcelas > 0 && conta.parcelas?.length > 0) {
       // Herdar tipo do pai para parcelas que não têm tipo definido
@@ -263,29 +267,33 @@ export function DashboardContent() {
     }
     // Se é uma conta simples (sem parcelamento), usar a própria conta
     return [conta]
-  })
+  }), [contas])
 
-  // Filtrar por tipo e período
-  const contasPagar = todasContasIndividuais.filter((c) => c.tipo === "pagar" && contaNoPeriodo(c))
-  const contasReceber = todasContasIndividuais.filter((c) => c.tipo === "receber" && contaNoPeriodo(c))
+  // Filtrar por tipo e período - memoizado
+  const contasCalculadas = useMemo(() => {
+    const contasPagar = todasContasIndividuais.filter((c) => c.tipo === "pagar" && contaNoPeriodo(c))
+    const contasReceber = todasContasIndividuais.filter((c) => c.tipo === "receber" && contaNoPeriodo(c))
+    const totalAPagar = contasPagar.filter((c) => !c.pago).reduce((acc, c) => acc + (c.valor || 0), 0)
+    const totalAReceber = contasReceber.filter((c) => !c.pago).reduce((acc, c) => acc + (c.valor || 0), 0)
+    const qtdContasPagarPendentes = contasPagar.filter((c) => !c.pago).length
+    const qtdContasReceberPendentes = contasReceber.filter((c) => !c.pago).length
+    return { contasPagar, contasReceber, totalAPagar, totalAReceber, qtdContasPagarPendentes, qtdContasReceberPendentes }
+  }, [todasContasIndividuais, dataInicial, dataFinal])
 
-  const totalAPagar = contasPagar.filter((c) => !c.pago).reduce((acc, c) => acc + (c.valor || 0), 0)
-  const totalAReceber = contasReceber.filter((c) => !c.pago).reduce((acc, c) => acc + (c.valor || 0), 0)
+  const { totalAPagar, totalAReceber, qtdContasPagarPendentes, qtdContasReceberPendentes } = contasCalculadas
 
-  // Contagem de contas pendentes (para exibir nos KPIs)
-  const qtdContasPagarPendentes = contasPagar.filter((c) => !c.pago).length
-  const qtdContasReceberPendentes = contasReceber.filter((c) => !c.pago).length
-
-  const hoje = new Date()
-  hoje.setHours(0, 0, 0, 0)
-
-  const proximaSemana = new Date()
-  proximaSemana.setDate(proximaSemana.getDate() + 7)
-  // Usar todasContasIndividuais para próximos vencimentos (exclui contas pai de parcelamento)
-  const contasProximas = todasContasIndividuais
-    .filter((c) => !c.pago && new Date(c.vencimento) >= hoje && new Date(c.vencimento) <= proximaSemana)
-    .sort((a, b) => new Date(a.vencimento) - new Date(b.vencimento))
-    .slice(0, 5)
+  // Próximos vencimentos - memoizado
+  const contasProximas = useMemo(() => {
+    const hoje = new Date()
+    hoje.setHours(0, 0, 0, 0)
+    const proximaSemana = new Date()
+    proximaSemana.setDate(proximaSemana.getDate() + 7)
+    // Usar todasContasIndividuais para próximos vencimentos (exclui contas pai de parcelamento)
+    return todasContasIndividuais
+      .filter((c) => !c.pago && new Date(c.vencimento) >= hoje && new Date(c.vencimento) <= proximaSemana)
+      .sort((a, b) => new Date(a.vencimento) - new Date(b.vencimento))
+      .slice(0, 5)
+  }, [todasContasIndividuais])
 
   const saldoCaixa = fluxoCaixa[0]?.fluxo || 0
 

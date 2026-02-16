@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
         select: { valor: true }
       });
 
-      const valorTotalCalculado = contas.reduce((acc, conta) => acc + conta.valor, 0);
+      const valorTotalCalculado = contas.reduce((acc: number, conta: { valor: number }) => acc + conta.valor, 0);
       const diferenca = Math.abs(valorTotalCalculado - fatura.valorTotal);
 
       // Atualizar apenas se houver diferença

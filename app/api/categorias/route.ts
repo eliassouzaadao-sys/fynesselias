@@ -34,10 +34,10 @@ export async function GET(request: NextRequest) {
     });
 
     return NextResponse.json(categorias);
-  } catch (error: any) {
+  } catch (error) {
     console.error("Erro ao buscar categorias:", error);
     return NextResponse.json(
-      { error: "Erro ao buscar categorias", details: error?.message || String(error) },
+      { error: "Erro ao buscar categorias" },
       { status: 500 }
     );
   }
@@ -53,7 +53,15 @@ export async function POST(request: NextRequest) {
 
     const empresaId = await getEmpresaIdValidada(user.id);
 
-    const data = await request.json();
+    let data;
+    try {
+      data = await request.json();
+    } catch {
+      return NextResponse.json(
+        { error: "JSON inválido" },
+        { status: 400 }
+      );
+    }
 
     if (!data.nome?.trim()) {
       return NextResponse.json(

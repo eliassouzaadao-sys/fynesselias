@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useTransition } from "react"
+import { useRouter } from "next/navigation"
 import { useEmpresa } from "@/lib/empresa-context"
 import {
   Building2,
@@ -22,6 +23,9 @@ export function EmpresaSelector({ collapsed }) {
     atualizarEmpresa,
     excluirEmpresa,
   } = useEmpresa()
+
+  const router = useRouter()
+  const [isPending, startTransition] = useTransition()
 
   const [isOpen, setIsOpen] = useState(false)
   const [showNovaEmpresa, setShowNovaEmpresa] = useState(false)
@@ -68,7 +72,10 @@ export function EmpresaSelector({ collapsed }) {
   async function handleSelecionarEmpresa(empresa) {
     await selecionarEmpresa(empresa)
     setIsOpen(false)
-    window.location.reload()
+    // Usar router.refresh() em vez de reload completo - MUITO mais rápido
+    startTransition(() => {
+      router.refresh()
+    })
   }
 
   function iniciarEdicao(empresa, e) {
@@ -114,9 +121,11 @@ export function EmpresaSelector({ collapsed }) {
       setExcluindo(true)
       await excluirEmpresa(confirmandoExclusao.id)
       setConfirmandoExclusao(null)
-      // Se excluiu a empresa ativa, recarregar a página
+      // Se excluiu a empresa ativa, usar router.refresh() - mais rápido que reload
       if (empresaAtiva?.id === confirmandoExclusao.id) {
-        window.location.reload()
+        startTransition(() => {
+          router.refresh()
+        })
       }
     } catch (err) {
       alert(err.message)

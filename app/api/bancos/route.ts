@@ -79,7 +79,17 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
     }
 
-    const data = await request.json();
+    const empresaId = await getEmpresaIdValidada(user.id);
+
+    let data;
+    try {
+      data = await request.json();
+    } catch {
+      return NextResponse.json(
+        { error: 'JSON inválido' },
+        { status: 400 }
+      );
+    }
 
     if (!data.id) {
       return NextResponse.json(
@@ -88,9 +98,12 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Verificar se o banco pertence ao usuário
+    // Verificar se o banco pertence ao usuário E empresa
+    const whereClause: any = { id: data.id, userId: user.id };
+    if (empresaId) whereClause.empresaId = empresaId;
+
     const existing = await prisma.banco.findFirst({
-      where: { id: data.id, userId: user.id },
+      where: whereClause,
     });
 
     if (!existing) {

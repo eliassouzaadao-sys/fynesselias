@@ -1,24 +1,32 @@
 "use client"
 
-import { useState, useEffect, Fragment } from "react"
+import { useState, useEffect, Fragment, useMemo, useRef, lazy, Suspense } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { formatCurrency, formatDate } from "@/lib/format"
-import { Plus, Download, Search, ArrowUpCircle, ArrowDownCircle, X, Trash2, Calendar, Edit, Loader2, ChevronRight, ChevronDown, Layers, RefreshCw, CreditCard, Truck, Check, UserPlus, Building2, Filter, SlidersHorizontal } from "lucide-react"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Textarea } from "@/components/ui/textarea"
-import { CurrencyInput } from "@/components/ui/currency-input"
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
-import { SimpleContaModal } from "./components/SimpleContaModal"
-import { EditParcelamentoModal } from "./components/EditParcelamentoModal"
-import { EditContaModal } from "./components/EditContaModal"
+import { Plus, Download, Search, ArrowUpCircle, ArrowDownCircle, X, Trash2, Edit, ChevronRight, ChevronDown, Layers, RefreshCw, Filter } from "lucide-react"
+import { useContas } from "@/lib/hooks/use-cached-fetch"
+
+// Lazy load modais para reduzir bundle inicial
+const SimpleContaModal = lazy(() => import("./components/SimpleContaModal").then(m => ({ default: m.SimpleContaModal })))
+const EditParcelamentoModal = lazy(() => import("./components/EditParcelamentoModal").then(m => ({ default: m.EditParcelamentoModal })))
+const EditContaModal = lazy(() => import("./components/EditContaModal").then(m => ({ default: m.EditContaModal })))
+
+// Virtualização: quantidade máxima de itens visíveis (carrega mais ao scroll)
+const ITEMS_PER_PAGE = 50
 
 export function ContasContent() {
-  const [contas, setContas] = useState([])
+  // Cache SWR - dados persistem entre navegações
+  const { data: contas, isLoading: loading, refresh: loadContas } = useContas()
+
   const [searchTerm, setSearchTerm] = useState("")
-  const [loading, setLoading] = useState(true)
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("")
+  const searchTimeoutRef = useRef(null)
+
+  // Virtualização: quantos itens mostrar
+  const [visibleCount, setVisibleCount] = useState(ITEMS_PER_PAGE)
   const [showNewModal, setShowNewModal] = useState(false)
   const [showTipoSelector, setShowTipoSelector] = useState(false)
   const [tipoSelecionado, setTipoSelecionado] = useState(null)
@@ -86,27 +94,71 @@ export function ContasContent() {
   const [filtroFornecedor, setFiltroFornecedor] = useState("")
   const [filtroDescricao, setFiltroDescricao] = useState("")
   const [filtroNfParcela, setFiltroNfParcela] = useState("")
-  const [filtroValorMin, setFiltroValorMin] = useState("")
-  const [filtroValorMax, setFiltroValorMax] = useState("")
+  const [filtroValor, setFiltroValor] = useState("") // Valor único selecionado
   const [showFiltrosAvancados, setShowFiltrosAvancados] = useState(false)
 
-  const loadContas = async () => {
-    try {
-      setLoading(true)
-      const res = await fetch("/api/contas")
-      const data = await res.json()
-      setContas(Array.isArray(data) ? data : [])
-    } catch (e) {
-      console.error('Failed to load contas:', e)
-      setContas([])
-    } finally {
-      setLoading(false)
-    }
-  }
+  // Estados para opções de filtros automáticos
+  const [centrosFiltro, setCentrosFiltro] = useState([])
+  const [fornecedoresFiltro, setFornecedoresFiltro] = useState([])
+  const [valoresUnicos, setValoresUnicos] = useState([])
 
+  // loadContas agora vem do hook useContas (SWR com cache)
+
+  // Debounce para o termo de busca (300ms)
   useEffect(() => {
-    loadContas()
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current)
+    }
+    searchTimeoutRef.current = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm)
+    }, 300)
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current)
+      }
+    }
+  }, [searchTerm])
+
+  // Carregar centros de custo e fornecedores para os filtros
+  useEffect(() => {
+    async function fetchDadosFiltros() {
+      try {
+        const [centrosResD, centrosResR, fornecedoresRes] = await Promise.all([
+          fetch('/api/centros?tipo=despesa&hierarquico=true'),
+          fetch('/api/centros?tipo=receita&hierarquico=true'),
+          fetch('/api/fornecedores?status=ativo')
+        ])
+
+        const centrosDespesa = await centrosResD.json()
+        const centrosReceita = await centrosResR.json()
+        const fornecedoresData = await fornecedoresRes.json()
+
+        // Combinar centros únicos por sigla
+        const todosCentros = [...(Array.isArray(centrosDespesa) ? centrosDespesa : []), ...(Array.isArray(centrosReceita) ? centrosReceita : [])]
+        const centrosUnicosBySigla = todosCentros.reduce((acc, centro) => {
+          if (!acc[centro.sigla]) {
+            acc[centro.sigla] = centro
+          }
+          return acc
+        }, {})
+
+        setCentrosFiltro(Object.values(centrosUnicosBySigla))
+        setFornecedoresFiltro(Array.isArray(fornecedoresData) ? fornecedoresData : [])
+      } catch (error) {
+        console.error('Erro ao buscar dados para filtros:', error)
+      }
+    }
+    fetchDadosFiltros()
   }, [])
+
+  // Extrair valores únicos das contas para o filtro de valor
+  useEffect(() => {
+    if (contas && contas.length > 0) {
+      const valores = [...new Set(contas.map(conta => Math.abs(conta.valor)))]
+        .sort((a, b) => a - b)
+      setValoresUnicos(valores)
+    }
+  }, [contas])
 
   const handleNovaContaSuccess = () => {
     loadContas()
@@ -230,13 +282,14 @@ export function ContasContent() {
     }))
   }
 
-  // Filtrar contas por texto e período
-  const filteredContas = contas.filter(conta => {
-    // Filtro de texto - considera também as parcelas
+  // Filtrar contas por texto e período (memoizado para performance)
+  const filteredContas = useMemo(() => contas.filter(conta => {
+    // Filtro de texto - considera também as parcelas (usa debouncedSearchTerm)
+    const searchLower = debouncedSearchTerm.toLowerCase()
     const matchTexto =
-      conta.descricao?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      conta.pessoa?.nome?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      conta.beneficiario?.toLowerCase().includes(searchTerm.toLowerCase())
+      conta.descricao?.toLowerCase().includes(searchLower) ||
+      conta.pessoa?.nome?.toLowerCase().includes(searchLower) ||
+      conta.beneficiario?.toLowerCase().includes(searchLower)
 
     if (!matchTexto) return false
 
@@ -310,16 +363,15 @@ export function ContasContent() {
     if (filtroCentro && conta.codigoTipo !== filtroCentro) return false
 
     // Filtros por coluna (inline)
-    // Filtro por Código Tipo
+    // Filtro por Código Tipo (comparação exata)
     if (filtroCodigoTipo) {
-      const codigoTipo = conta.codigoTipo?.toLowerCase() || ""
-      if (!codigoTipo.includes(filtroCodigoTipo.toLowerCase())) return false
+      if (!conta.codigoTipo || conta.codigoTipo !== filtroCodigoTipo) return false
     }
 
-    // Filtro por Fornecedor/Cliente
+    // Filtro por Fornecedor/Cliente (comparação exata)
     if (filtroFornecedor) {
-      const fornecedor = (conta.beneficiario || conta.pessoa?.nome || "").toLowerCase()
-      if (!fornecedor.includes(filtroFornecedor.toLowerCase())) return false
+      const fornecedor = conta.beneficiario || conta.pessoa?.nome || ""
+      if (fornecedor !== filtroFornecedor) return false
     }
 
     // Filtro por Descrição
@@ -334,18 +386,19 @@ export function ContasContent() {
       if (!nfParcela.includes(filtroNfParcela.toLowerCase())) return false
     }
 
-    // Filtro por Valor (range)
-    if (filtroValorMin) {
-      const valorMin = parseFloat(filtroValorMin)
-      if (!isNaN(valorMin) && conta.valor < valorMin) return false
-    }
-    if (filtroValorMax) {
-      const valorMax = parseFloat(filtroValorMax)
-      if (!isNaN(valorMax) && conta.valor > valorMax) return false
+    // Filtro por Valor (valor exato)
+    if (filtroValor) {
+      const valorFiltro = parseFloat(filtroValor)
+      if (!isNaN(valorFiltro) && Math.abs(conta.valor) !== valorFiltro) return false
     }
 
     return true
-  })
+  }), [contas, debouncedSearchTerm, dataInicio, dataFim, filtroTipo, filtroStatus, filtroCentro, filtroCodigoTipo, filtroFornecedor, filtroDescricao, filtroNfParcela, filtroValor])
+
+  // Reset virtualização quando filtros mudam
+  useEffect(() => {
+    setVisibleCount(ITEMS_PER_PAGE)
+  }, [debouncedSearchTerm, dataInicio, dataFim, filtroTipo, filtroStatus])
 
   // Limpar filtros
   function limparFiltros() {
@@ -360,12 +413,12 @@ export function ContasContent() {
     setFiltroFornecedor("")
     setFiltroDescricao("")
     setFiltroNfParcela("")
-    setFiltroValorMin("")
-    setFiltroValorMax("")
+    setFiltroValor("")
+    setVisibleCount(ITEMS_PER_PAGE)
   }
 
   const temFiltro = dataInicio || dataFim || filtroTipo || filtroStatus || filtroCentro ||
-    filtroCodigoTipo || filtroFornecedor || filtroDescricao || filtroNfParcela || filtroValorMin || filtroValorMax
+    filtroCodigoTipo || filtroFornecedor || filtroDescricao || filtroNfParcela || filtroValor
 
   const getStatusBadge = (conta) => {
     // Para contas parceladas
@@ -581,9 +634,9 @@ export function ContasContent() {
           >
             <Filter className="h-4 w-4 mr-2" />
             Filtros
-            {(filtroTipo || filtroStatus || filtroCodigoTipo || filtroFornecedor || filtroDescricao || filtroNfParcela || filtroValorMin || filtroValorMax || dataInicio || dataFim) && (
+            {(filtroTipo || filtroStatus || filtroCodigoTipo || filtroFornecedor || filtroDescricao || filtroNfParcela || filtroValor || dataInicio || dataFim) && (
               <Badge className="ml-2 h-5 w-5 p-0 flex items-center justify-center text-xs">
-                {[filtroTipo, filtroStatus, filtroCodigoTipo, filtroFornecedor, filtroDescricao, filtroNfParcela, filtroValorMin, filtroValorMax, dataInicio, dataFim].filter(Boolean).length}
+                {[filtroTipo, filtroStatus, filtroCodigoTipo, filtroFornecedor, filtroDescricao, filtroNfParcela, filtroValor, dataInicio, dataFim].filter(Boolean).length}
               </Badge>
             )}
           </Button>
@@ -650,26 +703,38 @@ export function ContasContent() {
                 />
               </div>
 
-              {/* Código Tipo */}
+              {/* Código Tipo (Centro de Custo) */}
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">Cód Tipo</label>
-                <Input
-                  placeholder="Ex: REC-001"
+                <select
                   value={filtroCodigoTipo}
                   onChange={(e) => setFiltroCodigoTipo(e.target.value)}
-                  className="h-8 text-sm"
-                />
+                  className="w-full h-8 px-2 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">Todos</option>
+                  {centrosFiltro.map((centro) => (
+                    <option key={centro.id} value={centro.sigla}>
+                      {centro.sigla} - {centro.nome}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {/* Fornecedor/Cliente */}
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">Fornecedor/Cliente</label>
-                <Input
-                  placeholder="Nome..."
+                <select
                   value={filtroFornecedor}
                   onChange={(e) => setFiltroFornecedor(e.target.value)}
-                  className="h-8 text-sm"
-                />
+                  className="w-full h-8 px-2 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">Todos</option>
+                  {fornecedoresFiltro.map((pessoa) => (
+                    <option key={pessoa.id} value={pessoa.nome}>
+                      {pessoa.nome}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {/* Descrição */}
@@ -683,26 +748,21 @@ export function ContasContent() {
                 />
               </div>
 
-              {/* Valor Range */}
+              {/* Valor */}
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Valor Mín</label>
-                <Input
-                  type="number"
-                  placeholder="R$ 0,00"
-                  value={filtroValorMin}
-                  onChange={(e) => setFiltroValorMin(e.target.value)}
-                  className="h-8 text-sm"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Valor Máx</label>
-                <Input
-                  type="number"
-                  placeholder="R$ 999.999"
-                  value={filtroValorMax}
-                  onChange={(e) => setFiltroValorMax(e.target.value)}
-                  className="h-8 text-sm"
-                />
+                <label className="text-xs font-medium text-muted-foreground">Valor</label>
+                <select
+                  value={filtroValor}
+                  onChange={(e) => setFiltroValor(e.target.value)}
+                  className="w-full h-8 px-2 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">Todos</option>
+                  {valoresUnicos.map((valor) => (
+                    <option key={valor} value={valor}>
+                      {formatCurrency(valor)}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
           </div>
@@ -740,11 +800,11 @@ export function ContasContent() {
                   </td>
                 </tr>
               ) : (
-                filteredContas.map((conta) => (
+                filteredContas.slice(0, visibleCount).map((conta) => (
                   <Fragment key={conta.id}>
                     {/* Linha principal da conta */}
                     <tr
-                      className={`border-b border-border transition-colors cursor-pointer ${getRowClassName(conta)}`}
+                      className={`border-b border-border cursor-pointer ${getRowClassName(conta)}`}
                       onClick={() => {
                         if (isContaParcelada(conta) || isContaRecorrente(conta)) {
                           toggleExpand(conta.id)
@@ -996,6 +1056,19 @@ export function ContasContent() {
             </tbody>
           </table>
         </div>
+
+        {/* Botão Carregar Mais - Virtualização */}
+        {filteredContas.length > visibleCount && (
+          <div className="p-4 border-t border-border text-center">
+            <Button
+              variant="outline"
+              onClick={() => setVisibleCount(prev => prev + ITEMS_PER_PAGE)}
+              className="w-full"
+            >
+              Carregar mais ({filteredContas.length - visibleCount} restantes)
+            </Button>
+          </div>
+        )}
       </Card>
 
       {/* Modal Seletor de Tipo */}
@@ -1037,16 +1110,18 @@ export function ContasContent() {
         </div>
       )}
 
-      {/* Modal Nova Conta */}
+      {/* Modal Nova Conta - Lazy loaded */}
       {showNewModal && tipoSelecionado && (
-        <SimpleContaModal
-          tipo={tipoSelecionado}
-          onClose={() => {
-            setShowNewModal(false)
-            setTipoSelecionado(null)
-          }}
-          onSuccess={handleNovaContaSuccess}
-        />
+        <Suspense fallback={<div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center"><div className="bg-white p-4 rounded-lg">Carregando...</div></div>}>
+          <SimpleContaModal
+            tipo={tipoSelecionado}
+            onClose={() => {
+              setShowNewModal(false)
+              setTipoSelecionado(null)
+            }}
+            onSuccess={handleNovaContaSuccess}
+          />
+        </Suspense>
       )}
 
       {/* Modal de Detalhes */}
@@ -1166,36 +1241,40 @@ export function ContasContent() {
         </div>
       )}
 
-      {/* Modal de Edição */}
+      {/* Modal de Edição - Lazy loaded */}
       {showEditModal && contaToEdit && (
-        <EditContaModal
-          conta={contaToEdit}
-          onClose={() => {
-            setShowEditModal(false)
-            setContaToEdit(null)
-          }}
-          onSuccess={() => {
-            loadContas()
-            setShowEditModal(false)
-            setContaToEdit(null)
-          }}
-        />
+        <Suspense fallback={<div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center"><div className="bg-white p-4 rounded-lg">Carregando...</div></div>}>
+          <EditContaModal
+            conta={contaToEdit}
+            onClose={() => {
+              setShowEditModal(false)
+              setContaToEdit(null)
+            }}
+            onSuccess={() => {
+              loadContas()
+              setShowEditModal(false)
+              setContaToEdit(null)
+            }}
+          />
+        </Suspense>
       )}
 
-      {/* Modal de Edição de Parcelamento */}
+      {/* Modal de Edição de Parcelamento - Lazy loaded */}
       {showEditParceladaModal && contaParceladaToEdit && (
-        <EditParcelamentoModal
-          conta={contaParceladaToEdit}
-          onClose={() => {
-            setShowEditParceladaModal(false)
-            setContaParceladaToEdit(null)
-          }}
-          onSuccess={() => {
-            loadContas()
-            setShowEditParceladaModal(false)
-            setContaParceladaToEdit(null)
-          }}
-        />
+        <Suspense fallback={<div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center"><div className="bg-white p-4 rounded-lg">Carregando...</div></div>}>
+          <EditParcelamentoModal
+            conta={contaParceladaToEdit}
+            onClose={() => {
+              setShowEditParceladaModal(false)
+              setContaParceladaToEdit(null)
+            }}
+            onSuccess={() => {
+              loadContas()
+              setShowEditParceladaModal(false)
+              setContaParceladaToEdit(null)
+            }}
+          />
+        </Suspense>
       )}
 
     </div>

@@ -24,36 +24,44 @@ export async function GET() {
       orderBy: { nome: "asc" }
     });
 
-    // Calcular limite utilizado baseado nas contas reais (não nas faturas)
-    // Isso evita problemas com valorTotal desatualizado quando contas são excluídas
-    const cartoesComLimite = await Promise.all(
-      cartoes.map(async (cartao: typeof cartoes[number]) => {
-        // Buscar todas as contas não pagas vinculadas ao cartão
-        const contasWhere: any = {
-          cartaoId: cartao.id,
-          userId: user.id,
-          pago: false,
-          OR: [
-            { totalParcelas: null }, // Contas simples
-            { parentId: { not: null } }, // Parcelas individuais
-          ]
-        };
-        if (empresaId) contasWhere.empresaId = empresaId;
+    // Buscar IDs dos cartões para query única
+    const cartaoIds = cartoes.map((c: typeof cartoes[number]) => c.id);
 
-        const contas = await prisma.conta.findMany({
-          where: contasWhere,
-          select: { valor: true }
-        });
+    // Query única para calcular limite utilizado de todos os cartões
+    const contasWhere: any = {
+      cartaoId: { in: cartaoIds },
+      userId: user.id,
+      pago: false,
+      OR: [
+        { totalParcelas: null }, // Contas simples
+        { parentId: { not: null } }, // Parcelas individuais
+      ]
+    };
+    if (empresaId) contasWhere.empresaId = empresaId;
 
-        const limiteUtilizado = contas.reduce((acc: number, conta: { valor: number }) => acc + conta.valor, 0);
+    const contasAgrupadas = await prisma.conta.groupBy({
+      by: ['cartaoId'],
+      where: contasWhere,
+      _sum: { valor: true }
+    });
 
-        return {
-          ...cartao,
-          limiteUtilizado,
-          limiteDisponivel: cartao.limite - limiteUtilizado
-        };
-      })
-    );
+    // Criar mapa de limite utilizado por cartão
+    const limiteUtilizadoMap = new Map<number, number>();
+    for (const grupo of contasAgrupadas) {
+      if (grupo.cartaoId) {
+        limiteUtilizadoMap.set(grupo.cartaoId, grupo._sum.valor || 0);
+      }
+    }
+
+    // Montar resposta com limite calculado
+    const cartoesComLimite = cartoes.map((cartao: typeof cartoes[number]) => {
+      const limiteUtilizado = limiteUtilizadoMap.get(cartao.id) || 0;
+      return {
+        ...cartao,
+        limiteUtilizado,
+        limiteDisponivel: cartao.limite - limiteUtilizado
+      };
+    });
 
     return NextResponse.json(cartoesComLimite);
   } catch (error) {
@@ -72,7 +80,15 @@ export async function POST(request: NextRequest) {
 
     const empresaId = await getEmpresaIdValidada(user.id);
 
-    const data = await request.json();
+    let data;
+    try {
+      data = await request.json();
+    } catch {
+      return NextResponse.json(
+        { error: "JSON inválido" },
+        { status: 400 }
+      );
+    }
 
     if (!data.nome?.trim()) {
       return NextResponse.json(
@@ -148,7 +164,15 @@ export async function PUT(request: NextRequest) {
 
     const empresaId = await getEmpresaIdValidada(user.id);
 
-    const data = await request.json();
+    let data;
+    try {
+      data = await request.json();
+    } catch {
+      return NextResponse.json(
+        { error: "JSON inválido" },
+        { status: 400 }
+      );
+    }
 
     if (!data.id) {
       return NextResponse.json(

@@ -192,6 +192,10 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const modo = searchParams.get('modo'); // 'individual' para fluxo de caixa, null para agrupado
 
+    // Paginação (opcional)
+    const page = parseInt(searchParams.get('page') || '0');
+    const limit = parseInt(searchParams.get('limit') || '0'); // 0 = sem limite (comportamento atual)
+
     // Construir where base
     const whereBase = { userId: user.id };
     if (empresaId) whereBase.empresaId = empresaId;
@@ -210,23 +214,27 @@ export async function GET(request) {
           socioResponsavel: true,
         },
         orderBy: { vencimento: 'asc' },
+        ...(limit > 0 && { take: limit, skip: page * limit }),
       });
       return NextResponse.json(Array.isArray(contas) ? contas : []);
     }
 
     // Modo padrão: agrupado para contas a pagar/receber
-    // Buscar contas que NÃO são parcelas filhas e NÃO são instâncias de recorrência
+    // OTIMIZAÇÃO: Buscar contas legado com grupoParcelamentoId em uma única query
+    // em vez de fazer N queries dentro do loop
+
+    // Query 1: Buscar contas principais (não são parcelas filhas nem instâncias de recorrência)
     const todasContas = await prisma.conta.findMany({
       where: {
         ...whereBase,
-        recorrenciaParentId: null, // Não incluir instâncias de recorrência
-        parentId: null, // Não incluir parcelas filhas (elas vêm via include)
+        recorrenciaParentId: null,
+        parentId: null,
       },
       include: {
         pessoa: true,
         cartao: true,
         socioResponsavel: true,
-        parcelas: { // Incluir parcelas filhas para contas macro
+        parcelas: {
           orderBy: { vencimento: 'asc' },
           include: {
             pessoa: true,
@@ -241,9 +249,42 @@ export async function GET(request) {
         },
       },
       orderBy: { vencimento: 'asc' },
+      ...(limit > 0 && { take: limit, skip: page * limit }),
     });
 
-    // Processar contas
+    // OTIMIZAÇÃO: Identificar grupos legado únicos e buscar tudo de uma vez
+    const gruposLegado = new Set();
+    todasContas.forEach(conta => {
+      if (conta.grupoParcelamentoId && !conta.isContaMacro) {
+        gruposLegado.add(conta.grupoParcelamentoId);
+      }
+    });
+
+    // Query única para todas as parcelas de grupos legado (elimina N+1)
+    let parcelasPorGrupo = {};
+    if (gruposLegado.size > 0) {
+      const todasParcelasLegado = await prisma.conta.findMany({
+        where: {
+          ...whereBase,
+          grupoParcelamentoId: { in: Array.from(gruposLegado) },
+        },
+        include: {
+          pessoa: true,
+          cartao: true,
+        },
+        orderBy: { vencimento: 'asc' },
+      });
+
+      // Agrupar por grupoParcelamentoId
+      todasParcelasLegado.forEach(parcela => {
+        if (!parcelasPorGrupo[parcela.grupoParcelamentoId]) {
+          parcelasPorGrupo[parcela.grupoParcelamentoId] = [];
+        }
+        parcelasPorGrupo[parcela.grupoParcelamentoId].push(parcela);
+      });
+    }
+
+    // Processar contas (sem queries adicionais)
     const contasAgrupadas = [];
 
     for (const conta of todasContas) {
@@ -256,25 +297,11 @@ export async function GET(request) {
           totalParcelas: conta.parcelas.length,
         });
       } else if (conta.grupoParcelamentoId && !conta.isContaMacro) {
-        // LEGADO: Conta com grupoParcelamentoId mas sem isContaMacro (dados antigos)
-        // Buscar todas as parcelas do mesmo grupo
-        const parcelasDoGrupo = await prisma.conta.findMany({
-          where: {
-            ...whereBase,
-            grupoParcelamentoId: conta.grupoParcelamentoId,
-          },
-          include: {
-            pessoa: true,
-            cartao: true,
-          },
-          orderBy: { vencimento: 'asc' },
-        });
-
+        // LEGADO: Usa dados pré-carregados (sem query adicional)
+        const parcelasDoGrupo = parcelasPorGrupo[conta.grupoParcelamentoId] || [];
         const valorTotal = parcelasDoGrupo.reduce((sum, p) => sum + Number(p.valor), 0);
         contasAgrupadas.push({
           ...conta,
-          // Manter o ID numérico original para exclusão funcionar
-          // grupoParcelamentoId já está disponível para agrupamento
           valorTotal: valorTotal,
           totalParcelas: parcelasDoGrupo.length,
           parcelas: parcelasDoGrupo,

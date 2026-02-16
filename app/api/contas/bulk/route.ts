@@ -136,6 +136,14 @@ export async function POST(request: Request) {
       );
     }
 
+    // Limite para evitar DoS
+    if (contas.length > 100) {
+      return NextResponse.json(
+        { error: "Limite máximo de 100 contas por requisição" },
+        { status: 400 }
+      );
+    }
+
     console.log(`📝 Processando ${contas.length} contas`);
 
     // Verificar se é parcelamento

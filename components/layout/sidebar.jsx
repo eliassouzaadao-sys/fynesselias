@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { memo, useCallback } from "react"
 import {
   LayoutDashboard,
   Wallet,
@@ -16,6 +17,7 @@ import {
 import { FynessLogo, FynessIcon } from "@/components/ui/logo"
 import { EmpresaSelector } from "@/components/layout/empresa-selector"
 
+// Definido fora do componente para evitar recriação
 const menuItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/comparativo", label: "Comparativo", icon: GitCompare },
@@ -26,19 +28,41 @@ const menuItems = [
   { href: "/dre", label: "DRE", icon: BarChart3 },
 ]
 
-export function Sidebar({ collapsed, onCollapse }) {
+// Item de menu memoizado para evitar re-renders desnecessários
+const MenuItem = memo(function MenuItem({ item, isActive, collapsed }) {
+  const Icon = item.icon
+  return (
+    <li>
+      <Link
+        href={item.href}
+        prefetch={true}
+        className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
+          isActive
+            ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-lg shadow-sidebar-primary/25"
+            : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+        }`}
+        title={collapsed ? item.label : undefined}
+      >
+        <Icon className="h-5 w-5 shrink-0" />
+        {!collapsed && <span>{item.label}</span>}
+      </Link>
+    </li>
+  )
+})
+
+export const Sidebar = memo(function Sidebar({ collapsed, onCollapse }) {
   const pathname = usePathname()
 
-  const isActive = (href) => {
+  const isActive = useCallback((href) => {
     if (href === "/dashboard") {
       return pathname === "/dashboard" || pathname === "/"
     }
     return pathname.startsWith(href)
-  }
+  }, [pathname])
 
   return (
     <aside
-      className={`fixed left-0 top-0 z-40 flex h-screen flex-col bg-sidebar border-r border-sidebar-border transition-all duration-300 ${collapsed ? "w-16" : "w-56"}`}
+      className={`fixed left-0 top-0 z-40 flex h-screen flex-col bg-sidebar border-r border-sidebar-border transition-[width] duration-150 ${collapsed ? "w-16" : "w-56"}`}
     >
       {/* Logo */}
       <div className="flex h-16 items-center justify-center border-b border-sidebar-border px-4">
@@ -57,26 +81,14 @@ export function Sidebar({ collapsed, onCollapse }) {
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4">
         <ul className="space-y-1 px-2">
-          {menuItems.map((item, idx) => {
-            const Icon = item.icon
-
-            return (
-              <li key={idx}>
-                <Link
-                  href={item.href}
-                  className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all ${
-                    isActive(item.href)
-                      ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-lg shadow-sidebar-primary/25"
-                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                  }`}
-                  title={collapsed ? item.label : undefined}
-                >
-                  <Icon className="h-5 w-5 shrink-0" />
-                  {!collapsed && <span>{item.label}</span>}
-                </Link>
-              </li>
-            )
-          })}
+          {menuItems.map((item) => (
+            <MenuItem
+              key={item.href}
+              item={item}
+              isActive={isActive(item.href)}
+              collapsed={collapsed}
+            />
+          ))}
         </ul>
       </nav>
 
@@ -92,4 +104,4 @@ export function Sidebar({ collapsed, onCollapse }) {
       </div>
     </aside>
   )
-}
+})

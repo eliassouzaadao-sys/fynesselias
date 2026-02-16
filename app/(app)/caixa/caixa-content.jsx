@@ -78,9 +78,13 @@ export function FluxoCaixaContent() {
   const [filtroBancoId, setFiltroBancoId] = useState("")
   const [filtroTipoFluxo, setFiltroTipoFluxo] = useState("") // "", "entrada", "saida"
   const [filtroStatus, setFiltroStatus] = useState("") // "", "pendente", "pago", "vencido", "cancelado"
-  const [filtroValorMin, setFiltroValorMin] = useState("")
-  const [filtroValorMax, setFiltroValorMax] = useState("")
+  const [filtroValor, setFiltroValor] = useState("") // Valor único selecionado
   const [showFiltrosAvancados, setShowFiltrosAvancados] = useState(false)
+
+  // Estados para opções de filtros automáticos
+  const [centrosFiltro, setCentrosFiltro] = useState([])
+  const [fornecedoresFiltro, setFornecedoresFiltro] = useState([])
+  const [valoresUnicos, setValoresUnicos] = useState([])
 
   // Estados para bancos
   const [bancos, setBancos] = useState([])
@@ -206,6 +210,48 @@ export function FluxoCaixaContent() {
   useEffect(() => {
     fetchContasPendentes()
   }, [])
+
+  // Carregar centros de custo e fornecedores para os filtros
+  useEffect(() => {
+    async function fetchDadosFiltros() {
+      try {
+        // Buscar todos os centros de custo (para ambos os tipos)
+        const [centrosResD, centrosResR, fornecedoresRes] = await Promise.all([
+          fetch('/api/centros?tipo=despesa&hierarquico=true'),
+          fetch('/api/centros?tipo=receita&hierarquico=true'),
+          fetch('/api/fornecedores?status=ativo')
+        ])
+
+        const centrosDespesa = await centrosResD.json()
+        const centrosReceita = await centrosResR.json()
+        const fornecedoresData = await fornecedoresRes.json()
+
+        // Combinar centros únicos por sigla
+        const todosCentros = [...(Array.isArray(centrosDespesa) ? centrosDespesa : []), ...(Array.isArray(centrosReceita) ? centrosReceita : [])]
+        const centrosUnicosBySigla = todosCentros.reduce((acc, centro) => {
+          if (!acc[centro.sigla]) {
+            acc[centro.sigla] = centro
+          }
+          return acc
+        }, {})
+
+        setCentrosFiltro(Object.values(centrosUnicosBySigla))
+        setFornecedoresFiltro(Array.isArray(fornecedoresData) ? fornecedoresData : [])
+      } catch (error) {
+        console.error('Erro ao buscar dados para filtros:', error)
+      }
+    }
+    fetchDadosFiltros()
+  }, [])
+
+  // Extrair valores únicos do fluxoCaixa para o filtro de valor
+  useEffect(() => {
+    if (fluxoCaixa.length > 0) {
+      const valores = [...new Set(fluxoCaixa.map(item => Math.abs(item.valor)))]
+        .sort((a, b) => a - b)
+      setValoresUnicos(valores)
+    }
+  }, [fluxoCaixa])
 
   async function fetchContasPendentes() {
     try {
@@ -781,22 +827,21 @@ export function FluxoCaixaContent() {
     if (dataInicio && dataItemStr < dataInicio) return false
     if (dataFim && dataItemStr > dataFim) return false
 
-    // Filtro por codigo
-    if (filtroCodigo && item.codigoTipo) {
-      if (!item.codigoTipo.toLowerCase().includes(filtroCodigo.toLowerCase())) return false
-    } else if (filtroCodigo && !item.codigoTipo) {
-      return false
+    // Filtro por codigo (centro de custo)
+    if (filtroCodigo) {
+      if (!item.codigoTipo || item.codigoTipo !== filtroCodigo) return false
     }
 
-    // Filtro por descricao/fornecedor
-    if (filtroDescricao && item.fornecedorCliente) {
-      if (!item.fornecedorCliente.toLowerCase().includes(filtroDescricao.toLowerCase())) return false
-    } else if (filtroDescricao && !item.fornecedorCliente) {
-      return false
+    // Filtro por fornecedor/cliente
+    if (filtroDescricao) {
+      if (!item.fornecedorCliente || item.fornecedorCliente !== filtroDescricao) return false
     }
 
-    // Filtro por banco
-    if (filtroBancoId && item.bancoId !== parseInt(filtroBancoId)) return false
+    // Filtro por banco (comparação segura para strings e números)
+    if (filtroBancoId) {
+      const bancoIdNum = parseInt(filtroBancoId)
+      if (!item.bancoId || parseInt(item.bancoId) !== bancoIdNum) return false
+    }
 
     // Filtro por tipo (entrada/saida)
     if (filtroTipoFluxo && item.tipo !== filtroTipoFluxo) return false
@@ -808,40 +853,64 @@ export function FluxoCaixaContent() {
       if (statusItem !== filtroStatus) return false
     }
 
-    // Filtro por valor (range)
-    if (filtroValorMin) {
-      const valorMin = parseFloat(filtroValorMin)
-      if (!isNaN(valorMin) && item.valor < valorMin) return false
-    }
-    if (filtroValorMax) {
-      const valorMax = parseFloat(filtroValorMax)
-      if (!isNaN(valorMax) && item.valor > valorMax) return false
+    // Filtro por valor (valor exato)
+    if (filtroValor) {
+      const valorFiltro = parseFloat(filtroValor)
+      if (!isNaN(valorFiltro) && Math.abs(item.valor) !== valorFiltro) return false
     }
 
     return true
   })
 
-  // Filtrar contas pendentes por período e status
-  // Uma conta pendente aparece se a data de vencimento está no período selecionado
+  // Filtrar contas pendentes - APLICA TODOS OS FILTROS igual ao fluxoFiltrado
   const contasPendentesFiltradas = contasPendentes.filter(conta => {
+    // Filtro por busca (searchTerm)
+    if (searchTerm) {
+      const termo = searchTerm.toLowerCase()
+      const matchCodigo = conta.codigoTipo?.toLowerCase().includes(termo)
+      const matchBeneficiario = conta.beneficiario?.toLowerCase().includes(termo) || conta.pessoa?.nome?.toLowerCase().includes(termo)
+      const matchDescricao = conta.descricao?.toLowerCase().includes(termo)
+      if (!matchCodigo && !matchBeneficiario && !matchDescricao) return false
+    }
+
+    // Filtro por data (usa vencimento)
+    const dataVencimentoStr = normalizarData(conta.vencimento)
+    if (dataInicio && dataVencimentoStr < dataInicio) return false
+    if (dataFim && dataVencimentoStr > dataFim) return false
+
+    // Filtro por codigo (centro de custo)
+    if (filtroCodigo) {
+      if (!conta.codigoTipo || conta.codigoTipo !== filtroCodigo) return false
+    }
+
+    // Filtro por fornecedor/cliente
+    if (filtroDescricao) {
+      const nomeConta = conta.beneficiario || conta.pessoa?.nome
+      if (!nomeConta || nomeConta !== filtroDescricao) return false
+    }
+
+    // Filtro por banco - contas pendentes não têm banco, então não aparecem se filtrar por banco
+    if (filtroBancoId) return false
+
+    // Filtro por tipo (entrada/saida) - receber = entrada, pagar = saida
+    if (filtroTipoFluxo) {
+      const tipoEquivalente = conta.tipo === 'receber' ? 'entrada' : 'saida'
+      if (tipoEquivalente !== filtroTipoFluxo) return false
+    }
+
     // Filtro por status
     if (filtroStatus) {
-      // Calcular status dinamicamente (considera vencimento)
       const statusConta = getContaStatus(conta)
       if (statusConta !== filtroStatus) return false
     }
 
-    // Sem filtro de data, mostra todas (que passaram pelo filtro de status)
-    if (!dataInicio && !dataFim) return true
+    // Filtro por valor (valor exato)
+    if (filtroValor) {
+      const valorFiltro = parseFloat(filtroValor)
+      if (!isNaN(valorFiltro) && Math.abs(conta.valor) !== valorFiltro) return false
+    }
 
-    const dataVencimentoStr = normalizarData(conta.vencimento)
-
-    // Verifica se vencimento está no período
-    const vencimentoNoPeriodo =
-      (!dataInicio || dataVencimentoStr >= dataInicio) &&
-      (!dataFim || dataVencimentoStr <= dataFim)
-
-    return vencimentoNoPeriodo
+    return true
   })
 
   // Funções de filtro rápido
@@ -889,8 +958,7 @@ export function FluxoCaixaContent() {
     setFiltroBancoId("")
     setFiltroTipoFluxo("")
     setFiltroStatus("")
-    setFiltroValorMin("")
-    setFiltroValorMax("")
+    setFiltroValor("")
   }
 
   // Ao mudar manualmente as datas, marca como personalizado
@@ -904,7 +972,7 @@ export function FluxoCaixaContent() {
     setFiltroAtivo("personalizado")
   }
 
-  const temFiltro = searchTerm || dataInicio || dataFim || filtroCodigo || filtroDescricao || filtroBancoId || filtroTipoFluxo || filtroStatus || filtroValorMin || filtroValorMax
+  const temFiltro = searchTerm || dataInicio || dataFim || filtroCodigo || filtroDescricao || filtroBancoId || filtroTipoFluxo || filtroStatus || filtroValor
 
   // Calcular saldo do período filtrado (entradas - saídas)
   const saldoPeriodo = fluxoFiltrado.reduce((acc, item) => {
@@ -1080,9 +1148,9 @@ export function FluxoCaixaContent() {
                 >
                   <Filter className="h-3 w-3 mr-1" />
                   Filtros
-                  {(dataInicio || dataFim || filtroCodigo || filtroDescricao || filtroBancoId || filtroTipoFluxo || filtroStatus || filtroValorMin || filtroValorMax) && (
+                  {(dataInicio || dataFim || filtroCodigo || filtroDescricao || filtroBancoId || filtroTipoFluxo || filtroStatus || filtroValor) && (
                     <span className="ml-1 bg-primary text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px]">
-                      {[dataInicio, dataFim, filtroCodigo, filtroDescricao, filtroBancoId, filtroTipoFluxo, filtroStatus, filtroValorMin, filtroValorMax].filter(Boolean).length}
+                      {[dataInicio, dataFim, filtroCodigo, filtroDescricao, filtroBancoId, filtroTipoFluxo, filtroStatus, filtroValor].filter(Boolean).length}
                     </span>
                   )}
                 </Button>
@@ -1152,26 +1220,38 @@ export function FluxoCaixaContent() {
                     />
                   </div>
 
-                  {/* Codigo */}
+                  {/* Codigo (Centro de Custo) */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-muted-foreground">Cód Tipo</label>
-                    <Input
-                      placeholder="Ex: DEP-01"
+                    <select
                       value={filtroCodigo}
                       onChange={(e) => setFiltroCodigo(e.target.value)}
-                      className="h-8 text-sm"
-                    />
+                      className="w-full h-8 px-2 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="">Todos</option>
+                      {centrosFiltro.map((centro) => (
+                        <option key={centro.id} value={centro.sigla}>
+                          {centro.sigla} - {centro.nome}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   {/* Fornecedor/Cliente */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-muted-foreground">Fornecedor/Cliente</label>
-                    <Input
-                      placeholder="Nome..."
+                    <select
                       value={filtroDescricao}
                       onChange={(e) => setFiltroDescricao(e.target.value)}
-                      className="h-8 text-sm"
-                    />
+                      className="w-full h-8 px-2 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="">Todos</option>
+                      {fornecedoresFiltro.map((pessoa) => (
+                        <option key={pessoa.id} value={pessoa.nome}>
+                          {pessoa.nome}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   {/* Banco */}
@@ -1191,33 +1271,26 @@ export function FluxoCaixaContent() {
                     </select>
                   </div>
 
-                  {/* Valor Min */}
+                  {/* Valor */}
                   <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-muted-foreground">Valor Mín</label>
-                    <Input
-                      type="number"
-                      placeholder="R$ 0,00"
-                      value={filtroValorMin}
-                      onChange={(e) => setFiltroValorMin(e.target.value)}
-                      className="h-8 text-sm"
-                    />
-                  </div>
-
-                  {/* Valor Max */}
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-muted-foreground">Valor Máx</label>
-                    <Input
-                      type="number"
-                      placeholder="R$ 999.999"
-                      value={filtroValorMax}
-                      onChange={(e) => setFiltroValorMax(e.target.value)}
-                      className="h-8 text-sm"
-                    />
+                    <label className="text-xs font-medium text-muted-foreground">Valor</label>
+                    <select
+                      value={filtroValor}
+                      onChange={(e) => setFiltroValor(e.target.value)}
+                      className="w-full h-8 px-2 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="">Todos</option>
+                      {valoresUnicos.map((valor) => (
+                        <option key={valor} value={valor}>
+                          {formatCurrency(valor)}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   {/* Botão Limpar */}
                   <div className="space-y-1.5 flex items-end">
-                    {(filtroCodigo || filtroDescricao || filtroBancoId || filtroTipoFluxo || filtroStatus || filtroValorMin || filtroValorMax) && (
+                    {(filtroCodigo || filtroDescricao || filtroBancoId || filtroTipoFluxo || filtroStatus || filtroValor) && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -1227,8 +1300,7 @@ export function FluxoCaixaContent() {
                           setFiltroBancoId("")
                           setFiltroTipoFluxo("")
                           setFiltroStatus("")
-                          setFiltroValorMin("")
-                          setFiltroValorMax("")
+                          setFiltroValor("")
                         }}
                         className="h-8 text-xs text-destructive hover:text-destructive"
                       >

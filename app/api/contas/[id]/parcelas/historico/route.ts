@@ -54,7 +54,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     });
 
     // Formatar resposta
-    const historicoFormatado = historico.map(h => ({
+    const historicoFormatado = historico.map((h: typeof historico[number]) => ({
       id: h.id,
       tipoAlteracao: h.tipoAlteracao,
       descricao: h.descricao,

@@ -18,6 +18,12 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Loader2, CreditCard } from "lucide-react"
 import { BANDEIRAS_CARTAO, DIAS_MES } from "@/lib/constants"
 
+interface Banco {
+  id: number
+  nome: string
+  codigo?: string
+}
+
 interface NovoCartaoModalProps {
   cartao?: {
     id: number
@@ -45,24 +51,30 @@ export function NovoCartaoModal({ cartao, onClose, onSuccess }: NovoCartaoModalP
   const [bancoId, setBancoId] = useState(cartao?.bancoId?.toString() || "")
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [bancos, setBancos] = useState<any[]>([])
+  const [bancos, setBancos] = useState<Banco[]>([])
   const [loadingBancos, setLoadingBancos] = useState(false)
 
   useEffect(() => {
+    const controller = new AbortController()
     const fetchBancos = async () => {
       setLoadingBancos(true)
       try {
-        const res = await fetch("/api/bancos")
+        const res = await fetch("/api/bancos", { signal: controller.signal })
         const data = await res.json()
         setBancos(Array.isArray(data) ? data : [])
       } catch (err) {
-        console.error("Erro ao carregar bancos:", err)
-        setBancos([])
+        if ((err as Error).name !== "AbortError") {
+          console.error("Erro ao carregar bancos:", err)
+          setBancos([])
+        }
       } finally {
-        setLoadingBancos(false)
+        if (!controller.signal.aborted) {
+          setLoadingBancos(false)
+        }
       }
     }
     fetchBancos()
+    return () => controller.abort()
   }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {

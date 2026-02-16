@@ -230,11 +230,10 @@ export async function POST(request: Request) {
       erros: erros.length > 0 ? erros : undefined,
     });
 
-  } catch (error: any) {
+  } catch (error) {
     console.error("Erro ao gerar pró-labore:", error);
     return NextResponse.json({
-      error: "Falha ao gerar pró-labore",
-      details: error.message
+      error: "Falha ao gerar pró-labore"
     }, { status: 500 });
   }
 }

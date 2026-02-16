@@ -384,7 +384,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
             select: { valor: true }
           });
 
-          const novoValorTotal = contasRestantes.reduce((acc, conta) => acc + conta.valor, 0);
+          const novoValorTotal = contasRestantes.reduce((acc: number, conta: { valor: number }) => acc + conta.valor, 0);
 
           await prisma.fatura.update({
             where: { id: fatura.id },

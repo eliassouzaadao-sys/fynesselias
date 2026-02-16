@@ -55,6 +55,15 @@ interface Fornecedor {
   status: string;
 }
 
+interface CentroCusto {
+  id: number;
+  sigla: string;
+  nome: string;
+  tipo: string;
+  parentId?: number | null;
+  children?: CentroCusto[];
+}
+
 
 interface SimpleContaModalProps {
   tipo: "pagar" | "receber";
@@ -73,7 +82,7 @@ export function SimpleContaModal({ tipo, onClose, onSuccess }: SimpleContaModalP
   const [valor, setValor] = useState<number>(0);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [centros, setCentros] = useState<any[]>([]);
+  const [centros, setCentros] = useState<CentroCusto[]>([]);
   const [loadingCentros, setLoadingCentros] = useState(false);
 
   const [tipoParcelamento, setTipoParcelamento] = useState<TipoParcelamento>("avista");
@@ -180,59 +189,81 @@ export function SimpleContaModal({ tipo, onClose, onSuccess }: SimpleContaModalP
   const labelPessoa = tipo === "pagar" ? "Fornecedor" : "Cliente";
 
   useEffect(() => {
+    const controller = new AbortController();
     const fetchCentros = async () => {
       setLoadingCentros(true);
       try {
         const tipoCentro = tipo === "pagar" ? "despesa" : "faturamento";
-        const res = await fetch(`/api/centros?tipo=${tipoCentro}&hierarquico=true`);
+        const res = await fetch(`/api/centros?tipo=${tipoCentro}&hierarquico=true`, {
+          signal: controller.signal,
+        });
         const data = await res.json();
         setCentros(Array.isArray(data) ? data : []);
       } catch (err) {
-        console.error("Error fetching centros:", err);
-        setCentros([]);
+        if ((err as Error).name !== "AbortError") {
+          console.error("Error fetching centros:", err);
+          setCentros([]);
+        }
       } finally {
-        setLoadingCentros(false);
+        if (!controller.signal.aborted) {
+          setLoadingCentros(false);
+        }
       }
     };
     fetchCentros();
+    return () => controller.abort();
   }, [tipo]);
 
   useEffect(() => {
     if (tipo !== "pagar") return;
 
+    const controller = new AbortController();
     const fetchCartoes = async () => {
       setLoadingCartoes(true);
       try {
-        const res = await fetch("/api/cartoes");
+        const res = await fetch("/api/cartoes", { signal: controller.signal });
         const data = await res.json();
         setCartoes(Array.isArray(data) ? data : []);
       } catch (err) {
-        console.error("Error fetching cartoes:", err);
-        setCartoes([]);
+        if ((err as Error).name !== "AbortError") {
+          console.error("Error fetching cartoes:", err);
+          setCartoes([]);
+        }
       } finally {
-        setLoadingCartoes(false);
+        if (!controller.signal.aborted) {
+          setLoadingCartoes(false);
+        }
       }
     };
     fetchCartoes();
+    return () => controller.abort();
   }, [tipo]);
 
 
   useEffect(() => {
+    const controller = new AbortController();
     const fetchPessoas = async () => {
       setLoadingFornecedores(true);
       try {
         const tipoPessoa = tipo === "pagar" ? "fornecedor" : "cliente";
-        const res = await fetch(`/api/fornecedores?status=ativo&tipo=${tipoPessoa}`);
+        const res = await fetch(`/api/fornecedores?status=ativo&tipo=${tipoPessoa}`, {
+          signal: controller.signal,
+        });
         const data = await res.json();
         setFornecedores(Array.isArray(data) ? data : []);
       } catch (err) {
-        console.error("Error fetching pessoas:", err);
-        setFornecedores([]);
+        if ((err as Error).name !== "AbortError") {
+          console.error("Error fetching pessoas:", err);
+          setFornecedores([]);
+        }
       } finally {
-        setLoadingFornecedores(false);
+        if (!controller.signal.aborted) {
+          setLoadingFornecedores(false);
+        }
       }
     };
     fetchPessoas();
+    return () => controller.abort();
   }, [tipo]);
 
   const fornecedoresFiltrados = useMemo(() => {
