@@ -1,6 +1,6 @@
 "use client"
 
-import { CreditCard, TrendingUp, TrendingDown, Pencil, Trash2, Building2 } from "lucide-react"
+import { CreditCard, TrendingUp, TrendingDown, Pencil, Trash2, Building2, Wallet, PiggyBank } from "lucide-react"
 import { BANK_DATA } from "@/lib/bank-data"
 import { formatCurrency } from "@/lib/format"
 import Image from "next/image"
@@ -189,6 +189,50 @@ export function BankAccountCard({ conta, onEdit, onDelete }) {
           )}
         </div>
       </div>
+
+      {/* Conta Garantida e Investimento Líquido - Exibe apenas se houver valores */}
+      {((conta.limiteContaGarantida && conta.limiteContaGarantida > 0) || (conta.saldoInvestimentoLiquido && conta.saldoInvestimentoLiquido > 0)) && (
+        <div className="relative grid grid-cols-2 gap-1.5 mt-1.5">
+          {conta.limiteContaGarantida > 0 && (
+            <div
+              className="rounded-md p-1.5"
+              style={{
+                backgroundColor: isPremiumCard ? `${accentColor}15` : "rgba(255,255,255,0.1)",
+                borderLeft: isPremiumCard ? `2px solid ${accentColor}50` : "none",
+              }}
+            >
+              <div className="mb-0 flex items-center gap-0.5">
+                <Wallet className="h-3.5 w-3.5" style={{ color: isPremiumCard ? accentColor : textSecondary }} />
+                <span className="text-[9px] font-semibold uppercase tracking-wider" style={{ color: textSecondary }}>
+                  Conta Garantida
+                </span>
+              </div>
+              <p className="text-[11px] font-bold" style={{ color: textPrimary }}>
+                {formatCurrency(conta.limiteContaGarantida)}
+              </p>
+            </div>
+          )}
+          {conta.saldoInvestimentoLiquido > 0 && (
+            <div
+              className="rounded-md p-1.5"
+              style={{
+                backgroundColor: isPremiumCard ? `${accentColor}15` : "rgba(255,255,255,0.1)",
+                borderLeft: isPremiumCard ? `2px solid ${accentColor}50` : "none",
+              }}
+            >
+              <div className="mb-0 flex items-center gap-0.5">
+                <PiggyBank className="h-3.5 w-3.5" style={{ color: isPremiumCard ? accentColor : textSecondary }} />
+                <span className="text-[9px] font-semibold uppercase tracking-wider" style={{ color: textSecondary }}>
+                  Invest. Líquido
+                </span>
+              </div>
+              <p className="text-[11px] font-bold" style={{ color: textPrimary }}>
+                {formatCurrency(conta.saldoInvestimentoLiquido)}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

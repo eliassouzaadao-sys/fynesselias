@@ -287,68 +287,15 @@ function ActionButton({ onClick, icon: Icon, label, variant = "default", size = 
 export function ComparativoContent() {
   // Filtro de data - padrão: mês atual
   const hoje = new Date()
-  const mesAtual = hoje.getMonth() // 0-11
+  const mesAtual = hoje.getMonth()
   const anoAtual = hoje.getFullYear()
 
-  // Estados para filtro por mês/ano
-  const [mesSelecionado, setMesSelecionado] = useState(mesAtual) // 0-11, null = personalizado
-  const [anoSelecionado, setAnoSelecionado] = useState(anoAtual)
-  const [filtroTipo, setFiltroTipo] = useState("mes") // "mes" ou "personalizado"
+  // Calcular datas do mês atual como padrão
+  const primeiroDiaMes = new Date(anoAtual, mesAtual, 1).toISOString().split('T')[0]
+  const ultimoDiaMes = new Date(anoAtual, mesAtual + 1, 0).toISOString().split('T')[0]
 
-  // Calcular datas baseado no mês/ano selecionado
-  const calcularDatasDoMes = (mes, ano) => {
-    const primeiroDia = new Date(ano, mes, 1)
-    const ultimoDia = new Date(ano, mes + 1, 0) // Último dia do mês
-    return {
-      inicio: primeiroDia.toISOString().split('T')[0],
-      fim: ultimoDia.toISOString().split('T')[0]
-    }
-  }
-
-  const datasIniciais = calcularDatasDoMes(mesAtual, anoAtual)
-  const [dataInicial, setDataInicial] = useState(datasIniciais.inicio)
-  const [dataFinal, setDataFinal] = useState(datasIniciais.fim)
-
-  // Nomes dos meses abreviados
-  const meses = [
-    { nome: "Jan", completo: "Janeiro" },
-    { nome: "Fev", completo: "Fevereiro" },
-    { nome: "Mar", completo: "Março" },
-    { nome: "Abr", completo: "Abril" },
-    { nome: "Mai", completo: "Maio" },
-    { nome: "Jun", completo: "Junho" },
-    { nome: "Jul", completo: "Julho" },
-    { nome: "Ago", completo: "Agosto" },
-    { nome: "Set", completo: "Setembro" },
-    { nome: "Out", completo: "Outubro" },
-    { nome: "Nov", completo: "Novembro" },
-    { nome: "Dez", completo: "Dezembro" }
-  ]
-
-  // Handler para seleção de mês
-  const selecionarMes = (mes) => {
-    setMesSelecionado(mes)
-    setFiltroTipo("mes")
-    const { inicio, fim } = calcularDatasDoMes(mes, anoSelecionado)
-    setDataInicial(inicio)
-    setDataFinal(fim)
-  }
-
-  // Handler para mudança de ano
-  const mudarAno = (novoAno) => {
-    setAnoSelecionado(novoAno)
-    if (filtroTipo === "mes" && mesSelecionado !== null) {
-      const { inicio, fim } = calcularDatasDoMes(mesSelecionado, novoAno)
-      setDataInicial(inicio)
-      setDataFinal(fim)
-    }
-  }
-
-  // Handler para modo personalizado
-  const ativarPersonalizado = () => {
-    setFiltroTipo("personalizado")
-    setMesSelecionado(null)
-  }
+  const [dataInicial, setDataInicial] = useState(primeiroDiaMes)
+  const [dataFinal, setDataFinal] = useState(ultimoDiaMes)
   const [showNewCenterDrawer, setShowNewCenterDrawer] = useState(false)
   const [showNewSubcenterDrawer, setShowNewSubcenterDrawer] = useState(false)
   const [selectedTipo, setSelectedTipo] = useState("")
@@ -612,78 +559,32 @@ export function ComparativoContent() {
         description="Análise comparativa entre valores previstos e realizados"
       />
 
-      {/* Filtros de Período */}
-      <Card className="p-4">
-        <div className="flex flex-wrap items-center gap-3">
+      {/* Filtros - Fixos e Visíveis */}
+      <Card className="p-4 sticky top-0 z-10 bg-card/95 backdrop-blur-sm border-b shadow-sm">
+        <div className="flex flex-wrap items-center gap-4">
+          {/* Filtro de Período */}
           <div className="flex items-center gap-2">
             <Calendar className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm font-medium text-foreground">Período:</span>
+            <Input
+              type="date"
+              value={dataInicial}
+              onChange={(e) => setDataInicial(e.target.value)}
+              className="h-9 w-36"
+            />
+            <span className="text-muted-foreground text-sm">até</span>
+            <Input
+              type="date"
+              value={dataFinal}
+              onChange={(e) => setDataFinal(e.target.value)}
+              className="h-9 w-36"
+            />
           </div>
 
-          {/* Seletor de Mês */}
-          <select
-            value={filtroTipo === "mes" ? mesSelecionado : ""}
-            onChange={(e) => {
-              const value = e.target.value
-              if (value !== "") {
-                selecionarMes(parseInt(value))
-              }
-            }}
-            className="h-9 px-3 rounded-md border border-border bg-card text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-          >
-            <option value="" disabled>Selecione o mês</option>
-            {meses.map((mes, index) => (
-              <option key={index} value={index}>{mes.completo}</option>
-            ))}
-          </select>
-
-          {/* Seletor de Ano */}
-          <select
-            value={anoSelecionado}
-            onChange={(e) => mudarAno(parseInt(e.target.value))}
-            className="h-9 px-3 rounded-md border border-border bg-card text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-          >
-            {Array.from({ length: 5 }, (_, i) => anoAtual - 4 + i).map((ano) => (
-              <option key={ano} value={ano}>{ano}</option>
-            ))}
-          </select>
-
           {/* Separador */}
-          <span className="text-muted-foreground text-sm">ou</span>
+          <div className="h-6 w-px bg-border" />
 
-          {/* Botão Personalizado */}
-          <Button
-            size="sm"
-            variant={filtroTipo === "personalizado" ? "default" : "outline"}
-            className="h-9"
-            onClick={ativarPersonalizado}
-          >
-            Personalizado
-          </Button>
-
-          {/* Campos de Data Personalizada (quando ativo) */}
-          {filtroTipo === "personalizado" && (
-            <>
-              <Input
-                type="date"
-                value={dataInicial}
-                onChange={(e) => setDataInicial(e.target.value)}
-                className="h-9 w-36"
-              />
-              <span className="text-muted-foreground text-sm">até</span>
-              <Input
-                type="date"
-                value={dataFinal}
-                onChange={(e) => setDataFinal(e.target.value)}
-                className="h-9 w-36"
-              />
-            </>
-          )}
-
-          {/* Separador */}
-          <div className="h-6 w-px bg-border mx-1" />
-
-          {/* Botão Filtro por Centro de Custo */}
+          {/* Filtro por Centro de Custo */}
           <Button
             variant="outline"
             size="sm"
@@ -695,7 +596,7 @@ export function ComparativoContent() {
           </Button>
 
           {/* Separador */}
-          <div className="h-6 w-px bg-border mx-1" />
+          <div className="h-6 w-px bg-border" />
 
           {/* Filtro Previsto/Realizado */}
           <div className="flex items-center gap-2">
@@ -970,7 +871,7 @@ export function ComparativoContent() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-              <table className="w-full min-w-[650px]">
+              <table className="w-full min-w-[750px]">
                 <thead>
                   <tr className="border-b border-border">
                     <th className="w-[72px]"></th>
@@ -979,8 +880,14 @@ export function ComparativoContent() {
                     {(filtroVisualizacao === "ambos" || filtroVisualizacao === "previsto") && (
                       <th className="text-right py-2 px-1 text-xs font-medium text-muted-foreground uppercase whitespace-nowrap">Previsto</th>
                     )}
+                    {filtroVisualizacao === "previsto" && (
+                      <th className="text-right py-2 px-1 text-xs font-medium text-muted-foreground uppercase whitespace-nowrap">Peso %</th>
+                    )}
                     {(filtroVisualizacao === "ambos" || filtroVisualizacao === "realizado") && (
                       <th className="text-right py-2 px-1 text-xs font-medium text-muted-foreground uppercase whitespace-nowrap">Realizado</th>
+                    )}
+                    {filtroVisualizacao === "realizado" && (
+                      <th className="text-right py-2 px-1 text-xs font-medium text-muted-foreground uppercase whitespace-nowrap">Peso %</th>
                     )}
                     {filtroVisualizacao === "ambos" && (
                       <th className="text-right py-2 px-1 text-xs font-medium text-muted-foreground uppercase whitespace-nowrap">Variação</th>
@@ -994,6 +901,8 @@ export function ComparativoContent() {
                     const subcentros = getSubcentros(centro.id, centrosReceita)
                     const hasSubcentros = subcentros.length > 0
                     const isExpanded = expandedCenters.has(centro.id)
+                    const percPrevisto = totalReceitaPrevista > 0 ? (centro.previsto / totalReceitaPrevista) * 100 : 0
+                    const percRealizado = totalReceitaRealizada > 0 ? (centro.realizado / totalReceitaRealizada) * 100 : 0
 
                     return (
                       <Fragment key={centro.id}>
@@ -1031,8 +940,14 @@ export function ComparativoContent() {
                           {(filtroVisualizacao === "ambos" || filtroVisualizacao === "previsto") && (
                             <td className="py-2 px-1 text-xs text-foreground text-right tabular-nums whitespace-nowrap">{formatCurrency(centro.previsto)}</td>
                           )}
+                          {filtroVisualizacao === "previsto" && (
+                            <td className="py-2 px-1 text-xs text-muted-foreground text-right tabular-nums whitespace-nowrap">{formatPercentage(percPrevisto)}</td>
+                          )}
                           {(filtroVisualizacao === "ambos" || filtroVisualizacao === "realizado") && (
                             <td className="py-2 px-1 text-xs font-medium text-foreground text-right tabular-nums whitespace-nowrap">{formatCurrency(centro.realizado)}</td>
+                          )}
+                          {filtroVisualizacao === "realizado" && (
+                            <td className="py-2 px-1 text-xs text-muted-foreground text-right tabular-nums whitespace-nowrap">{formatPercentage(percRealizado)}</td>
                           )}
                           {filtroVisualizacao === "ambos" && (
                             <td className={`py-2 px-1 text-xs font-medium text-right tabular-nums whitespace-nowrap ${variacao >= 0 ? "text-emerald-600" : "text-amber-600"}`}>
@@ -1060,6 +975,8 @@ export function ComparativoContent() {
                         </tr>
                         {isExpanded && subcentros.map((subcentro) => {
                           const subVariacao = subcentro.realizado - subcentro.previsto
+                          const subPercPrevisto = totalReceitaPrevista > 0 ? (subcentro.previsto / totalReceitaPrevista) * 100 : 0
+                          const subPercRealizado = totalReceitaRealizada > 0 ? (subcentro.realizado / totalReceitaRealizada) * 100 : 0
                           return (
                             <tr key={subcentro.id} className="border-b border-border hover:bg-muted/50 transition-colors bg-muted/30">
                               <td className="py-2 px-1"></td>
@@ -1075,8 +992,14 @@ export function ComparativoContent() {
                               {(filtroVisualizacao === "ambos" || filtroVisualizacao === "previsto") && (
                                 <td className="py-2 px-1 text-xs text-foreground text-right tabular-nums whitespace-nowrap">{formatCurrency(subcentro.previsto)}</td>
                               )}
+                              {filtroVisualizacao === "previsto" && (
+                                <td className="py-2 px-1 text-xs text-muted-foreground text-right tabular-nums whitespace-nowrap">{formatPercentage(subPercPrevisto)}</td>
+                              )}
                               {(filtroVisualizacao === "ambos" || filtroVisualizacao === "realizado") && (
                                 <td className="py-2 px-1 text-xs font-medium text-foreground text-right tabular-nums whitespace-nowrap">{formatCurrency(subcentro.realizado)}</td>
+                              )}
+                              {filtroVisualizacao === "realizado" && (
+                                <td className="py-2 px-1 text-xs text-muted-foreground text-right tabular-nums whitespace-nowrap">{formatPercentage(subPercRealizado)}</td>
                               )}
                               {filtroVisualizacao === "ambos" && (
                                 <td className={`py-2 px-1 text-xs font-medium text-right tabular-nums whitespace-nowrap ${subVariacao >= 0 ? "text-emerald-600" : "text-amber-600"}`}>
@@ -1173,7 +1096,7 @@ export function ComparativoContent() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-              <table className="w-full min-w-[650px]">
+              <table className="w-full min-w-[750px]">
                 <thead>
                   <tr className="border-b border-border">
                     <th className="w-[72px]"></th>
@@ -1182,8 +1105,14 @@ export function ComparativoContent() {
                     {(filtroVisualizacao === "ambos" || filtroVisualizacao === "previsto") && (
                       <th className="text-right py-2 px-1 text-xs font-medium text-muted-foreground uppercase whitespace-nowrap">Previsto</th>
                     )}
+                    {filtroVisualizacao === "previsto" && (
+                      <th className="text-right py-2 px-1 text-xs font-medium text-muted-foreground uppercase whitespace-nowrap">Peso %</th>
+                    )}
                     {(filtroVisualizacao === "ambos" || filtroVisualizacao === "realizado") && (
                       <th className="text-right py-2 px-1 text-xs font-medium text-muted-foreground uppercase whitespace-nowrap">Realizado</th>
+                    )}
+                    {filtroVisualizacao === "realizado" && (
+                      <th className="text-right py-2 px-1 text-xs font-medium text-muted-foreground uppercase whitespace-nowrap">Peso %</th>
                     )}
                     {filtroVisualizacao === "ambos" && (
                       <th className="text-right py-2 px-1 text-xs font-medium text-muted-foreground uppercase whitespace-nowrap">Variação</th>
@@ -1197,6 +1126,8 @@ export function ComparativoContent() {
                     const subcentros = getSubcentros(centro.id, centrosCusto)
                     const hasSubcentros = subcentros.length > 0
                     const isExpanded = expandedCenters.has(centro.id)
+                    const percPrevisto = totalCustoPrevisto > 0 ? (centro.previsto / totalCustoPrevisto) * 100 : 0
+                    const percRealizado = totalCustoRealizado > 0 ? (centro.realizado / totalCustoRealizado) * 100 : 0
 
                     return (
                       <Fragment key={centro.id}>
@@ -1234,8 +1165,14 @@ export function ComparativoContent() {
                           {(filtroVisualizacao === "ambos" || filtroVisualizacao === "previsto") && (
                             <td className="py-2 px-1 text-xs text-foreground text-right tabular-nums whitespace-nowrap">{formatCurrency(centro.previsto)}</td>
                           )}
+                          {filtroVisualizacao === "previsto" && (
+                            <td className="py-2 px-1 text-xs text-muted-foreground text-right tabular-nums whitespace-nowrap">{formatPercentage(percPrevisto)}</td>
+                          )}
                           {(filtroVisualizacao === "ambos" || filtroVisualizacao === "realizado") && (
                             <td className="py-2 px-1 text-xs font-medium text-foreground text-right tabular-nums whitespace-nowrap">{formatCurrency(centro.realizado)}</td>
+                          )}
+                          {filtroVisualizacao === "realizado" && (
+                            <td className="py-2 px-1 text-xs text-muted-foreground text-right tabular-nums whitespace-nowrap">{formatPercentage(percRealizado)}</td>
                           )}
                           {filtroVisualizacao === "ambos" && (
                             <td className={`py-2 px-1 text-xs font-medium text-right tabular-nums whitespace-nowrap ${variacao <= 0 ? "text-emerald-600" : "text-red-600"}`}>
@@ -1263,6 +1200,8 @@ export function ComparativoContent() {
                         </tr>
                         {isExpanded && subcentros.map((subcentro) => {
                           const subVariacao = subcentro.realizado - subcentro.previsto
+                          const subPercPrevisto = totalCustoPrevisto > 0 ? (subcentro.previsto / totalCustoPrevisto) * 100 : 0
+                          const subPercRealizado = totalCustoRealizado > 0 ? (subcentro.realizado / totalCustoRealizado) * 100 : 0
                           return (
                             <tr key={subcentro.id} className="border-b border-border hover:bg-muted/50 transition-colors bg-muted/30">
                               <td className="py-2 px-1"></td>
@@ -1278,8 +1217,14 @@ export function ComparativoContent() {
                               {(filtroVisualizacao === "ambos" || filtroVisualizacao === "previsto") && (
                                 <td className="py-2 px-1 text-xs text-foreground text-right tabular-nums whitespace-nowrap">{formatCurrency(subcentro.previsto)}</td>
                               )}
+                              {filtroVisualizacao === "previsto" && (
+                                <td className="py-2 px-1 text-xs text-muted-foreground text-right tabular-nums whitespace-nowrap">{formatPercentage(subPercPrevisto)}</td>
+                              )}
                               {(filtroVisualizacao === "ambos" || filtroVisualizacao === "realizado") && (
                                 <td className="py-2 px-1 text-xs font-medium text-foreground text-right tabular-nums whitespace-nowrap">{formatCurrency(subcentro.realizado)}</td>
+                              )}
+                              {filtroVisualizacao === "realizado" && (
+                                <td className="py-2 px-1 text-xs text-muted-foreground text-right tabular-nums whitespace-nowrap">{formatPercentage(subPercRealizado)}</td>
                               )}
                               {filtroVisualizacao === "ambos" && (
                                 <td className={`py-2 px-1 text-xs font-medium text-right tabular-nums whitespace-nowrap ${subVariacao <= 0 ? "text-emerald-600" : "text-red-600"}`}>

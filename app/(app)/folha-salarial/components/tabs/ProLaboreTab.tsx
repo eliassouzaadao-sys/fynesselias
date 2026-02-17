@@ -3,19 +3,19 @@
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
 import { formatCurrency } from "@/lib/format"
 import { Plus, Users, Wallet, TrendingDown, CreditCard, Loader2, History } from "lucide-react"
-import { SocioCard } from "./components/SocioCard"
-import { NovoSocioModal } from "./components/NovoSocioModal"
-import { ProLaboreModal } from "./components/ProLaboreModal"
-import { HistoricoModal } from "./components/HistoricoModal"
+import { SocioCard } from "../socios/SocioCard"
+import { NovoSocioModal } from "../socios/NovoSocioModal"
+import { ProLaboreModal } from "../socios/ProLaboreModal"
+import { HistoricoModal } from "../socios/HistoricoModal"
 
 interface GastoDetalhado {
-  id: number
+  id: number | string
   descricao: string
   valor: number
-  dataPagamento: string
+  dataPagamento?: string
+  tipo?: 'previsto' | 'real'
 }
 
 interface Socio {
@@ -39,15 +39,25 @@ interface Socio {
   } | null
 }
 
-export function SociosContent() {
-  const [socios, setSocios] = useState<Socio[]>([])
-  const [loading, setLoading] = useState(true)
+interface ProLaboreTabProps {
+  socios: Socio[]
+  onRefresh: () => void
+  dataInicio?: string
+  dataFim?: string
+}
+
+export function ProLaboreTab({ socios: initialSocios, onRefresh, dataInicio, dataFim }: ProLaboreTabProps) {
+  const [socios, setSocios] = useState<Socio[]>(initialSocios)
+  const [loading, setLoading] = useState(false)
   const [showNovoModal, setShowNovoModal] = useState(false)
   const [socioParaEditar, setSocioParaEditar] = useState<Socio | null>(null)
   const [socioParaProLabore, setSocioParaProLabore] = useState<Socio | null>(null)
   const [showHistorico, setShowHistorico] = useState(false)
-  const [dataInicio, setDataInicio] = useState("")
-  const [dataFim, setDataFim] = useState("")
+
+  // Atualizar lista quando props mudam
+  useEffect(() => {
+    setSocios(initialSocios)
+  }, [initialSocios])
 
   const loadSocios = async () => {
     try {
@@ -66,10 +76,6 @@ export function SociosContent() {
     }
   }
 
-  useEffect(() => {
-    loadSocios()
-  }, [dataInicio, dataFim])
-
   const handleEditar = (socio: Socio) => {
     setSocioParaEditar(socio)
     setShowNovoModal(true)
@@ -86,6 +92,7 @@ export function SociosContent() {
       const res = await fetch(`/api/socios?id=${socioId}`, { method: "DELETE" })
       if (res.ok) {
         loadSocios()
+        onRefresh()
       }
     } catch (e) {
       console.error("Erro ao excluir sócio:", e)
@@ -95,11 +102,12 @@ export function SociosContent() {
 
   const handleSuccess = () => {
     loadSocios()
+    onRefresh()
     setShowNovoModal(false)
     setSocioParaEditar(null)
   }
 
-  // Calcular KPIs
+  // Calcular KPIs da tab
   const totalProLabore = socios.reduce((acc, s) => acc + s.proLaboreBase, 0)
   const totalDescontos = socios.reduce((acc, s) => acc + s.gastosCartao, 0)
   const totalLiquido = totalProLabore - totalDescontos
@@ -107,12 +115,12 @@ export function SociosContent() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Header da Tab */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Sócios</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Gerencie sócios e pró-labore com descontos automáticos
+          <h2 className="text-lg font-semibold text-foreground">Pró-labore de Sócios</h2>
+          <p className="text-sm text-muted-foreground">
+            Gerencie pró-labore com descontos automáticos
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -124,36 +132,14 @@ export function SociosContent() {
             <History className="mr-2 h-4 w-4" />
             Histórico
           </Button>
-          <Button size="sm" variant="outline" onClick={() => setShowNovoModal(true)}>
+          <Button size="sm" onClick={() => setShowNovoModal(true)}>
             <Plus className="mr-2 h-4 w-4" />
             Novo Sócio
           </Button>
         </div>
       </div>
 
-      {/* Filtro de Período */}
-      <div className="flex items-center gap-4 p-4 bg-muted/30 rounded-lg">
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium text-muted-foreground">De:</label>
-          <Input
-            type="date"
-            value={dataInicio}
-            onChange={(e) => setDataInicio(e.target.value)}
-            className="h-9 w-[160px]"
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium text-muted-foreground">Até:</label>
-          <Input
-            type="date"
-            value={dataFim}
-            onChange={(e) => setDataFim(e.target.value)}
-            className="h-9 w-[160px]"
-          />
-        </div>
-      </div>
-
-      {/* KPIs */}
+      {/* KPIs da Tab */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="p-4">
           <div className="flex items-center gap-3">
@@ -173,7 +159,7 @@ export function SociosContent() {
               <Wallet className="h-5 w-5 text-green-600" />
             </div>
             <div>
-              <p className="text-xs text-muted-foreground">Total Pró-labore Bruto</p>
+              <p className="text-xs text-muted-foreground">Total Bruto</p>
               <p className="text-lg font-bold text-foreground">{formatCurrency(totalProLabore)}</p>
             </div>
           </div>
@@ -197,7 +183,7 @@ export function SociosContent() {
               <CreditCard className="h-5 w-5 text-purple-600" />
             </div>
             <div>
-              <p className="text-xs text-muted-foreground">Total Pró-labore Líquido</p>
+              <p className="text-xs text-muted-foreground">Total Líquido</p>
               <p className="text-lg font-bold text-foreground">{formatCurrency(totalLiquido)}</p>
             </div>
           </div>
@@ -214,7 +200,7 @@ export function SociosContent() {
           <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
           <h3 className="text-lg font-medium text-foreground mb-2">Nenhum sócio cadastrado</h3>
           <p className="text-sm text-muted-foreground mb-4">
-            Adicione sócios para gerenciar o pró-labore com descontos automáticos de cartão.
+            Adicione sócios para gerenciar o pró-labore com descontos automáticos.
           </p>
           <Button onClick={() => setShowNovoModal(true)}>
             <Plus className="mr-2 h-4 w-4" />

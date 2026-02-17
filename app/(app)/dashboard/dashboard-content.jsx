@@ -130,34 +130,33 @@ export function DashboardContent() {
   const [fluxoCaixa, setFluxoCaixa] = useState([])
   const [periodoGrafico, setPeriodoGrafico] = useState("30dias")
 
-  // Filtros de mês e ano
+  // Filtros de período com persistência em localStorage
   const dataAtual = new Date()
   const primeiroDiaMes = new Date(dataAtual.getFullYear(), dataAtual.getMonth(), 1)
   const ultimoDiaMes = new Date(dataAtual.getFullYear(), dataAtual.getMonth() + 1, 0)
-  const [mesSelecionado, setMesSelecionado] = useState(dataAtual.getMonth())
-  const [anoSelecionado, setAnoSelecionado] = useState(dataAtual.getFullYear())
-  const [filtroTipo, setFiltroTipo] = useState('mes') // 'mes' ou 'personalizado'
-  const [dataInicial, setDataInicial] = useState(primeiroDiaMes.toISOString().split('T')[0])
-  const [dataFinal, setDataFinal] = useState(ultimoDiaMes.toISOString().split('T')[0])
 
-  // Nomes dos meses
-  const meses = [
-    'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
-  ]
-
-  // Anos disponíveis (últimos 5 anos)
-  const anosDisponiveis = Array.from({ length: 5 }, (_, i) => dataAtual.getFullYear() - 2 + i)
-
-  // Calcular datas do mês selecionado
-  const calcularDatasDoMes = (mes, ano) => {
-    const primeiroDia = new Date(ano, mes, 1)
-    const ultimoDia = new Date(ano, mes + 1, 0)
-    return {
-      inicio: primeiroDia.toISOString().split('T')[0],
-      fim: ultimoDia.toISOString().split('T')[0]
+  const getInitialDate = (key, defaultValue) => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(key)
+      if (saved) return saved
     }
+    return defaultValue
   }
+
+  const [dataInicial, setDataInicial] = useState(() =>
+    getInitialDate('dashboard_dataInicial', primeiroDiaMes.toISOString().split('T')[0])
+  )
+  const [dataFinal, setDataFinal] = useState(() =>
+    getInitialDate('dashboard_dataFinal', ultimoDiaMes.toISOString().split('T')[0])
+  )
+
+  // Salvar filtros no localStorage quando mudarem
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('dashboard_dataInicial', dataInicial)
+      localStorage.setItem('dashboard_dataFinal', dataFinal)
+    }
+  }, [dataInicial, dataFinal])
 
   async function fetchData(inicio = dataInicial, fim = dataFinal) {
     try {
@@ -197,28 +196,15 @@ export function DashboardContent() {
 
   // Load data on mount
   useEffect(() => {
-    const { inicio, fim } = calcularDatasDoMes(mesSelecionado, anoSelecionado)
-    setDataInicial(inicio)
-    setDataFinal(fim)
-    fetchData(inicio, fim)
+    fetchData(dataInicial, dataFinal)
   }, [])
 
-  // Recarregar quando mês/ano mudar (filtro por mês)
+  // Recarregar quando datas mudarem
   useEffect(() => {
-    if (filtroTipo === 'mes') {
-      const { inicio, fim } = calcularDatasDoMes(mesSelecionado, anoSelecionado)
-      setDataInicial(inicio)
-      setDataFinal(fim)
-      fetchData(inicio, fim)
-    }
-  }, [mesSelecionado, anoSelecionado, filtroTipo])
-
-  // Recarregar quando datas personalizadas mudarem
-  useEffect(() => {
-    if (filtroTipo === 'personalizado' && dataInicial && dataFinal) {
+    if (dataInicial && dataFinal) {
       fetchData(dataInicial, dataFinal)
     }
-  }, [dataInicial, dataFinal, filtroTipo])
+  }, [dataInicial, dataFinal])
 
   const handleRefresh = () => {
     setRefreshing(true)
@@ -377,63 +363,26 @@ export function DashboardContent() {
           <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
           <p className="text-sm text-muted-foreground mt-1">Visao geral das suas financas</p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {filtroTipo === 'mes' ? (
-            <>
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              <select
-                value={mesSelecionado}
-                onChange={(e) => setMesSelecionado(parseInt(e.target.value))}
-                className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
-              >
-                {meses.map((mes, index) => (
-                  <option key={index} value={index}>{mes}</option>
-                ))}
-              </select>
-              <select
-                value={anoSelecionado}
-                onChange={(e) => setAnoSelecionado(parseInt(e.target.value))}
-                className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
-              >
-                {anosDisponiveis.map((ano) => (
-                  <option key={ano} value={ano}>{ano}</option>
-                ))}
-              </select>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setFiltroTipo('personalizado')}
-                className="text-xs"
-              >
-                Personalizado
-              </Button>
-            </>
-          ) : (
-            <>
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              <Input
-                type="date"
-                value={dataInicial}
-                onChange={(e) => setDataInicial(e.target.value)}
-                className="w-36"
-              />
-              <span className="text-muted-foreground text-sm">até</span>
-              <Input
-                type="date"
-                value={dataFinal}
-                onChange={(e) => setDataFinal(e.target.value)}
-                className="w-36"
-              />
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setFiltroTipo('mes')}
-                className="text-xs"
-              >
-                Por Mês
-              </Button>
-            </>
-          )}
+        <div className="flex items-center gap-3 flex-wrap">
+          <Calendar className="h-4 w-4 text-muted-foreground" />
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">De:</span>
+            <Input
+              type="date"
+              value={dataInicial}
+              onChange={(e) => setDataInicial(e.target.value)}
+              className="w-40"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Até:</span>
+            <Input
+              type="date"
+              value={dataFinal}
+              onChange={(e) => setDataFinal(e.target.value)}
+              className="w-40"
+            />
+          </div>
           <Button
             variant="outline"
             size="sm"

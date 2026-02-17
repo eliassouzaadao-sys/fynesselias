@@ -36,7 +36,7 @@ export async function GET(
     const primeiroDiaMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1, 0, 0, 0);
     const ultimoDiaMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0, 23, 59, 59);
 
-    // 1. Buscar descontos recorrentes (previstos)
+    // 1. Buscar descontos recorrentes (previstos fixos)
     const whereDescontosRecorrentes: any = {
       socioId: socioId,
       userId: user.id,
@@ -48,14 +48,43 @@ export async function GET(
       where: whereDescontosRecorrentes,
     });
 
-    const descontosPrevistos = descontosRecorrentes.reduce((acc: number, d: any) => acc + Number(d.valor), 0);
+    const descontosRecorrentesTotal = descontosRecorrentes.reduce((acc: number, d: any) => acc + Number(d.valor), 0);
 
-    // 2. Buscar contas pagas no mês vinculadas a este sócio (descontos reais)
+    // 2. Buscar contas pendentes do sócio com vencimento no mês (previstos variáveis)
+    const whereContasPendentes: any = {
+      userId: user.id,
+      socioResponsavelId: socioId,
+      pago: false,
+      status: { not: "cancelado" },
+      vencimento: {
+        gte: primeiroDiaMes,
+        lte: ultimoDiaMes,
+      },
+    };
+    if (empresaId) whereContasPendentes.empresaId = empresaId;
+
+    const contasPendentesMes = await prisma.conta.findMany({
+      where: whereContasPendentes,
+    });
+
+    // Filtrar: excluir contas pai de parcelamento
+    const contasValidasPendentes = contasPendentesMes.filter((c: any) => {
+      if (c.parentId !== null) return true;
+      if (c.parentId === null && c.totalParcelas === null) return true;
+      return false;
+    });
+
+    const descontosVariaveisMes = contasValidasPendentes.reduce((acc: number, c: any) => acc + Number(c.valor), 0);
+    const descontosPrevistos = descontosRecorrentesTotal + descontosVariaveisMes;
+
+    // 3. Buscar contas pagas no mês vinculadas a este sócio (descontos reais)
+    // Usa vencimento em vez de dataPagamento (que pode ser null)
     const whereContas: any = {
       userId: user.id,
       socioResponsavelId: socioId,
       pago: true,
-      dataPagamento: {
+      status: { not: "cancelado" },
+      vencimento: {
         gte: primeiroDiaMes,
         lte: ultimoDiaMes,
       },

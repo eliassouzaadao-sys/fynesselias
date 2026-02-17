@@ -159,8 +159,13 @@ model Banco {
   conta        String?  // Número da conta - opcional
   chavePix     String?  // Chave Pix
   tipoChavePix String?  // Tipo da chave: celular, email, cpf, cnpj, aleatoria
-  saldoInicial Float    @default(0) // Saldo inicial da conta
-  ativo        Boolean  @default(true)
+  saldoInicial             Float    @default(0) // Saldo inicial da conta
+  limiteContaGarantida     Float    @default(0) // Limite Conta Garantida/Rotativo
+  utilizadoContaGarantida  Float    @default(0) // Valor em uso da Conta Garantida
+  limiteChequeEspecial     Float    @default(0) // Limite de Cheque Especial
+  utilizadoChequeEspecial  Float    @default(0) // Valor em uso do Cheque Especial
+  saldoInvestimentoLiquido Float    @default(0) // Investimento c/ Resgate Automático e Alta Liquidez
+  ativo                    Boolean  @default(true)
   conciliadoEm DateTime? // Data/hora da última conciliação bancária
   criadoEm     DateTime @default(now())
   atualizadoEm DateTime @updatedAt
@@ -539,6 +544,8 @@ model User {
   whatsappMessages  WhatsAppMessage[]
   descontosRecorrentes DescontoRecorrente[]
   historicoParcelas    HistoricoParcelamento[]
+  funcionarios         Funcionario[]
+  historicoFolha       HistoricoFolha[]
 
   @@index([email])
 }
@@ -576,6 +583,8 @@ model Empresa {
   whatsappMessages   WhatsAppMessage[]
   descontosRecorrentes DescontoRecorrente[]
   historicoParcelas    HistoricoParcelamento[]
+  funcionarios         Funcionario[]
+  historicoFolha       HistoricoFolha[]
 
   @@index([userId])
 }
@@ -630,6 +639,96 @@ model HistoricoParcelamento {
   @@index([grupoParcelamentoId])
   @@index([contaMacroId])
   @@index([dataAlteracao])
+  @@index([userId])
+  @@index([empresaId])
+}
+
+// Funcionário para folha de pagamento
+model Funcionario {
+  id               Int       @id @default(autoincrement())
+  nome             String
+  cpf              String
+  cargo            String?
+  dataAdmissao     DateTime
+  dataDemissao     DateTime?
+  status           String    @default("ativo") // ativo, ferias, afastado, demitido
+
+  // Salário e Benefícios
+  salarioBruto     Float
+  valeTransporte   Float     @default(0)
+  valeRefeicao     Float     @default(0)
+  planoSaude       Float     @default(0)
+  outrosBeneficios Float     @default(0)
+
+  // Encargos (campos manuais - usuário informa os valores)
+  inss             Float     @default(0)
+  irrf             Float     @default(0)
+  fgts             Float     @default(0)
+
+  // Histórico de folha
+  historicoFolha   HistoricoFolha[]
+
+  // Relacionamento com usuário
+  userId           Int
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Relacionamento com empresa
+  empresaId        Int?
+  empresa          Empresa?  @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  criadoEm         DateTime  @default(now())
+  atualizadoEm     DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([empresaId])
+  @@index([status])
+  @@index([cpf])
+}
+
+// Histórico mensal de folha de pagamento
+model HistoricoFolha {
+  id               Int       @id @default(autoincrement())
+  mesReferencia    Int       // Mês (1-12)
+  anoReferencia    Int       // Ano (ex: 2026)
+
+  // Funcionário relacionado
+  funcionarioId    Int
+  funcionario      Funcionario @relation(fields: [funcionarioId], references: [id], onDelete: Cascade)
+  funcionarioNome  String    // Snapshot do nome
+  funcionarioCpf   String    // Snapshot do CPF
+
+  // Valores do mês
+  salarioBruto     Float
+  inss             Float
+  irrf             Float
+  fgts             Float
+  valeTransporte   Float
+  valeRefeicao     Float
+  planoSaude       Float
+  outrosDescontos  Float     @default(0)
+  salarioLiquido   Float     // Bruto - INSS - IRRF - VT - outros descontos
+  custoEmpresa     Float     // Bruto + FGTS + VR + Plano Saúde + outros benefícios
+
+  // Status de pagamento
+  pago             Boolean   @default(false)
+  dataPagamento    DateTime?
+  contaGeradaId    Int?      // ID da conta a pagar gerada
+
+  // Relacionamento com usuário
+  userId           Int
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Relacionamento com empresa
+  empresaId        Int?
+  empresa          Empresa?  @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  criadoEm         DateTime  @default(now())
+  atualizadoEm     DateTime  @updatedAt
+
+  @@unique([funcionarioId, mesReferencia, anoReferencia])
+  @@index([funcionarioId])
+  @@index([mesReferencia, anoReferencia])
+  @@index([pago])
   @@index([userId])
   @@index([empresaId])
 }

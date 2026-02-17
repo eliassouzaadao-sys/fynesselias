@@ -46,7 +46,7 @@ interface HistoricoModalProps {
 }
 
 const meses = [
-  "Janeiro", "Fevereiro", "Marco", "Abril", "Maio", "Junho",
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
 ]
 
@@ -73,7 +73,7 @@ export function HistoricoModal({ onClose }: HistoricoModalProps) {
       setPorMes(data.porMes || {})
       setTotais(data.totais || { totalBase: 0, totalDescontos: 0, totalLiquido: 0, quantidadeRegistros: 0 })
     } catch (e) {
-      console.error("Erro ao carregar historico:", e)
+      console.error("Erro ao carregar histórico:", e)
     } finally {
       setLoading(false)
     }
@@ -94,10 +94,10 @@ export function HistoricoModal({ onClose }: HistoricoModalProps) {
         <DialogHeader className="p-6 pb-4">
           <DialogTitle className="flex items-center gap-2">
             <History className="h-5 w-5 text-primary" />
-            Historico de Pro-labore
+            Histórico de Pró-labore
           </DialogTitle>
           <DialogDescription>
-            Pagamentos gerados por mes
+            Pagamentos gerados por mês
           </DialogDescription>
         </DialogHeader>
 
@@ -125,9 +125,9 @@ export function HistoricoModal({ onClose }: HistoricoModalProps) {
           ) : Object.keys(porMes).length === 0 ? (
             <div className="text-center py-12">
               <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-foreground mb-2">Nenhum historico encontrado</h3>
+              <h3 className="text-lg font-medium text-foreground mb-2">Nenhum histórico encontrado</h3>
               <p className="text-sm text-muted-foreground">
-                Nao ha registros de pro-labore para {anoSelecionado}
+                Não há registros de pró-labore para {anoSelecionado}
               </p>
             </div>
           ) : (
@@ -156,14 +156,14 @@ export function HistoricoModal({ onClose }: HistoricoModalProps) {
                   <div className="flex items-center gap-3">
                     <CheckCircle className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                     <div>
-                      <p className="text-xs text-blue-600/80 dark:text-blue-400/80">Total Liquido</p>
+                      <p className="text-xs text-blue-600/80 dark:text-blue-400/80">Total Líquido</p>
                       <p className="text-lg font-bold text-blue-700 dark:text-blue-400">{formatCurrency(totais.totalLiquido)}</p>
                     </div>
                   </div>
                 </Card>
               </div>
 
-              {/* Lista por Mes */}
+              {/* Lista por Mês */}
               {Object.entries(porMes)
                 .sort(([a], [b]) => {
                   const [mesA, anoA] = a.split('/').map(Number)
@@ -185,7 +185,7 @@ export function HistoricoModal({ onClose }: HistoricoModalProps) {
                       onOpenChange={() => toggleExpandir(periodo)}
                     >
                       <Card className="overflow-hidden">
-                        {/* Header do Mes com Balancete */}
+                        {/* Header do Mês com Balancete */}
                         <CollapsibleTrigger asChild>
                           <button className="w-full p-4 hover:bg-muted/50 transition-colors">
                             <div className="flex items-center justify-between mb-3">
@@ -195,7 +195,7 @@ export function HistoricoModal({ onClose }: HistoricoModalProps) {
                                 </div>
                                 <div className="text-left">
                                   <p className="font-semibold text-foreground">{mesNome} {periodo.split('/')[1]}</p>
-                                  <p className="text-xs text-muted-foreground">{items.length} socio(s)</p>
+                                  <p className="text-xs text-muted-foreground">{items.length} sócio(s)</p>
                                 </div>
                               </div>
                               {isExpanded ? (
@@ -216,7 +216,7 @@ export function HistoricoModal({ onClose }: HistoricoModalProps) {
                                 <p className="font-semibold text-red-600 dark:text-red-400">-{formatCurrency(totalMesDescontos)}</p>
                               </div>
                               <div className="text-right">
-                                <p className="text-xs text-muted-foreground">Liquido</p>
+                                <p className="text-xs text-muted-foreground">Líquido</p>
                                 <p className="font-semibold text-primary">{formatCurrency(totalMesLiquido)}</p>
                               </div>
                             </div>
@@ -256,7 +256,7 @@ export function HistoricoModal({ onClose }: HistoricoModalProps) {
                                     <p className="font-medium text-red-600 dark:text-red-400">-{formatCurrency(item.totalDescontos)}</p>
                                   </div>
                                   <div>
-                                    <p className="text-muted-foreground text-xs">Liquido</p>
+                                    <p className="text-muted-foreground text-xs">Líquido</p>
                                     <p className="font-medium text-green-600 dark:text-green-400">{formatCurrency(item.proLaboreLiquido)}</p>
                                   </div>
                                 </div>
@@ -278,14 +278,14 @@ export function HistoricoModal({ onClose }: HistoricoModalProps) {
                               </div>
                             ))}
 
-                            {/* Resumo do Mes */}
+                            {/* Resumo do Mês */}
                             <div className="p-3 bg-primary/5 rounded-lg border border-primary/20">
                               <div className="flex justify-between items-center">
-                                <span className="text-sm font-medium text-foreground">Resumo do Mes</span>
+                                <span className="text-sm font-medium text-foreground">Resumo do Mês</span>
                                 <div className="flex items-center gap-4 text-sm">
                                   <span className="text-muted-foreground">Base: <span className="font-medium text-foreground">{formatCurrency(totalMesBase)}</span></span>
                                   <span className="text-muted-foreground">Desc: <span className="font-medium text-red-600 dark:text-red-400">-{formatCurrency(totalMesDescontos)}</span></span>
-                                  <span className="text-muted-foreground">Liquido: <span className="font-semibold text-primary">{formatCurrency(totalMesLiquido)}</span></span>
+                                  <span className="text-muted-foreground">Líquido: <span className="font-semibold text-primary">{formatCurrency(totalMesLiquido)}</span></span>
                                 </div>
                               </div>
                             </div>

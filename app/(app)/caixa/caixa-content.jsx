@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { formatCurrency, formatDate } from "@/lib/format"
 import { CurrencyInput } from "@/components/ui/currency-input"
-import { TrendingUp, TrendingDown, Building2, Plus, X, Trash2, Edit, Copy, ChevronDown, Calendar, Clock, CheckCircle2, ArrowDownCircle, ArrowUpCircle, Filter, Search, CreditCard, Wallet, Loader2, Eye, Truck, Check, UserPlus, Circle, RotateCcw } from "lucide-react"
+import { TrendingUp, TrendingDown, Building2, Plus, X, Trash2, Edit, Copy, ChevronDown, Calendar, Clock, CheckCircle2, ArrowDownCircle, ArrowUpCircle, Search, CreditCard, Wallet, Loader2, Eye, Truck, Check, UserPlus, Circle, RotateCcw, PiggyBank, DollarSign, Banknote, ArrowDownToLine, ArrowUpFromLine, Landmark } from "lucide-react"
 import {
   Popover,
   PopoverContent,
@@ -79,7 +79,6 @@ export function FluxoCaixaContent() {
   const [filtroTipoFluxo, setFiltroTipoFluxo] = useState([]) // ["entrada", "saida"]
   const [filtroStatus, setFiltroStatus] = useState([]) // ["em_dia", "atencao", "atrasado", "pago", "cancelado"]
   const [filtroValores, setFiltroValores] = useState([])
-  const [showFiltrosAvancados, setShowFiltrosAvancados] = useState(false)
 
   // Estados para opções de filtros automáticos
   const [centrosFiltro, setCentrosFiltro] = useState([])
@@ -98,7 +97,19 @@ export function FluxoCaixaContent() {
     conta: "",
     chavePix: "",
     tipoChavePix: "",
-    saldoInicial: 0
+    saldoInicial: 0,
+    limiteContaGarantida: 0,
+    limiteChequeEspecial: 0,
+    saldoInvestimentoLiquido: 0
+  })
+
+  // Estados para modal de utilização/devolução de limites
+  const [showUtilizarLimiteModal, setShowUtilizarLimiteModal] = useState(false)
+  const [bancoParaUtilizar, setBancoParaUtilizar] = useState(null)
+  const [utilizarLimiteForm, setUtilizarLimiteForm] = useState({
+    tipo: "conta_garantida", // "conta_garantida", "cheque_especial" ou "investimento"
+    valor: 0,
+    operacao: "utilizar" // "utilizar" (sacar) ou "devolver" (aplicar)
   })
 
   // Função para calcular o status real de uma conta baseado em vencimento
@@ -376,7 +387,10 @@ export function FluxoCaixaContent() {
       conta: "",
       chavePix: "",
       tipoChavePix: "",
-      saldoInicial: 0
+      saldoInicial: 0,
+      limiteContaGarantida: 0,
+      limiteChequeEspecial: 0,
+      saldoInvestimentoLiquido: 0
     })
     setShowBancoModal(true)
   }
@@ -390,9 +404,155 @@ export function FluxoCaixaContent() {
       conta: banco.conta || "",
       chavePix: banco.chavePix || "",
       tipoChavePix: banco.tipoChavePix || "",
-      saldoInicial: banco.saldoInicial || 0
+      saldoInicial: banco.saldoInicial || 0,
+      limiteContaGarantida: banco.limiteContaGarantida || 0,
+      limiteChequeEspecial: banco.limiteChequeEspecial || 0,
+      saldoInvestimentoLiquido: banco.saldoInvestimentoLiquido || 0
     })
     setShowBancoModal(true)
+  }
+
+  // Funções para utilização de limites
+  function openUtilizarLimiteModal(banco, operacao = "utilizar") {
+    setBancoParaUtilizar(banco)
+
+    // Determinar o tipo padrão baseado no que está disponível
+    // Nota: Cheque Especial não pode ser utilizado manualmente (é automático)
+    let tipoDefault = "investimento"
+    if (operacao === "utilizar") {
+      // Prioridade para sacar: Investimento > Conta Garantida
+      if ((banco.saldoInvestimentoLiquido || 0) > 0) {
+        tipoDefault = "investimento"
+      } else if ((banco.limiteContaGarantida || 0) > (banco.utilizadoContaGarantida || 0)) {
+        tipoDefault = "conta_garantida"
+      }
+    } else {
+      // Para aplicar/devolver: prioridade diferente
+      if ((banco.utilizadoContaGarantida || 0) > 0) {
+        tipoDefault = "conta_garantida"
+      } else {
+        tipoDefault = "investimento"
+      }
+    }
+
+    setUtilizarLimiteForm({
+      tipo: tipoDefault,
+      valor: 0,
+      operacao
+    })
+    setShowUtilizarLimiteModal(true)
+  }
+
+  async function handleUtilizarLimite(e) {
+    e.preventDefault()
+
+    if (!bancoParaUtilizar || !utilizarLimiteForm.valor || utilizarLimiteForm.valor <= 0) {
+      alert("Informe um valor válido")
+      return
+    }
+
+    const { tipo, valor, operacao } = utilizarLimiteForm
+    const isContaGarantida = tipo === "conta_garantida"
+    const isInvestimento = tipo === "investimento"
+
+    // Validações
+    if (operacao === "utilizar") {
+      if (isInvestimento) {
+        const saldoInvestimento = bancoParaUtilizar.saldoInvestimentoLiquido || 0
+        if (valor > saldoInvestimento) {
+          alert(`Valor excede o saldo de investimento de ${formatCurrency(saldoInvestimento)}`)
+          return
+        }
+      } else if (isContaGarantida) {
+        const limiteTotal = bancoParaUtilizar.limiteContaGarantida || 0
+        const utilizado = bancoParaUtilizar.utilizadoContaGarantida || 0
+        const disponivel = limiteTotal - utilizado
+
+        if (valor > disponivel) {
+          alert(`Valor excede o limite disponível de ${formatCurrency(disponivel)}`)
+          return
+        }
+      }
+    } else {
+      // Devolução/Aplicação
+      if (isInvestimento) {
+        // Para investimento, não há limite de aplicação (pode aplicar qualquer valor)
+      } else if (isContaGarantida) {
+        const utilizado = bancoParaUtilizar.utilizadoContaGarantida || 0
+
+        if (valor > utilizado) {
+          alert(`Valor excede o valor utilizado de ${formatCurrency(utilizado)}`)
+          return
+        }
+      }
+    }
+
+    try {
+      let updateData = { id: bancoParaUtilizar.id }
+
+      if (isInvestimento) {
+        // Investimento: sacar diminui saldo, aplicar aumenta saldo
+        const novoSaldoInvestimento = operacao === "utilizar"
+          ? (bancoParaUtilizar.saldoInvestimentoLiquido || 0) - valor
+          : (bancoParaUtilizar.saldoInvestimentoLiquido || 0) + valor
+        updateData.saldoInvestimentoLiquido = novoSaldoInvestimento
+      } else if (isContaGarantida) {
+        // Conta Garantida - pode ser utilizada manualmente
+        const novoUtilizado = operacao === "utilizar"
+          ? (bancoParaUtilizar.utilizadoContaGarantida || 0) + valor
+          : (bancoParaUtilizar.utilizadoContaGarantida || 0) - valor
+        updateData.utilizadoContaGarantida = novoUtilizado
+      }
+
+      // 1. Atualizar o banco
+      await fetch("/api/bancos", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updateData)
+      })
+
+      // 2. Criar movimentação no fluxo de caixa
+      const tipoMovimentacao = operacao === "utilizar" ? "entrada" : "saida"
+      let descricaoTipo, descricao
+
+      if (isInvestimento) {
+        descricaoTipo = "Investimento Líquido"
+        descricao = operacao === "utilizar"
+          ? "Resgate de Investimento"
+          : "Aplicação em Investimento"
+      } else if (isContaGarantida) {
+        descricaoTipo = "Conta Garantida"
+        descricao = operacao === "utilizar"
+          ? "Utilização Conta Garantida"
+          : "Devolução Conta Garantida"
+      }
+
+      await fetch("/api/fluxo-caixa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          descricao,
+          valor,
+          tipo: tipoMovimentacao,
+          dia: new Date().toISOString().split('T')[0],
+          bancoId: bancoParaUtilizar.id,
+          fornecedorCliente: bancoParaUtilizar.nome,
+          codigoTipo: descricaoTipo
+        })
+      })
+
+      // Atualizar dados
+      await fetchBancos()
+      const fluxoRes = await fetch('/api/fluxo-caixa')
+      const fluxoData = await fluxoRes.json()
+      setFluxoCaixa(Array.isArray(fluxoData) ? fluxoData : [])
+
+      setShowUtilizarLimiteModal(false)
+      setBancoParaUtilizar(null)
+    } catch (error) {
+      console.error("Erro ao processar operação:", error)
+      alert("Erro ao processar operação")
+    }
   }
 
   async function handleSaveBanco(e) {
@@ -1016,6 +1176,34 @@ export function FluxoCaixaContent() {
     return acc
   }, {})
 
+  // Calcular totais dos bancos para KPIs
+  // Totais individuais
+  const saldoTotalBancos = Object.values(saldosPorBanco).reduce((acc, saldo) => acc + saldo, 0)
+  // Totais de limites
+  const totalContaGarantida = bancos.reduce((acc, banco) => acc + (Number(banco.limiteContaGarantida) || 0), 0)
+  const totalChequeEspecial = bancos.reduce((acc, banco) => acc + (Number(banco.limiteChequeEspecial) || 0), 0)
+  const totalInvestimentoLiquido = bancos.reduce((acc, banco) => acc + (Number(banco.saldoInvestimentoLiquido) || 0), 0)
+
+  // Totais de utilização
+  const totalUtilizadoContaGarantida = bancos.reduce((acc, banco) => acc + (Number(banco.utilizadoContaGarantida) || 0), 0)
+  // Cheque Especial é automático - calculado baseado no saldo CC negativo
+  const totalUtilizadoChequeEspecial = bancos.reduce((acc, banco) => {
+    const saldoCC = saldosPorBanco[banco.id] || 0
+    const limiteCheque = Number(banco.limiteChequeEspecial) || 0
+    if (saldoCC < 0 && limiteCheque > 0) {
+      return acc + Math.min(Math.abs(saldoCC), limiteCheque)
+    }
+    return acc
+  }, 0)
+
+  // Limites disponíveis (não utilizados)
+  const limiteGarantidaDisponivel = totalContaGarantida - totalUtilizadoContaGarantida
+  const limiteChequeDisponivel = totalChequeEspecial - totalUtilizadoChequeEspecial
+
+  // Indicadores estruturados
+  const saldoLiquido = saldoTotalBancos + totalInvestimentoLiquido
+  const caixaBruto = saldoLiquido + limiteGarantidaDisponivel + limiteChequeDisponivel
+
   return (
     <div className="space-y-4">
       <PageHeader
@@ -1058,10 +1246,84 @@ export function FluxoCaixaContent() {
           <CreditCard className="h-4 w-4 inline mr-2" />
           Cartoes
         </button>
+        <button
+          onClick={() => setActiveTab("negativo")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === "negativo"
+              ? "border-primary text-primary"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Landmark className="h-4 w-4 inline mr-2" />
+          Negativo Previsível
+        </button>
       </div>
 
       {activeTab === "fluxo" && (
         <>
+          {/* KPIs Consolidados */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {/* Saldo Líquido = Conta Corrente + Investimentos */}
+            <Card className="p-3 bg-gradient-to-br from-emerald-500 to-emerald-600 text-white">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-white/20">
+                  <DollarSign className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-white/80">Saldo Líquido</p>
+                  <p className={`text-lg font-bold ${saldoLiquido < 0 ? 'text-red-200' : ''}`}>
+                    {formatCurrency(saldoLiquido)}
+                  </p>
+                  <p className="text-[9px] text-white/60">CC + Investimentos</p>
+                </div>
+              </div>
+            </Card>
+
+            {/* Caixa Bruto = Saldo Líquido + Limites */}
+            <Card className="p-3 bg-gradient-to-br from-blue-500 to-blue-600 text-white">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-white/20">
+                  <Banknote className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-white/80">Caixa Bruto</p>
+                  <p className={`text-lg font-bold ${caixaBruto < 0 ? 'text-red-200' : ''}`}>
+                    {formatCurrency(caixaBruto)}
+                  </p>
+                  <p className="text-[9px] text-white/60">+ Garantida + Cheque</p>
+                </div>
+              </div>
+            </Card>
+
+            {/* Limites de Crédito */}
+            <Card className="p-3">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-amber-100">
+                  <Wallet className="h-4 w-4 text-amber-600" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-muted-foreground">Limites Disponíveis</p>
+                  <p className="text-lg font-bold text-foreground">{formatCurrency(limiteGarantidaDisponivel + limiteChequeDisponivel)}</p>
+                  <p className="text-[9px] text-muted-foreground">Garantida + Cheque</p>
+                </div>
+              </div>
+            </Card>
+
+            {/* Investimentos */}
+            <Card className="p-3">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-purple-100">
+                  <PiggyBank className="h-4 w-4 text-purple-600" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-muted-foreground">Investimentos</p>
+                  <p className="text-lg font-bold text-foreground">{formatCurrency(totalInvestimentoLiquido)}</p>
+                  <p className="text-[9px] text-muted-foreground">Resgate Automático</p>
+                </div>
+              </div>
+            </Card>
+          </div>
+
           {/* KPI - Saldo + Filtros de Data */}
           <Card className="p-4">
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
@@ -1148,25 +1410,6 @@ export function FluxoCaixaContent() {
                   </Button>
                 </div>
 
-                {/* Botao Filtros Avancados */}
-                <Button
-                  variant={showFiltrosAvancados ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setShowFiltrosAvancados(!showFiltrosAvancados)}
-                  className="h-8 text-xs px-3"
-                >
-                  <Filter className="h-3 w-3 mr-1" />
-                  Filtros
-                  {(() => {
-                    const count = (dataInicio ? 1 : 0) + (dataFim ? 1 : 0) + filtroCodigos.length + filtroDescricoes.length + filtroBancoIds.length + filtroTipoFluxo.length + filtroStatus.length + filtroValores.length
-                    return count > 0 ? (
-                      <span className="ml-1 bg-primary text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px]">
-                        {count}
-                      </span>
-                    ) : null
-                  })()}
-                </Button>
-
                 {temFiltro && (
                   <Button variant="ghost" size="sm" onClick={limparFiltros} className="h-8 text-xs text-destructive hover:text-destructive">
                     <X className="h-3 w-3 mr-1" />
@@ -1176,10 +1419,9 @@ export function FluxoCaixaContent() {
               </div>
             </div>
 
-            {/* Filtros Avancados */}
-            {showFiltrosAvancados && (
-              <div className="mt-4 pt-4 border-t border-border">
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+            {/* Filtros Avancados (Sempre Visíveis) */}
+            <div className="mt-4 pt-4 border-t border-border">
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
                   {/* Tipo - Seleção Múltipla */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-muted-foreground">Tipo</label>
@@ -1248,8 +1490,7 @@ export function FluxoCaixaContent() {
                             { value: "em_dia", label: "Em dia" },
                             { value: "atencao", label: "Atenção" },
                             { value: "atrasado", label: "Atrasado" },
-                            { value: "pago", label: "Pago" },
-                            { value: "cancelado", label: "Cancelado" }
+                            { value: "pago", label: "Pago" }
                           ].map(status => (
                             <label key={status.value} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer">
                               <input
@@ -1464,10 +1705,9 @@ export function FluxoCaixaContent() {
                   </div>
                 </div>
               </div>
-            )}
           </Card>
 
-          {/* Card de Saldos Bancários */}
+          {/* Card de Saldos Bancários com KPIs */}
           {bancos.length > 0 && (
             <Card className="p-4">
               <div className="flex items-center justify-between mb-3">
@@ -1475,38 +1715,128 @@ export function FluxoCaixaContent() {
                   <Building2 className="h-4 w-4 text-primary" />
                   <h3 className="text-sm font-semibold text-foreground">Saldos Bancarios</h3>
                 </div>
-                <span className="text-xs text-muted-foreground">
-                  Total: {formatCurrency(Object.values(saldosPorBanco).reduce((a, b) => a + b, 0))}
-                </span>
+                <div className="flex items-center gap-4 text-xs">
+                  <span className="text-emerald-600 font-medium">
+                    Líquido: {formatCurrency(saldoLiquido)}
+                  </span>
+                  <span className="text-blue-600 font-medium">
+                    Bruto: {formatCurrency(caixaBruto)}
+                  </span>
+                </div>
               </div>
-              <div className="flex flex-wrap gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                 {bancos.map((banco) => {
-                  const saldo = saldosPorBanco[banco.id] || 0
+                  const saldoCC = saldosPorBanco[banco.id] || 0
+                  const investimento = Number(banco.saldoInvestimentoLiquido) || 0
+                  const saldoLiquidoBanco = saldoCC + investimento
+                  const limiteGarantida = Number(banco.limiteContaGarantida) || 0
+                  const usadoGarantida = Number(banco.utilizadoContaGarantida) || 0
+                  const disponivelGarantida = limiteGarantida - usadoGarantida
+                  const limiteCheque = Number(banco.limiteChequeEspecial) || 0
+                  // Cheque Especial é automático - calculado baseado no saldo CC negativo
+                  const usadoCheque = (saldoCC < 0 && limiteCheque > 0)
+                    ? Math.min(Math.abs(saldoCC), limiteCheque)
+                    : 0
+                  const disponivelCheque = limiteCheque - usadoCheque
+                  const caixaBrutoBanco = saldoLiquidoBanco + disponivelGarantida + disponivelCheque
+
                   return (
                     <div
                       key={banco.id}
-                      className={`flex items-center gap-3 px-3 py-2 rounded-lg border min-w-[180px] ${banco.conciliadoEm ? 'bg-amber-100 border-amber-300' : 'bg-muted/30 border-border'}`}
+                      className={`rounded-lg border p-3 ${banco.conciliadoEm ? 'bg-amber-50 border-amber-300' : 'bg-card border-border'}`}
                     >
-                      <div className={`p-1.5 rounded-full ${saldo >= 0 ? 'bg-green-100' : 'bg-red-100'}`}>
-                        <Building2 className={`h-3.5 w-3.5 ${saldo >= 0 ? 'text-green-600' : 'text-red-600'}`} />
+                      {/* Header do Banco */}
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <div className={`p-1 rounded-full ${saldoLiquidoBanco >= 0 ? 'bg-green-100' : 'bg-red-100'}`}>
+                            <Building2 className={`h-3 w-3 ${saldoLiquidoBanco >= 0 ? 'text-green-600' : 'text-red-600'}`} />
+                          </div>
+                          <div>
+                            <p className="text-xs font-medium text-foreground">{banco.nome}</p>
+                            <p className="text-[10px] text-muted-foreground">{banco.codigo}</p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleToggleConciliacao(banco.id, !!banco.conciliadoEm)}
+                          className="p-1 rounded hover:bg-muted transition-colors"
+                          title={banco.conciliadoEm ? `Conciliado em ${formatDate(banco.conciliadoEm)}` : 'Marcar como conciliado'}
+                        >
+                          {banco.conciliadoEm ? (
+                            <CheckCircle2 className="h-4 w-4 text-green-600" />
+                          ) : (
+                            <Circle className="h-4 w-4 text-muted-foreground" />
+                          )}
+                        </button>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs text-muted-foreground truncate">{banco.codigo} - {banco.nome}</p>
-                        <p className={`text-sm font-bold ${saldo < 0 ? 'text-red-600' : saldo > 0 ? 'text-emerald-600' : 'text-foreground'}`}>
-                          {formatCurrency(saldo)}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => handleToggleConciliacao(banco.id, !!banco.conciliadoEm)}
-                        className="p-1 rounded hover:bg-muted transition-colors"
-                        title={banco.conciliadoEm ? `Conciliado em ${formatDate(banco.conciliadoEm)}` : 'Marcar como conciliado'}
-                      >
-                        {banco.conciliadoEm ? (
-                          <CheckCircle2 className="h-4 w-4 text-green-600" />
-                        ) : (
-                          <Circle className="h-4 w-4 text-muted-foreground" />
+
+                      {/* KPIs do Banco */}
+                      <div className="space-y-1">
+                        {/* Saldo Líquido */}
+                        <div className="flex items-center justify-between p-1.5 rounded bg-emerald-50">
+                          <span className="text-[10px] text-emerald-700">Saldo Líquido</span>
+                          <span className={`text-xs font-bold ${saldoLiquidoBanco < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                            {formatCurrency(saldoLiquidoBanco)}
+                          </span>
+                        </div>
+
+                        {/* Detalhes */}
+                        <div className="flex justify-between text-[9px] px-1">
+                          <span className="text-muted-foreground">CC: <span className={saldoCC < 0 ? 'text-red-600' : ''}>{formatCurrency(saldoCC)}</span></span>
+                          {investimento > 0 && (
+                            <span className="text-purple-600">Inv: {formatCurrency(investimento)}</span>
+                          )}
+                        </div>
+
+                        {/* Limites */}
+                        {(limiteGarantida > 0 || limiteCheque > 0) && (
+                          <div className="flex justify-between text-[9px] px-1 pt-1 border-t border-border">
+                            {limiteGarantida > 0 && (
+                              <span className="text-amber-600">
+                                CG: {formatCurrency(disponivelGarantida)}
+                                {usadoGarantida > 0 && <span className="text-orange-500"> (-{formatCurrency(usadoGarantida)})</span>}
+                              </span>
+                            )}
+                            {limiteCheque > 0 && (
+                              <span className="text-amber-600">
+                                CE: {formatCurrency(disponivelCheque)}
+                                {usadoCheque > 0 && <span className="text-orange-500"> (-{formatCurrency(usadoCheque)})</span>}
+                              </span>
+                            )}
+                          </div>
                         )}
-                      </button>
+
+                        {/* Caixa Bruto */}
+                        <div className="flex items-center justify-between p-1.5 rounded bg-blue-50">
+                          <span className="text-[10px] text-blue-700">Caixa Bruto</span>
+                          <span className={`text-xs font-bold ${caixaBrutoBanco < 0 ? 'text-red-600' : 'text-blue-600'}`}>
+                            {formatCurrency(caixaBrutoBanco)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Ações */}
+                      {((limiteGarantida > 0) || (limiteCheque > 0) || (usadoGarantida > 0) || (usadoCheque > 0)) && (
+                        <div className="flex items-center justify-end gap-1 mt-2 pt-1 border-t border-border">
+                          {((limiteGarantida > 0) || (limiteCheque > 0)) && (
+                            <button
+                              onClick={() => openUtilizarLimiteModal(banco, "utilizar")}
+                              className="text-[9px] text-emerald-600 hover:text-emerald-700 px-1.5 py-0.5 rounded hover:bg-emerald-50 flex items-center gap-0.5"
+                            >
+                              <ArrowDownToLine className="h-3 w-3" />
+                              Utilizar
+                            </button>
+                          )}
+                          {((usadoGarantida > 0) || (usadoCheque > 0)) && (
+                            <button
+                              onClick={() => openUtilizarLimiteModal(banco, "devolver")}
+                              className="text-[9px] text-orange-600 hover:text-orange-700 px-1.5 py-0.5 rounded hover:bg-orange-50 flex items-center gap-0.5"
+                            >
+                              <ArrowUpFromLine className="h-3 w-3" />
+                              Devolver
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )
                 })}
@@ -1726,6 +2056,69 @@ export function FluxoCaixaContent() {
 
       {activeTab === "bancos" && (
         <>
+          {/* KPIs dos Bancos */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Saldo Líquido = Conta Corrente + Investimentos */}
+            <Card className="p-4 bg-gradient-to-br from-emerald-500 to-emerald-600 text-white">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-white/20">
+                  <DollarSign className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-xs text-white/80">Saldo Líquido</p>
+                  <p className={`text-xl font-bold ${saldoLiquido < 0 ? 'text-red-200' : ''}`}>
+                    {formatCurrency(saldoLiquido)}
+                  </p>
+                  <p className="text-[10px] text-white/60">CC + Investimentos</p>
+                </div>
+              </div>
+            </Card>
+
+            {/* Caixa Bruto = Saldo Líquido + Limites */}
+            <Card className="p-4 bg-gradient-to-br from-blue-500 to-blue-600 text-white">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-white/20">
+                  <Banknote className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-xs text-white/80">Caixa Bruto</p>
+                  <p className={`text-xl font-bold ${caixaBruto < 0 ? 'text-red-200' : ''}`}>
+                    {formatCurrency(caixaBruto)}
+                  </p>
+                  <p className="text-[10px] text-white/60">+ Garantida + Cheque</p>
+                </div>
+              </div>
+            </Card>
+
+            {/* Limites de Crédito */}
+            <Card className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-amber-100">
+                  <Wallet className="h-5 w-5 text-amber-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Limites Disponíveis</p>
+                  <p className="text-lg font-bold text-foreground">{formatCurrency(limiteGarantidaDisponivel + limiteChequeDisponivel)}</p>
+                  <p className="text-[10px] text-muted-foreground">Garantida + Cheque</p>
+                </div>
+              </div>
+            </Card>
+
+            {/* Investimentos */}
+            <Card className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-purple-100">
+                  <PiggyBank className="h-5 w-5 text-purple-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Investimentos</p>
+                  <p className="text-lg font-bold text-foreground">{formatCurrency(totalInvestimentoLiquido)}</p>
+                  <p className="text-[10px] text-muted-foreground">Resgate Automático</p>
+                </div>
+              </div>
+            </Card>
+          </div>
+
           {/* Header Bancos */}
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">Cadastre suas contas bancarias para selecionar ao marcar pagamentos</p>
@@ -1735,134 +2128,206 @@ export function FluxoCaixaContent() {
             </Button>
           </div>
 
-          {/* Tabela de Bancos */}
+          {/* Tabela de Bancos com KPIs */}
           <Card className="overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full">
+              <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border bg-muted/50">
-                    <th className="py-3 px-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      N Banco
+                    <th className="py-2 px-3 text-left text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                      Banco
                     </th>
-                    <th className="py-3 px-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      Agencia
+                    <th className="py-2 px-2 text-right text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                      Saldo CC
                     </th>
-                    <th className="py-3 px-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      Conta
+                    <th className="py-2 px-2 text-right text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                      Investimento
                     </th>
-                    <th className="py-3 px-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      Chave Pix
+                    <th className="py-2 px-2 text-right text-[10px] font-medium text-emerald-600 uppercase tracking-wider bg-emerald-50">
+                      Saldo Líquido
                     </th>
-                    <th className="py-3 px-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      Tipo
+                    <th className="py-2 px-2 text-right text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                      Cta Garantida
                     </th>
-                    <th className="py-3 px-4 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      Saldo
+                    <th className="py-2 px-2 text-right text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                      Cheque Esp.
                     </th>
-                    <th className="py-3 px-4 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      Conciliado
+                    <th className="py-2 px-2 text-right text-[10px] font-medium text-blue-600 uppercase tracking-wider bg-blue-50">
+                      Caixa Bruto
                     </th>
-                    <th className="py-3 px-4 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      Acoes
+                    <th className="py-2 px-2 text-center text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th className="py-2 px-2 text-right text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                      Ações
                     </th>
                   </tr>
                 </thead>
                 <tbody>
                   {loadingBancos ? (
                     <tr>
-                      <td colSpan="8" className="py-8 text-center text-sm text-muted-foreground">
+                      <td colSpan="9" className="py-8 text-center text-sm text-muted-foreground">
                         Carregando...
                       </td>
                     </tr>
                   ) : bancos.length === 0 ? (
                     <tr>
-                      <td colSpan="8" className="py-8 text-center text-sm text-muted-foreground">
+                      <td colSpan="9" className="py-8 text-center text-sm text-muted-foreground">
                         Nenhum banco cadastrado
                       </td>
                     </tr>
                   ) : (
-                    bancos.map((banco) => (
-                      <tr
-                        key={banco.id}
-                        className={`border-b border-border transition-colors ${banco.conciliadoEm ? 'bg-amber-100 hover:bg-amber-200' : 'hover:bg-muted/50'}`}
-                      >
-                        <td className="py-3 px-4 text-sm text-foreground">
-                          <span className="font-medium">{banco.codigo}</span>
-                          <span className="text-muted-foreground ml-2">({banco.nome})</span>
-                        </td>
-                        <td className="py-3 px-4 text-sm text-foreground">
-                          {banco.agencia}
-                        </td>
-                        <td className="py-3 px-4 text-sm text-foreground">
-                          {banco.conta}
-                        </td>
-                        <td className="py-3 px-4 text-sm">
-                          {banco.chavePix ? (
-                            <div className="flex items-center gap-2">
-                              <span className="text-blue-600 hover:underline cursor-pointer" onClick={() => copyToClipboard(banco.chavePix)}>
-                                {banco.chavePix}
-                              </span>
+                    bancos.map((banco) => {
+                      const saldoCC = saldosPorBanco[banco.id] || 0
+                      const investimento = Number(banco.saldoInvestimentoLiquido) || 0
+                      const saldoLiquidoBanco = saldoCC + investimento
+                      const limiteGarantida = Number(banco.limiteContaGarantida) || 0
+                      const usadoGarantida = Number(banco.utilizadoContaGarantida) || 0
+                      const disponivelGarantida = limiteGarantida - usadoGarantida
+                      const limiteCheque = Number(banco.limiteChequeEspecial) || 0
+                      // Cheque Especial é automático - calculado baseado no saldo CC negativo
+                      const usadoCheque = (saldoCC < 0 && limiteCheque > 0)
+                        ? Math.min(Math.abs(saldoCC), limiteCheque)
+                        : 0
+                      const disponivelCheque = limiteCheque - usadoCheque
+                      const caixaBrutoBanco = saldoLiquidoBanco + disponivelGarantida + disponivelCheque
+
+                      return (
+                        <tr
+                          key={banco.id}
+                          className={`border-b border-border transition-colors ${banco.conciliadoEm ? 'bg-amber-50 hover:bg-amber-100' : 'hover:bg-muted/50'}`}
+                        >
+                          {/* Banco */}
+                          <td className="py-2 px-3">
+                            <div>
+                              <span className="font-medium text-foreground">{banco.nome}</span>
+                              <p className="text-[10px] text-muted-foreground">
+                                Ag: {banco.agencia} | Cta: {banco.conta}
+                              </p>
+                            </div>
+                          </td>
+                          {/* Saldo CC */}
+                          <td className="py-2 px-2 text-right">
+                            <span className={`font-medium ${saldoCC < 0 ? 'text-red-600' : saldoCC > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
+                              {formatCurrency(saldoCC)}
+                            </span>
+                          </td>
+                          {/* Investimento */}
+                          <td className="py-2 px-2 text-right">
+                            <span className={investimento > 0 ? 'text-purple-600' : 'text-muted-foreground'}>
+                              {formatCurrency(investimento)}
+                            </span>
+                          </td>
+                          {/* Saldo Líquido */}
+                          <td className="py-2 px-2 text-right bg-emerald-50">
+                            <span className={`font-semibold ${saldoLiquidoBanco < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                              {formatCurrency(saldoLiquidoBanco)}
+                            </span>
+                          </td>
+                          {/* Conta Garantida */}
+                          <td className="py-2 px-2 text-right">
+                            {limiteGarantida > 0 ? (
+                              <div className="text-[10px]">
+                                <span className="text-amber-600 font-medium">{formatCurrency(disponivelGarantida)}</span>
+                                {usadoGarantida > 0 && (
+                                  <p className="text-orange-500">-{formatCurrency(usadoGarantida)}</p>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </td>
+                          {/* Cheque Especial */}
+                          <td className="py-2 px-2 text-right">
+                            {limiteCheque > 0 ? (
+                              <div className="text-[10px]">
+                                <span className="text-amber-600 font-medium">{formatCurrency(disponivelCheque)}</span>
+                                {usadoCheque > 0 && (
+                                  <p className="text-orange-500">-{formatCurrency(usadoCheque)}</p>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </td>
+                          {/* Caixa Bruto */}
+                          <td className="py-2 px-2 text-right bg-blue-50">
+                            <span className={`font-semibold ${caixaBrutoBanco < 0 ? 'text-red-600' : 'text-blue-600'}`}>
+                              {formatCurrency(caixaBrutoBanco)}
+                            </span>
+                          </td>
+                          {/* Status */}
+                          <td className="py-2 px-2 text-center">
+                            <button
+                              onClick={() => handleToggleConciliacao(banco.id, !!banco.conciliadoEm)}
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-muted transition-colors"
+                              title={banco.conciliadoEm ? `Conciliado em ${formatDate(banco.conciliadoEm)}` : 'Marcar como conciliado'}
+                            >
+                              {banco.conciliadoEm ? (
+                                <CheckCircle2 className="h-4 w-4 text-green-600" />
+                              ) : (
+                                <Circle className="h-4 w-4 text-muted-foreground" />
+                              )}
+                            </button>
+                          </td>
+                          {/* Ações */}
+                          <td className="py-2 px-2 text-right">
+                            <div className="flex items-center justify-end gap-0.5">
+                              {((limiteGarantida > 0) || (limiteCheque > 0)) && (
+                                <button
+                                  onClick={() => openUtilizarLimiteModal(banco, "utilizar")}
+                                  className="text-emerald-600 hover:text-emerald-700 p-1 rounded hover:bg-emerald-50"
+                                  title="Utilizar limite"
+                                >
+                                  <ArrowDownToLine className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                              {((usadoGarantida > 0) || (usadoCheque > 0)) && (
+                                <button
+                                  onClick={() => openUtilizarLimiteModal(banco, "devolver")}
+                                  className="text-orange-600 hover:text-orange-700 p-1 rounded hover:bg-orange-50"
+                                  title="Devolver limite"
+                                >
+                                  <ArrowUpFromLine className="h-3.5 w-3.5" />
+                                </button>
+                              )}
                               <button
-                                onClick={() => copyToClipboard(banco.chavePix)}
-                                className="text-muted-foreground hover:text-foreground"
-                                title="Copiar"
+                                onClick={() => openEditBancoModal(banco)}
+                                className="text-muted-foreground hover:text-foreground p-1"
+                                title="Editar"
                               >
-                                <Copy className="h-3 w-3" />
+                                <Edit className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteBanco(banco.id)}
+                                className="text-muted-foreground hover:text-red-600 p-1"
+                                title="Excluir"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
                               </button>
                             </div>
-                          ) : (
-                            <span className="text-muted-foreground">-</span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-sm text-foreground capitalize">
-                          {banco.tipoChavePix || "-"}
-                        </td>
-                        <td className="py-3 px-4 text-sm font-semibold text-right">
-                          <span className={saldosPorBanco[banco.id] < 0 ? 'text-red-600' : saldosPorBanco[banco.id] > 0 ? 'text-emerald-600' : 'text-foreground'}>
-                            {formatCurrency(saldosPorBanco[banco.id] || 0)}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <button
-                            onClick={() => handleToggleConciliacao(banco.id, !!banco.conciliadoEm)}
-                            className="inline-flex items-center gap-1.5 px-2 py-1 rounded hover:bg-muted transition-colors"
-                            title={banco.conciliadoEm ? `Conciliado em ${formatDate(banco.conciliadoEm)}` : 'Marcar como conciliado'}
-                          >
-                            {banco.conciliadoEm ? (
-                              <>
-                                <CheckCircle2 className="h-4 w-4 text-green-600" />
-                                <span className="text-xs text-green-600">{formatDate(banco.conciliadoEm)}</span>
-                              </>
-                            ) : (
-                              <>
-                                <Circle className="h-4 w-4 text-muted-foreground" />
-                                <span className="text-xs text-muted-foreground">Pendente</span>
-                              </>
-                            )}
-                          </button>
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              onClick={() => openEditBancoModal(banco)}
-                              className="text-muted-foreground hover:text-foreground"
-                              title="Editar"
-                            >
-                              <Edit className="h-4 w-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteBanco(banco.id)}
-                              className="text-muted-foreground hover:text-red-600"
-                              title="Excluir"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
+                          </td>
+                        </tr>
+                      )
+                    })
                   )}
                 </tbody>
+                {/* Footer com totais */}
+                {bancos.length > 0 && (
+                  <tfoot>
+                    <tr className="border-t-2 border-border bg-muted/30 font-semibold">
+                      <td className="py-2 px-3 text-foreground">TOTAL</td>
+                      <td className="py-2 px-2 text-right text-foreground">{formatCurrency(saldoTotalBancos)}</td>
+                      <td className="py-2 px-2 text-right text-purple-600">{formatCurrency(totalInvestimentoLiquido)}</td>
+                      <td className="py-2 px-2 text-right text-emerald-600 bg-emerald-50">{formatCurrency(saldoLiquido)}</td>
+                      <td className="py-2 px-2 text-right text-amber-600">{formatCurrency(limiteGarantidaDisponivel)}</td>
+                      <td className="py-2 px-2 text-right text-amber-600">{formatCurrency(limiteChequeDisponivel)}</td>
+                      <td className="py-2 px-2 text-right text-blue-600 bg-blue-50">{formatCurrency(caixaBruto)}</td>
+                      <td className="py-2 px-2"></td>
+                      <td className="py-2 px-2"></td>
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </div>
           </Card>
@@ -1964,6 +2429,284 @@ export function FluxoCaixaContent() {
         </>
       )}
 
+      {activeTab === "negativo" && (
+        <>
+          {/* KPIs de Limites */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Total Limites Disponíveis */}
+            <Card className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-emerald-100">
+                  <Wallet className="h-5 w-5 text-emerald-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Limites Disponíveis</p>
+                  <p className="text-lg font-bold text-emerald-600">
+                    {formatCurrency(limiteGarantidaDisponivel + limiteChequeDisponivel)}
+                  </p>
+                </div>
+              </div>
+            </Card>
+
+            {/* Total em Uso */}
+            <Card className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-orange-100">
+                  <TrendingDown className="h-5 w-5 text-orange-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Em Utilização</p>
+                  <p className="text-lg font-bold text-orange-600">
+                    {formatCurrency(totalUtilizadoContaGarantida + totalUtilizadoChequeEspecial)}
+                  </p>
+                </div>
+              </div>
+            </Card>
+
+            {/* Conta Garantida */}
+            <Card className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-amber-100">
+                  <Landmark className="h-5 w-5 text-amber-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Conta Garantida</p>
+                  <p className="text-lg font-bold">
+                    {formatCurrency(limiteGarantidaDisponivel)}
+                    <span className="text-xs font-normal text-muted-foreground">
+                      {" "}/ {formatCurrency(totalContaGarantida)}
+                    </span>
+                  </p>
+                </div>
+              </div>
+            </Card>
+
+            {/* Cheque Especial */}
+            <Card className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-blue-100">
+                  <CreditCard className="h-5 w-5 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Cheque Especial</p>
+                  <p className="text-lg font-bold">
+                    {formatCurrency(limiteChequeDisponivel)}
+                    <span className="text-xs font-normal text-muted-foreground">
+                      {" "}/ {formatCurrency(totalChequeEspecial)}
+                    </span>
+                  </p>
+                </div>
+              </div>
+            </Card>
+
+            {/* Investimentos */}
+            <Card className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-purple-100">
+                  <PiggyBank className="h-5 w-5 text-purple-600" />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Investimentos</p>
+                  <p className="text-lg font-bold text-purple-600">
+                    {formatCurrency(totalInvestimentoLiquido)}
+                  </p>
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              Visualize e gerencie seus limites de crédito por banco
+            </p>
+          </div>
+
+          {/* Lista de Bancos com Limites ou Investimentos */}
+          {bancos.filter(b =>
+            (Number(b.limiteContaGarantida) > 0) || (Number(b.limiteChequeEspecial) > 0) || (Number(b.saldoInvestimentoLiquido) > 0)
+          ).length === 0 ? (
+            <Card className="p-12 text-center">
+              <Wallet className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-foreground mb-2">
+                Nenhum limite ou investimento cadastrado
+              </h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Configure limites de crédito ou investimentos nos seus bancos.
+              </p>
+              <Button onClick={() => setActiveTab("bancos")}>
+                Ir para Bancos
+              </Button>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {bancos
+                .filter(b => (Number(b.limiteContaGarantida) > 0) || (Number(b.limiteChequeEspecial) > 0) || (Number(b.saldoInvestimentoLiquido) > 0))
+                .map((banco) => {
+                  const saldoCC = saldosPorBanco[banco.id] || 0
+                  const limiteGarantida = Number(banco.limiteContaGarantida) || 0
+                  const usadoGarantida = Number(banco.utilizadoContaGarantida) || 0
+                  const percentGarantida = limiteGarantida > 0
+                    ? (usadoGarantida / limiteGarantida) * 100
+                    : 0
+
+                  const limiteCheque = Number(banco.limiteChequeEspecial) || 0
+                  // Cheque Especial é automático - calculado baseado no saldo CC negativo
+                  const usadoCheque = (saldoCC < 0 && limiteCheque > 0)
+                    ? Math.min(Math.abs(saldoCC), limiteCheque)
+                    : 0
+                  const percentCheque = limiteCheque > 0
+                    ? (usadoCheque / limiteCheque) * 100
+                    : 0
+
+                  const saldoInvestimento = Number(banco.saldoInvestimentoLiquido) || 0
+
+                  return (
+                    <Card key={banco.id} className="p-4">
+                      {/* Header do Banco */}
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 rounded-lg bg-muted">
+                            <Building2 className="h-5 w-5 text-foreground" />
+                          </div>
+                          <div>
+                            <p className="font-semibold text-foreground">{banco.nome}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Ag: {banco.agencia} | Cta: {banco.conta}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex gap-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openUtilizarLimiteModal(banco, "utilizar")}
+                            disabled={(limiteGarantida - usadoGarantida) <= 0 && saldoInvestimento === 0}
+                          >
+                            <ArrowDownToLine className="h-4 w-4 mr-1" />
+                            Sacar
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openUtilizarLimiteModal(banco, "devolver")}
+                          >
+                            <ArrowUpFromLine className="h-4 w-4 mr-1" />
+                            Aplicar
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Linha: Conta Garantida */}
+                      {limiteGarantida > 0 && (
+                        <div className="mb-4">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-sm font-medium flex items-center gap-1.5">
+                              <Landmark className="h-4 w-4 text-amber-600" />
+                              Conta Garantida
+                            </span>
+                            <span className="text-sm">
+                              <span className={usadoGarantida > 0 ? "text-orange-600 font-medium" : "text-muted-foreground"}>
+                                {formatCurrency(usadoGarantida)}
+                              </span>
+                              <span className="text-muted-foreground"> / {formatCurrency(limiteGarantida)}</span>
+                            </span>
+                          </div>
+                          {/* Barra de Progresso */}
+                          <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${
+                                percentGarantida >= 80
+                                  ? 'bg-red-500'
+                                  : percentGarantida >= 50
+                                    ? 'bg-orange-500'
+                                    : 'bg-emerald-500'
+                              }`}
+                              style={{ width: `${Math.min(percentGarantida, 100)}%` }}
+                            />
+                          </div>
+                          <div className="flex justify-between mt-1 text-[10px] text-muted-foreground">
+                            <span>{percentGarantida.toFixed(1)}% utilizado</span>
+                            <span className="text-emerald-600">
+                              {formatCurrency(limiteGarantida - usadoGarantida)} disponível
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Linha: Cheque Especial (Automático) */}
+                      {limiteCheque > 0 && (
+                        <div className="mb-4 p-3 rounded-lg bg-blue-50/50 border border-blue-100">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-sm font-medium flex items-center gap-1.5">
+                              <CreditCard className="h-4 w-4 text-blue-600" />
+                              Cheque Especial
+                              <span className="text-[10px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded">Automático</span>
+                            </span>
+                            <span className="text-sm">
+                              <span className={usadoCheque > 0 ? "text-orange-600 font-medium" : "text-muted-foreground"}>
+                                {formatCurrency(usadoCheque)}
+                              </span>
+                              <span className="text-muted-foreground"> / {formatCurrency(limiteCheque)}</span>
+                            </span>
+                          </div>
+                          {/* Barra de Progresso */}
+                          <div className="h-2 bg-blue-100 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${
+                                percentCheque >= 80
+                                  ? 'bg-red-500'
+                                  : percentCheque >= 50
+                                    ? 'bg-orange-500'
+                                    : 'bg-blue-500'
+                              }`}
+                              style={{ width: `${Math.min(percentCheque, 100)}%` }}
+                            />
+                          </div>
+                          <div className="flex justify-between mt-1 text-[10px] text-muted-foreground">
+                            <span>Usado quando o saldo fica negativo</span>
+                            <span className="text-blue-600">
+                              {formatCurrency(limiteCheque - usadoCheque)} disponível
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Linha: Investimento Líquido */}
+                      {saldoInvestimento > 0 && (
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-sm font-medium flex items-center gap-1.5">
+                              <PiggyBank className="h-4 w-4 text-purple-600" />
+                              Investimento Líquido
+                            </span>
+                            <span className="text-sm font-medium text-purple-600">
+                              {formatCurrency(saldoInvestimento)}
+                            </span>
+                          </div>
+                          {/* Barra de Saldo (100% = saldo atual) */}
+                          <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all duration-500 bg-purple-500"
+                              style={{ width: '100%' }}
+                            />
+                          </div>
+                          <div className="flex justify-between mt-1 text-[10px] text-muted-foreground">
+                            <span>Resgate automático disponível</span>
+                            <span className="text-purple-600">
+                              {formatCurrency(saldoInvestimento)} disponível
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </Card>
+                  )
+                })}
+            </div>
+          )}
+        </>
+      )}
+
       {/* Dropdown de seleção de banco - renderizado fora da tabela */}
       {openBancoDropdown !== null && (
         <>
@@ -2018,7 +2761,7 @@ export function FluxoCaixaContent() {
       {/* Modal Banco */}
       {showBancoModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <Card className="w-full max-w-md">
+          <Card className="w-full max-w-lg">
             <div className="flex items-center justify-between p-4 border-b border-border">
               <h2 className="text-lg font-semibold text-foreground">
                 {editingBanco ? "Editar Banco" : "Novo Banco"}
@@ -2028,88 +2771,309 @@ export function FluxoCaixaContent() {
               </Button>
             </div>
 
-            <form onSubmit={handleSaveBanco} className="p-4 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Nome do Banco *</label>
-                  <Input
-                    placeholder="Bradesco"
-                    value={bancoForm.nome}
-                    onChange={(e) => setBancoForm({ ...bancoForm, nome: e.target.value })}
-                    required
-                  />
+            <form onSubmit={handleSaveBanco} className="p-4 space-y-5">
+              {/* Dados Principais */}
+              <div className="space-y-3">
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Dados do Banco</h3>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="col-span-2 space-y-1.5">
+                    <label className="text-sm font-medium text-foreground">Nome do Banco *</label>
+                    <Input
+                      placeholder="Bradesco"
+                      value={bancoForm.nome}
+                      onChange={(e) => setBancoForm({ ...bancoForm, nome: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-foreground">Código</label>
+                    <Input
+                      placeholder="237"
+                      value={bancoForm.codigo}
+                      onChange={(e) => setBancoForm({ ...bancoForm, codigo: e.target.value })}
+                    />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Saldo Inicial *</label>
-                  <CurrencyInput
-                    value={bancoForm.saldoInicial}
-                    onValueChange={(val) => setBancoForm({ ...bancoForm, saldoInicial: val })}
-                    placeholder="R$ 0,00"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Codigo do Banco</label>
-                  <Input
-                    placeholder="237"
-                    value={bancoForm.codigo}
-                    onChange={(e) => setBancoForm({ ...bancoForm, codigo: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Agencia</label>
-                  <Input
-                    placeholder="1692"
-                    value={bancoForm.agencia}
-                    onChange={(e) => setBancoForm({ ...bancoForm, agencia: e.target.value })}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Conta</label>
-                  <Input
-                    placeholder="62419-1"
-                    value={bancoForm.conta}
-                    onChange={(e) => setBancoForm({ ...bancoForm, conta: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Chave Pix</label>
-                  <Input
-                    placeholder="email@exemplo.com ou celular"
-                    value={bancoForm.chavePix}
-                    onChange={(e) => setBancoForm({ ...bancoForm, chavePix: e.target.value })}
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-foreground">Agência</label>
+                    <Input
+                      placeholder="1692"
+                      value={bancoForm.agencia}
+                      onChange={(e) => setBancoForm({ ...bancoForm, agencia: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-foreground">Conta</label>
+                    <Input
+                      placeholder="62419-1"
+                      value={bancoForm.conta}
+                      onChange={(e) => setBancoForm({ ...bancoForm, conta: e.target.value })}
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">Tipo da Chave Pix</label>
-                <select
-                  value={bancoForm.tipoChavePix}
-                  onChange={(e) => setBancoForm({ ...bancoForm, tipoChavePix: e.target.value })}
-                  className="w-full h-10 px-3 rounded-md border border-border bg-white text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                >
-                  <option value="">Selecione...</option>
-                  <option value="celular">Celular</option>
-                  <option value="email">E-mail</option>
-                  <option value="cpf">CPF</option>
-                  <option value="cnpj">CNPJ</option>
-                  <option value="aleatoria">Chave Aleatoria</option>
-                </select>
+              {/* Pix */}
+              <div className="space-y-3">
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Chave Pix</h3>
+                <div className="grid grid-cols-5 gap-3">
+                  <div className="col-span-2 space-y-1.5">
+                    <label className="text-sm font-medium text-foreground">Tipo</label>
+                    <select
+                      value={bancoForm.tipoChavePix}
+                      onChange={(e) => setBancoForm({ ...bancoForm, tipoChavePix: e.target.value })}
+                      className="w-full h-10 px-3 rounded-md border border-border bg-white text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="">Selecione...</option>
+                      <option value="celular">Celular</option>
+                      <option value="email">E-mail</option>
+                      <option value="cpf">CPF</option>
+                      <option value="cnpj">CNPJ</option>
+                      <option value="aleatoria">Aleatória</option>
+                    </select>
+                  </div>
+                  <div className="col-span-3 space-y-1.5">
+                    <label className="text-sm font-medium text-foreground">Chave</label>
+                    <Input
+                      placeholder="email@exemplo.com ou celular"
+                      value={bancoForm.chavePix}
+                      onChange={(e) => setBancoForm({ ...bancoForm, chavePix: e.target.value })}
+                    />
+                  </div>
+                </div>
               </div>
 
-              <div className="flex gap-3 pt-4">
+              {/* Saldos e Limites */}
+              <div className="space-y-3">
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Saldos e Limites</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-foreground">Saldo Inicial *</label>
+                    <CurrencyInput
+                      value={bancoForm.saldoInicial}
+                      onValueChange={(val) => setBancoForm({ ...bancoForm, saldoInicial: val })}
+                      placeholder="R$ 0,00"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-foreground">Invest. Líquido</label>
+                    <CurrencyInput
+                      value={bancoForm.saldoInvestimentoLiquido}
+                      onValueChange={(val) => setBancoForm({ ...bancoForm, saldoInvestimentoLiquido: val })}
+                      placeholder="R$ 0,00"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-foreground">Conta Garantida</label>
+                    <CurrencyInput
+                      value={bancoForm.limiteContaGarantida}
+                      onValueChange={(val) => setBancoForm({ ...bancoForm, limiteContaGarantida: val })}
+                      placeholder="R$ 0,00"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-foreground">Cheque Especial</label>
+                    <CurrencyInput
+                      value={bancoForm.limiteChequeEspecial}
+                      onValueChange={(val) => setBancoForm({ ...bancoForm, limiteChequeEspecial: val })}
+                      placeholder="R$ 0,00"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
                 <Button type="button" variant="outline" className="flex-1" onClick={() => setShowBancoModal(false)}>
                   Cancelar
                 </Button>
                 <Button type="submit" className="flex-1">
                   {editingBanco ? "Salvar" : "Cadastrar"}
+                </Button>
+              </div>
+            </form>
+          </Card>
+        </div>
+      )}
+
+      {/* Modal Utilizar/Devolver Limite/Investimento */}
+      {showUtilizarLimiteModal && bancoParaUtilizar && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <Card className="w-full max-w-md">
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <h2 className="text-lg font-semibold text-foreground">
+                {utilizarLimiteForm.tipo === "investimento"
+                  ? (utilizarLimiteForm.operacao === "utilizar" ? "Resgatar Investimento" : "Aplicar Investimento")
+                  : (utilizarLimiteForm.operacao === "utilizar" ? "Utilizar Limite" : "Devolver Limite")}
+              </h2>
+              <button
+                onClick={() => setShowUtilizarLimiteModal(false)}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <form onSubmit={handleUtilizarLimite} className="p-4 space-y-4">
+              <div className="p-3 bg-muted/50 rounded-lg">
+                <p className="text-sm font-medium text-foreground">{bancoParaUtilizar.nome}</p>
+                <p className="text-xs text-muted-foreground">Ag: {bancoParaUtilizar.agencia} | Conta: {bancoParaUtilizar.conta}</p>
+              </div>
+
+              {/* Tipo de Operação */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Tipo de Operação</label>
+                <div className="grid grid-cols-1 gap-2">
+                  {/* Investimento - Sacar */}
+                  {((utilizarLimiteForm.operacao === "utilizar" && (bancoParaUtilizar.saldoInvestimentoLiquido || 0) > 0) ||
+                    (utilizarLimiteForm.operacao === "devolver")) && (
+                    <button
+                      type="button"
+                      onClick={() => setUtilizarLimiteForm({ ...utilizarLimiteForm, tipo: "investimento" })}
+                      className={`p-3 rounded-lg border text-left transition-colors ${
+                        utilizarLimiteForm.tipo === "investimento"
+                          ? "border-purple-500 bg-purple-50"
+                          : "border-border hover:bg-muted/50"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <PiggyBank className="h-4 w-4 text-purple-600" />
+                        <p className="text-sm font-medium">Investimento Líquido</p>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {utilizarLimiteForm.operacao === "utilizar"
+                          ? `Saldo: ${formatCurrency(bancoParaUtilizar.saldoInvestimentoLiquido || 0)}`
+                          : "Aplicar valor no investimento"
+                        }
+                      </p>
+                    </button>
+                  )}
+
+                  {/* Conta Garantida */}
+                  {((utilizarLimiteForm.operacao === "utilizar" && bancoParaUtilizar.limiteContaGarantida > 0) ||
+                    (utilizarLimiteForm.operacao === "devolver" && bancoParaUtilizar.utilizadoContaGarantida > 0)) && (
+                    <button
+                      type="button"
+                      onClick={() => setUtilizarLimiteForm({ ...utilizarLimiteForm, tipo: "conta_garantida" })}
+                      className={`p-3 rounded-lg border text-left transition-colors ${
+                        utilizarLimiteForm.tipo === "conta_garantida"
+                          ? "border-amber-500 bg-amber-50"
+                          : "border-border hover:bg-muted/50"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Landmark className="h-4 w-4 text-amber-600" />
+                        <p className="text-sm font-medium">Conta Garantida</p>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {utilizarLimiteForm.operacao === "utilizar"
+                          ? `Disponível: ${formatCurrency((bancoParaUtilizar.limiteContaGarantida || 0) - (bancoParaUtilizar.utilizadoContaGarantida || 0))}`
+                          : `Utilizado: ${formatCurrency(bancoParaUtilizar.utilizadoContaGarantida || 0)}`
+                        }
+                      </p>
+                    </button>
+                  )}
+
+                  {/* Cheque Especial - Apenas informativo, não pode ser utilizado manualmente */}
+                  {(bancoParaUtilizar.limiteChequeEspecial > 0) && (() => {
+                    const saldoCCBanco = saldosPorBanco[bancoParaUtilizar.id] || 0
+                    const limiteCheque = Number(bancoParaUtilizar.limiteChequeEspecial) || 0
+                    const chequeEmUso = (saldoCCBanco < 0 && limiteCheque > 0)
+                      ? Math.min(Math.abs(saldoCCBanco), limiteCheque)
+                      : 0
+                    return (
+                      <div className="p-3 rounded-lg border border-blue-200 bg-blue-50/50 text-left">
+                        <div className="flex items-center gap-2">
+                          <CreditCard className="h-4 w-4 text-blue-600" />
+                          <p className="text-sm font-medium text-blue-800">Cheque Especial</p>
+                          <span className="text-[10px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded">Automático</span>
+                        </div>
+                        <p className="text-xs text-blue-600 mt-1">
+                          Limite: {formatCurrency(limiteCheque)}
+                          {chequeEmUso > 0 && (
+                            <span className="text-orange-600"> | Em uso: {formatCurrency(chequeEmUso)}</span>
+                          )}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground mt-1">
+                          Usado automaticamente quando o saldo da conta fica negativo
+                        </p>
+                      </div>
+                    )
+                  })()}
+                </div>
+              </div>
+
+              {/* Valor */}
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-foreground">
+                  {utilizarLimiteForm.tipo === "investimento"
+                    ? (utilizarLimiteForm.operacao === "utilizar" ? "Valor a resgatar" : "Valor a aplicar")
+                    : (utilizarLimiteForm.operacao === "utilizar" ? "Valor a utilizar" : "Valor a devolver")}
+                </label>
+                <CurrencyInput
+                  value={utilizarLimiteForm.valor}
+                  onValueChange={(val) => setUtilizarLimiteForm({ ...utilizarLimiteForm, valor: val })}
+                  placeholder="R$ 0,00"
+                  required
+                />
+              </div>
+
+              {/* Info */}
+              <div className={`p-3 rounded-lg text-sm ${
+                utilizarLimiteForm.tipo === "investimento"
+                  ? (utilizarLimiteForm.operacao === "utilizar" ? "bg-purple-50 text-purple-700" : "bg-purple-50 text-purple-700")
+                  : (utilizarLimiteForm.operacao === "utilizar" ? "bg-emerald-50 text-emerald-700" : "bg-orange-50 text-orange-700")
+              }`}>
+                {utilizarLimiteForm.tipo === "investimento" ? (
+                  utilizarLimiteForm.operacao === "utilizar" ? (
+                    <p>O valor será resgatado do investimento e creditado na conta corrente.</p>
+                  ) : (
+                    <p>O valor será debitado da conta corrente e aplicado no investimento.</p>
+                  )
+                ) : utilizarLimiteForm.operacao === "utilizar" ? (
+                  <p>O valor será creditado na conta corrente e registrado como entrada no fluxo de caixa.</p>
+                ) : (
+                  <p>O valor será debitado da conta corrente e registrado como saída no fluxo de caixa.</p>
+                )}
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <Button type="button" variant="outline" className="flex-1" onClick={() => setShowUtilizarLimiteModal(false)}>
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  className={`flex-1 ${
+                    utilizarLimiteForm.tipo === "investimento"
+                      ? "bg-purple-600 hover:bg-purple-700"
+                      : utilizarLimiteForm.operacao === "utilizar"
+                        ? "bg-emerald-600 hover:bg-emerald-700"
+                        : "bg-orange-600 hover:bg-orange-700"
+                  }`}
+                >
+                  {utilizarLimiteForm.tipo === "investimento" ? (
+                    utilizarLimiteForm.operacao === "utilizar" ? (
+                      <>
+                        <ArrowDownToLine className="h-4 w-4 mr-2" />
+                        Resgatar
+                      </>
+                    ) : (
+                      <>
+                        <ArrowUpFromLine className="h-4 w-4 mr-2" />
+                        Aplicar
+                      </>
+                    )
+                  ) : utilizarLimiteForm.operacao === "utilizar" ? (
+                    <>
+                      <ArrowDownToLine className="h-4 w-4 mr-2" />
+                      Utilizar
+                    </>
+                  ) : (
+                    <>
+                      <ArrowUpFromLine className="h-4 w-4 mr-2" />
+                      Devolver
+                    </>
+                  )}
                 </Button>
               </div>
             </form>

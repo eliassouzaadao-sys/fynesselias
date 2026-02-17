@@ -207,6 +207,59 @@ export async function POST(request) {
       },
     });
 
+    // Verificar e atualizar Cheque Especial automaticamente baseado no saldo
+    if (data.bancoId) {
+      const banco = await prisma.banco.findUnique({
+        where: { id: data.bancoId },
+        select: {
+          id: true,
+          saldoInicial: true,
+          limiteChequeEspecial: true,
+          utilizadoChequeEspecial: true,
+        }
+      });
+
+      if (banco && banco.limiteChequeEspecial > 0) {
+        // Calcular saldo atual do banco (saldoInicial + entradas - saídas)
+        const movimentacoes = await prisma.fluxoCaixa.findMany({
+          where: { bancoId: data.bancoId, userId: user.id },
+          select: { tipo: true, valor: true }
+        });
+
+        let saldoCC = banco.saldoInicial || 0;
+        for (const mov of movimentacoes) {
+          if (mov.tipo === 'entrada') {
+            saldoCC += Number(mov.valor);
+          } else {
+            saldoCC -= Number(mov.valor);
+          }
+        }
+
+        const chequeUtilizadoAtual = banco.utilizadoChequeEspecial || 0;
+
+        if (saldoCC < 0) {
+          // Saldo negativo - calcular quanto do Cheque Especial deve estar em uso
+          const valorNegativo = Math.abs(saldoCC);
+          const novoUtilizado = Math.min(valorNegativo, banco.limiteChequeEspecial);
+
+          if (novoUtilizado !== chequeUtilizadoAtual) {
+            await prisma.banco.update({
+              where: { id: banco.id },
+              data: { utilizadoChequeEspecial: novoUtilizado }
+            });
+            console.log(`💳 Cheque Especial ajustado: ${chequeUtilizadoAtual} → ${novoUtilizado} (saldo CC: ${saldoCC})`);
+          }
+        } else if (chequeUtilizadoAtual > 0) {
+          // Saldo positivo mas Cheque Especial estava em uso - zerar
+          await prisma.banco.update({
+            where: { id: banco.id },
+            data: { utilizadoChequeEspecial: 0 }
+          });
+          console.log(`💳 Cheque Especial quitado automaticamente (saldo CC: ${saldoCC})`);
+        }
+      }
+    }
+
     // Se for sócio e for saída SEM conta associada (lançamento direto), atualizar descontoReal
     // Se tiver contaId, a conta será contada na query de contas pagas, então não precisa duplicar aqui
     if (socioId && data.tipo === 'saida' && !contaId) {

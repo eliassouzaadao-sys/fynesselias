@@ -56,6 +56,21 @@ export async function POST(request: NextRequest) {
     if (data.saldoInicial !== undefined) {
       createData.saldoInicial = Number(data.saldoInicial);
     }
+    if (data.limiteContaGarantida !== undefined) {
+      createData.limiteContaGarantida = Number(data.limiteContaGarantida);
+    }
+    if (data.utilizadoContaGarantida !== undefined) {
+      createData.utilizadoContaGarantida = Number(data.utilizadoContaGarantida);
+    }
+    if (data.limiteChequeEspecial !== undefined) {
+      createData.limiteChequeEspecial = Number(data.limiteChequeEspecial);
+    }
+    if (data.utilizadoChequeEspecial !== undefined) {
+      createData.utilizadoChequeEspecial = Number(data.utilizadoChequeEspecial);
+    }
+    if (data.saldoInvestimentoLiquido !== undefined) {
+      createData.saldoInvestimentoLiquido = Number(data.saldoInvestimentoLiquido);
+    }
 
     const banco = await prisma.banco.create({
       data: createData,
@@ -123,6 +138,11 @@ export async function PUT(request: NextRequest) {
     if (data.chavePix !== undefined) updateData.chavePix = data.chavePix || null;
     if (data.tipoChavePix !== undefined) updateData.tipoChavePix = data.tipoChavePix || null;
     if (data.saldoInicial !== undefined) updateData.saldoInicial = Number(data.saldoInicial);
+    if (data.limiteContaGarantida !== undefined) updateData.limiteContaGarantida = Number(data.limiteContaGarantida);
+    if (data.utilizadoContaGarantida !== undefined) updateData.utilizadoContaGarantida = Number(data.utilizadoContaGarantida);
+    if (data.limiteChequeEspecial !== undefined) updateData.limiteChequeEspecial = Number(data.limiteChequeEspecial);
+    if (data.utilizadoChequeEspecial !== undefined) updateData.utilizadoChequeEspecial = Number(data.utilizadoChequeEspecial);
+    if (data.saldoInvestimentoLiquido !== undefined) updateData.saldoInvestimentoLiquido = Number(data.saldoInvestimentoLiquido);
 
     // Conciliação bancária
     if (data.conciliar !== undefined) {

@@ -23,9 +23,9 @@ const menuItems = [
   { href: "/comparativo", label: "Comparativo", icon: GitCompare },
   { href: "/contas", label: "Contas a Pagar e Receber", icon: FileText },
   { href: "/caixa", label: "Fluxo de Caixa", icon: Wallet },
-  { href: "/socios", label: "Sócios", icon: Users },
+  { href: "/folha-salarial", label: "Folha salarial", icon: Users },
   { href: "/fornecedores", label: "Fornecedores", icon: Truck },
-  { href: "/dre", label: "DRE", icon: BarChart3 },
+  { href: "/dre", label: "Relatórios", icon: BarChart3 },
 ]
 
 // Item de menu memoizado para evitar re-renders desnecessários

@@ -21,6 +21,8 @@ const mockContas = [
     saldo: 45230.5,
     limiteCredito: 50000,
     limiteChequeEspecial: 15000,
+    limiteContaGarantida: 100000,
+    saldoInvestimentoLiquido: 25000,
     utilizadoChequeEspecial: 0,
   },
   {
@@ -32,6 +34,8 @@ const mockContas = [
     saldo: 32150.0,
     limiteCredito: 80000,
     limiteChequeEspecial: 20000,
+    limiteContaGarantida: 50000,
+    saldoInvestimentoLiquido: 0,
     utilizadoChequeEspecial: 5000,
   },
   {
@@ -43,6 +47,8 @@ const mockContas = [
     saldo: 18500.0,
     limiteCredito: 30000,
     limiteChequeEspecial: 10000,
+    limiteContaGarantida: 0,
+    saldoInvestimentoLiquido: 15000,
     utilizadoChequeEspecial: 0,
   },
   {
@@ -54,6 +60,8 @@ const mockContas = [
     saldo: 8750.0,
     limiteCredito: 25000,
     limiteChequeEspecial: 0,
+    limiteContaGarantida: 0,
+    saldoInvestimentoLiquido: 0,
     utilizadoChequeEspecial: 0,
   },
   {
@@ -65,6 +73,8 @@ const mockContas = [
     saldo: 15320.82,
     limiteCredito: 40000,
     limiteChequeEspecial: 8000,
+    limiteContaGarantida: 75000,
+    saldoInvestimentoLiquido: 30000,
     utilizadoChequeEspecial: 0,
   },
 ]
@@ -82,6 +92,8 @@ export function ContasBancariasContent() {
     saldo: "",
     limiteCredito: "",
     limiteChequeEspecial: "",
+    limiteContaGarantida: "",
+    saldoInvestimentoLiquido: "",
   })
 
   const saldoTotal = contas.reduce((acc, c) => acc + c.saldo, 0)
@@ -100,6 +112,8 @@ export function ContasBancariasContent() {
         saldo: conta.saldo.toString(),
         limiteCredito: conta.limiteCredito.toString(),
         limiteChequeEspecial: conta.limiteChequeEspecial.toString(),
+        limiteContaGarantida: (conta.limiteContaGarantida || 0).toString(),
+        saldoInvestimentoLiquido: (conta.saldoInvestimentoLiquido || 0).toString(),
       })
       setModalStep(2)
     } else {
@@ -112,6 +126,8 @@ export function ContasBancariasContent() {
         saldo: "",
         limiteCredito: "",
         limiteChequeEspecial: "",
+        limiteContaGarantida: "",
+        saldoInvestimentoLiquido: "",
       })
       setModalStep(1)
     }
@@ -141,6 +157,8 @@ export function ContasBancariasContent() {
       saldo: Number.parseFloat(formData.saldo) || 0,
       limiteCredito: Number.parseFloat(formData.limiteCredito) || 0,
       limiteChequeEspecial: Number.parseFloat(formData.limiteChequeEspecial) || 0,
+      limiteContaGarantida: Number.parseFloat(formData.limiteContaGarantida) || 0,
+      saldoInvestimentoLiquido: Number.parseFloat(formData.saldoInvestimentoLiquido) || 0,
       utilizadoChequeEspecial: editingConta?.utilizadoChequeEspecial || 0,
     }
 
@@ -250,7 +268,7 @@ export function ContasBancariasContent() {
         isOpen={isModalOpen && modalStep === 2}
         onClose={handleCloseModal}
         title={editingConta ? `Editar Conta - ${selectedBank?.name}` : `Nova Conta - ${selectedBank?.name}`}
-        size="md"
+        size="lg"
         variant="light"
       >
         <div className="space-y-4">
@@ -335,6 +353,29 @@ export function ContasBancariasContent() {
                 type="number"
                 value={formData.limiteChequeEspecial}
                 onChange={(e) => setFormData({ ...formData, limiteChequeEspecial: e.target.value })}
+                placeholder="0,00"
+                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">Conta Garantida/Rotativo</label>
+              <input
+                type="number"
+                value={formData.limiteContaGarantida}
+                onChange={(e) => setFormData({ ...formData, limiteContaGarantida: e.target.value })}
+                placeholder="0,00"
+                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">Investimento Resgate Automático</label>
+              <input
+                type="number"
+                value={formData.saldoInvestimentoLiquido}
+                onChange={(e) => setFormData({ ...formData, saldoInvestimentoLiquido: e.target.value })}
                 placeholder="0,00"
                 className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               />

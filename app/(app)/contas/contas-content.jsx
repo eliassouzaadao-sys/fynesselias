@@ -6,7 +6,7 @@ import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { formatCurrency, formatDate } from "@/lib/format"
-import { Plus, Download, Search, ArrowUpCircle, ArrowDownCircle, X, Trash2, Edit, ChevronRight, ChevronDown, Layers, RefreshCw, Filter } from "lucide-react"
+import { Plus, Download, Search, ArrowUpCircle, ArrowDownCircle, X, Trash2, Edit, ChevronRight, ChevronDown, Layers, RefreshCw } from "lucide-react"
 import {
   Popover,
   PopoverContent,
@@ -100,7 +100,6 @@ export function ContasContent() {
   const [filtroDescricao, setFiltroDescricao] = useState("")
   const [filtroNfParcela, setFiltroNfParcela] = useState("")
   const [filtroValor, setFiltroValor] = useState([])
-  const [showFiltrosAvancados, setShowFiltrosAvancados] = useState(false)
 
   // Estados para opções de filtros automáticos
   const [centrosFiltro, setCentrosFiltro] = useState([])
@@ -651,25 +650,6 @@ export function ContasContent() {
             </Button>
           </div>
 
-          {/* Botão Filtros Avançados */}
-          <Button
-            variant={showFiltrosAvancados ? "default" : "outline"}
-            size="sm"
-            onClick={() => setShowFiltrosAvancados(!showFiltrosAvancados)}
-            className="h-9"
-          >
-            <Filter className="h-4 w-4 mr-2" />
-            Filtros
-            {(() => {
-              const count = (dataInicio ? 1 : 0) + (dataFim ? 1 : 0) + filtroTipo.length + filtroStatus.length + filtroCodigoTipo.length + filtroFornecedor.length + (filtroDescricao ? 1 : 0) + (filtroNfParcela ? 1 : 0) + filtroValor.length
-              return count > 0 ? (
-                <Badge className="ml-2 h-5 w-5 p-0 flex items-center justify-center text-xs">
-                  {count}
-                </Badge>
-              ) : null
-            })()}
-          </Button>
-
           {temFiltro && (
             <Button variant="ghost" size="sm" onClick={limparFiltros} className="h-9 text-destructive hover:text-destructive">
               <X className="h-4 w-4 mr-1" />
@@ -678,10 +658,9 @@ export function ContasContent() {
           )}
         </div>
 
-        {/* Filtros Avançados (Expansível) */}
-        {showFiltrosAvancados && (
-          <div className="mt-4 pt-4 border-t border-border">
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+        {/* Filtros Avançados (Sempre Visíveis) */}
+        <div className="mt-4 pt-4 border-t border-border">
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
               {/* Tipo - Seleção Múltipla */}
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-muted-foreground">Tipo</label>
@@ -737,8 +716,7 @@ export function ContasContent() {
                          filtroStatus.length === 1 ?
                            (filtroStatus[0] === "em_dia" ? "Em dia" :
                             filtroStatus[0] === "atencao" ? "Atenção" :
-                            filtroStatus[0] === "atrasada" ? "Atrasado" :
-                            filtroStatus[0] === "paga" ? "Paga" : "Cancelada") :
+                            filtroStatus[0] === "atrasada" ? "Atrasado" : "Paga") :
                          `${filtroStatus.length} selecionados`}
                       </span>
                       <ChevronDown className="h-3 w-3 opacity-50" />
@@ -750,8 +728,7 @@ export function ContasContent() {
                         { value: "em_dia", label: "Em dia" },
                         { value: "atencao", label: "Atenção" },
                         { value: "atrasada", label: "Atrasado" },
-                        { value: "paga", label: "Paga" },
-                        { value: "cancelada", label: "Cancelada" }
+                        { value: "paga", label: "Paga" }
                       ].map(status => (
                         <label key={status.value} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer">
                           <input
@@ -916,7 +893,6 @@ export function ContasContent() {
               </div>
             </div>
           </div>
-        )}
       </Card>
 
       {/* Tabela de Contas */}

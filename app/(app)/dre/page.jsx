@@ -1,9 +1,9 @@
-import { DreContent } from "./dre-content"
+import { RelatoriosContent } from "./relatorios-content"
 
 export const metadata = {
-  title: "DRE - Fynness",
+  title: "Relatorios - Fynness",
 }
 
-export default function DrePage() {
-  return <DreContent />
+export default function RelatoriosPage() {
+  return <RelatoriosContent />
 }

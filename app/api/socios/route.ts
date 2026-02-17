@@ -4,7 +4,7 @@ import { getCurrentUser } from "@/lib/get-user";
 import { getEmpresaIdValidada } from "@/lib/get-empresa";
 
 // GET - Lista todos os sócios do usuário
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const user = await getCurrentUser();
     if (!user) {
@@ -12,6 +12,11 @@ export async function GET() {
     }
 
     const empresaId = await getEmpresaIdValidada(user.id);
+
+    // Extrair parâmetros de data da URL
+    const { searchParams } = new URL(request.url);
+    const dataInicioParam = searchParams.get('dataInicio');
+    const dataFimParam = searchParams.get('dataFim');
 
     // Buscar o centro de custo pai PRO-LABORE da empresa
     const whereCentroPai: any = { sigla: "PRO-LABORE", userId: user.id };
@@ -43,15 +48,26 @@ export async function GET() {
     };
     if (empresaId) whereSocios.empresaId = empresaId;
 
+    // Construir filtro de contas do sócio
+    const whereContasResponsavel: any = {
+      pago: true,
+      status: { not: "cancelado" },
+    };
+    // Se há filtro de período, filtra por vencimento (mais confiável que dataPagamento que pode ser null)
+    if (dataInicioParam && dataFimParam) {
+      whereContasResponsavel.vencimento = {
+        gte: new Date(dataInicioParam + 'T00:00:00'),
+        lte: new Date(dataFimParam + 'T23:59:59'),
+      };
+    } else {
+      whereContasResponsavel.proLaboreProcessado = false;
+    }
+
     const socios = await prisma.centroCusto.findMany({
       where: whereSocios,
       include: {
         contasResponsavel: {
-          where: {
-            pago: true,
-            proLaboreProcessado: false,
-            status: { not: "cancelado" }, // Excluir contas canceladas
-          },
+          where: whereContasResponsavel,
           select: {
             id: true,
             descricao: true,
@@ -59,7 +75,7 @@ export async function GET() {
             dataPagamento: true,
           },
           orderBy: { dataPagamento: "desc" },
-          take: 10,
+          take: 50, // Aumentar limite para ver mais gastos no período
         },
       },
       orderBy: { nome: "asc" },
@@ -67,10 +83,20 @@ export async function GET() {
 
     console.log(`📊 Sócios encontrados: ${socios.length}`);
 
-    // Calcular os gastos de cada sócio MÊS A MÊS
+    // Calcular período para filtro de descontos
     const hoje = new Date();
-    const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-    const fimMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0, 23, 59, 59);
+    let inicioMes: Date;
+    let fimMes: Date;
+
+    if (dataInicioParam && dataFimParam) {
+      // Usar datas escolhidas pelo usuário
+      inicioMes = new Date(dataInicioParam + 'T00:00:00');
+      fimMes = new Date(dataFimParam + 'T23:59:59');
+    } else {
+      // Padrão: mês atual ATÉ HOJE (não inclui futuro)
+      inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+      fimMes = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate(), 23, 59, 59);
+    }
 
     const sociosComProLabore = await Promise.all(
       socios.map(async (socio: any) => {
@@ -107,7 +133,7 @@ export async function GET() {
 
           const contasPendentesMes = await prisma.conta.findMany({
             where: whereContasPendentes,
-            select: { id: true, valor: true, parentId: true, totalParcelas: true },
+            select: { id: true, descricao: true, valor: true, parentId: true, totalParcelas: true },
           });
 
           // Filtrar: excluir contas pai de parcelamento (só contar as parcelas)
@@ -124,19 +150,36 @@ export async function GET() {
           // Total de descontos previstos = recorrentes + variáveis do mês
           const descontosPrevistos = descontosRecorrentesTotal + descontosVariaveisMes;
 
-          // 3. Buscar contas pagas do sócio que ainda não foram processadas (descontos reais)
+          // 3. Buscar contas pagas do sócio no período
+          // Usa vencimento ao invés de dataPagamento (que pode ser null)
+          // Se há filtro de data personalizado, mostra TODAS as contas pagas (histórico completo)
+          // Se não há filtro, mostra apenas não processadas (mês atual)
           const whereContasPagas: any = {
             userId: user.id,
             socioResponsavelId: socio.id,
             pago: true,
-            proLaboreProcessado: false,
             status: { not: "cancelado" },
+            vencimento: {
+              gte: inicioMes,
+              lte: fimMes,
+            },
           };
+          // Só filtra por proLaboreProcessado se NÃO houver filtro de data personalizado
+          if (!dataInicioParam && !dataFimParam) {
+            whereContasPagas.proLaboreProcessado = false;
+          }
           if (empresaId) whereContasPagas.empresaId = empresaId;
 
           const contasPagas = await prisma.conta.findMany({
             where: whereContasPagas,
-            select: { id: true, valor: true, parentId: true, totalParcelas: true },
+            select: {
+              id: true,
+              descricao: true,
+              valor: true,
+              dataPagamento: true,
+              parentId: true,
+              totalParcelas: true
+            },
           });
 
           // Filtrar: excluir contas pai de parcelamento
@@ -149,6 +192,41 @@ export async function GET() {
           const descontosReaisContas = contasValidasPagas.reduce(
             (acc: number, c: any) => acc + Number(c.valor), 0
           );
+
+          // Lista detalhada de gastos para o balancete
+          // Inclui: descontos recorrentes + contas pendentes (previstos) + contas pagas (reais)
+          const gastosDetalhados: any[] = [];
+
+          // 1. Adicionar descontos recorrentes
+          descontosRecorrentes.forEach((d: any) => {
+            gastosDetalhados.push({
+              id: `rec-${d.id}`,
+              descricao: `[Recorrente] ${d.nome}`,
+              valor: Number(d.valor),
+              tipo: 'previsto',
+            });
+          });
+
+          // 2. Adicionar contas pendentes (previstos variáveis)
+          contasValidasPendentes.forEach((c: any) => {
+            gastosDetalhados.push({
+              id: `pend-${c.id}`,
+              descricao: `[Previsto] ${c.descricao || 'Conta pendente'}`,
+              valor: Number(c.valor),
+              tipo: 'previsto',
+            });
+          });
+
+          // 3. Adicionar contas pagas (reais)
+          contasValidasPagas.forEach((c: any) => {
+            gastosDetalhados.push({
+              id: c.id,
+              descricao: c.descricao,
+              valor: Number(c.valor),
+              dataPagamento: c.dataPagamento,
+              tipo: 'real',
+            });
+          });
 
           // 4. Adicionar descontos do fluxo de caixa (campo descontoReal do banco)
           // O fluxo de caixa atualiza este campo quando lançamentos são feitos diretamente (sem conta associada)
@@ -180,6 +258,7 @@ export async function GET() {
             proLaboreLiquido: socio.previsto - totalDescontos,
             ultimosGastos: socio.contasResponsavel,
             descontosRecorrentes,
+            gastosDetalhados, // Lista completa de gastos para o balancete
           };
         } catch (err) {
           console.error(`Erro ao calcular gastos do sócio ${socio.nome}:`, err);
