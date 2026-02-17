@@ -816,12 +816,24 @@ export function EditContaModal({ conta, onClose, onSuccess }: EditContaModalProp
                         <SelectContent>
                           <SelectItem value="none">Nenhum</SelectItem>
                           {centros.map((centro: any) => (
-                            <SelectItem key={centro.id} value={centro.sigla} className={centro.level === 1 ? "pl-6" : ""}>
+                            <SelectItem
+                              key={centro.id}
+                              value={centro.sigla}
+                              className={centro.level === 1 ? "pl-6" : ""}
+                              disabled={centro.bloqueadoParaLancamento}
+                            >
                               <span className="flex items-center gap-1">
                                 {centro.level === 1 && <span className="text-muted-foreground">└</span>}
                                 <span className={centro.isParent ? "font-medium" : ""}>{centro.sigla}</span>
                                 <span className="text-muted-foreground">-</span>
-                                <span className={`${centro.isSocio ? "text-primary" : ""} truncate`}>{centro.nome}</span>
+                                <span className={`${centro.isSocio ? "text-primary" : ""} ${centro.bloqueadoParaLancamento ? "text-muted-foreground" : ""} truncate`}>
+                                  {centro.nome}
+                                </span>
+                                {centro.bloqueadoParaLancamento && (
+                                  <span className="ml-1 text-[10px] text-amber-600 bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded">
+                                    Use subcentro
+                                  </span>
+                                )}
                               </span>
                             </SelectItem>
                           ))}

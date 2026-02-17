@@ -3,10 +3,10 @@
 import { useState } from "react"
 import { PageHeader } from "@/components/ui/page-header"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
-import { FileText, BarChart3, Receipt } from "lucide-react"
+import { FileText, BarChart3, Lock } from "lucide-react"
 import { DreContent } from "./dre-content"
 import { BalanceteContent } from "./balancete-content"
-import { RecibosContent } from "./recibos-content"
+import { Card } from "@/components/ui/card"
 
 export function RelatoriosContent() {
   const [activeTab, setActiveTab] = useState("dre")
@@ -28,8 +28,8 @@ export function RelatoriosContent() {
             <FileText className="h-4 w-4" />
             Balancete
           </TabsTrigger>
-          <TabsTrigger value="recibos" className="gap-2">
-            <Receipt className="h-4 w-4" />
+          <TabsTrigger value="recibos" className="gap-2" disabled>
+            <Lock className="h-4 w-4" />
             Recibos
           </TabsTrigger>
         </TabsList>
@@ -43,7 +43,13 @@ export function RelatoriosContent() {
         </TabsContent>
 
         <TabsContent value="recibos">
-          <RecibosContent />
+          <Card className="p-12 text-center">
+            <Lock className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+            <h3 className="text-xl font-semibold text-foreground mb-2">Funcionalidade Bloqueada</h3>
+            <p className="text-muted-foreground">
+              Esta funcionalidade sera implementada futuramente.
+            </p>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>

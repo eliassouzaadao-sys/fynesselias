@@ -37,13 +37,61 @@ export async function GET(
     };
     if (empresaId) whereHistorico.empresaId = empresaId;
 
-    const historico = await prisma.historicoFolha.findMany({
+    const historicoSalvo = await prisma.historicoFolha.findMany({
       where: whereHistorico,
       orderBy: [
         { anoReferencia: "desc" },
         { mesReferencia: "desc" },
       ],
     });
+
+    // Calcular mês atual com valores do cadastro
+    const hoje = new Date();
+    const mesAtual = hoje.getMonth() + 1;
+    const anoAtual = hoje.getFullYear();
+
+    // Verificar se já existe histórico para o mês atual
+    const existeMesAtual = historicoSalvo.some(
+      (h: any) => h.mesReferencia === mesAtual && h.anoReferencia === anoAtual
+    );
+
+    // Calcular valores do mês atual baseado no cadastro
+    const salarioBruto = Number(funcionario.salarioBruto) || 0;
+    const inss = Number(funcionario.inss) || 0;
+    const irrf = Number(funcionario.irrf) || 0;
+    const fgts = Number(funcionario.fgts) || 0;
+    const valeTransporte = Number(funcionario.valeTransporte) || 0;
+    const valeRefeicao = Number(funcionario.valeRefeicao) || 0;
+    const planoSaude = Number(funcionario.planoSaude) || 0;
+    const outrosDescontos = 0;
+
+    const totalDescontos = inss + irrf + outrosDescontos;
+    const salarioLiquido = salarioBruto - totalDescontos;
+    const custoEmpresa = salarioBruto + fgts + valeRefeicao + planoSaude;
+
+    // Criar entrada do mês atual se não existir
+    const mesAtualEntry = {
+      id: 0, // ID temporário
+      mesReferencia: mesAtual,
+      anoReferencia: anoAtual,
+      salarioBruto,
+      inss,
+      irrf,
+      fgts,
+      valeTransporte,
+      valeRefeicao,
+      planoSaude,
+      outrosDescontos,
+      salarioLiquido,
+      custoEmpresa,
+      pago: false,
+      dataPagamento: null,
+    };
+
+    // Montar histórico final
+    const historico = existeMesAtual
+      ? historicoSalvo
+      : [mesAtualEntry, ...historicoSalvo];
 
     return NextResponse.json({
       funcionario: {

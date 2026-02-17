@@ -9,6 +9,8 @@ import { Download, ChevronDown, ChevronRight, RefreshCw, Calendar } from "lucide
 // Componente para exibir uma conta individual (nivel mais baixo)
 function ContaRow({ conta, nivel = 3 }) {
   const paddingLeft = nivel * 16
+  const temFornecedor = conta.fornecedor && conta.fornecedor !== "Outros"
+  const temDescricao = conta.descricao && conta.descricao.trim() !== ""
 
   return (
     <div
@@ -16,8 +18,10 @@ function ContaRow({ conta, nivel = 3 }) {
       style={{ paddingLeft: `${paddingLeft}px` }}
     >
       <span className="text-muted-foreground truncate flex-1">
-        {conta.fornecedor}
-        {conta.descricao && <span className="ml-1 text-gray-400">- {conta.descricao}</span>}
+        {temFornecedor && conta.fornecedor}
+        {temFornecedor && temDescricao && " - "}
+        {temDescricao && <span className="text-gray-400">{conta.descricao}</span>}
+        {!temFornecedor && !temDescricao && "Outros"}
       </span>
       <span className={`w-28 text-right shrink-0 ${conta.atual < 0 ? "text-red-600" : ""}`}>
         {formatCurrency(conta.atual)}

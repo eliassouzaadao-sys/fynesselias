@@ -51,8 +51,20 @@ export async function GET(request: Request) {
       orderBy: { sigla: "asc" },
     });
 
+    // Descrições de operações financeiras que devem ser excluídas dos relatórios
+    const descricoesExcluidas = [
+      "Utilização Conta Garantida",
+      "Devolução Conta Garantida",
+      "Resgate de Investimento",
+      "Aplicação em Investimento",
+    ];
+
     // Buscar fluxo de caixa do período
-    const fluxoWhere: { userId: number; dia: { gte: Date; lte: Date }; empresaId?: number } = {
+    const fluxoWhere: {
+      userId: number;
+      dia: { gte: Date; lte: Date };
+      empresaId?: number;
+    } = {
       userId: user.id,
       dia: {
         gte: inicioMesAtual,
@@ -61,10 +73,20 @@ export async function GET(request: Request) {
     };
     if (empresaId) fluxoWhere.empresaId = empresaId;
 
-    const fluxoCaixa = await prisma.fluxoCaixa.findMany({
+    const fluxoCaixaRaw = await prisma.fluxoCaixa.findMany({
       where: fluxoWhere,
       orderBy: { dia: "asc" },
+      include: {
+        conta: {
+          select: { descricao: true },
+        },
+      },
     });
+
+    // Filtrar movimentações de Conta Garantida e Investimento (são operações financeiras, não receita/despesa)
+    const fluxoCaixa = fluxoCaixaRaw.filter(
+      (mov: typeof fluxoCaixaRaw[number]) => !mov.descricao || !descricoesExcluidas.includes(mov.descricao)
+    );
 
     // Agrupar movimentações por centro de custo com detalhamento
     const agrupado: Record<string, {
@@ -84,13 +106,17 @@ export async function GET(request: Request) {
         };
       }
 
-      const chaveConta = `${mov.fornecedorCliente || "Outros"}|${mov.descricao || ""}`;
+      // Garantir tratamento correto de null - usar descrição da conta vinculada como fallback
+      const fornecedor = mov.fornecedorCliente ?? "Outros";
+      const descricao = mov.descricao ?? mov.conta?.descricao ?? "";
+
+      const chaveConta = `${fornecedor}|${descricao}`;
 
       if (!agrupado[sigla].contas[chaveConta]) {
         agrupado[sigla].contas[chaveConta] = {
           valor: 0,
-          descricao: mov.descricao || "",
-          fornecedor: mov.fornecedorCliente || "Outros",
+          descricao: descricao,
+          fornecedor: fornecedor,
         };
       }
 
@@ -317,6 +343,43 @@ export async function GET(request: Request) {
     const totalReceitas = receitas.reduce((acc, cat) => acc + cat.total, 0);
     const totalDespesas = despesas.reduce((acc, cat) => acc + cat.total, 0);
 
+    // Buscar bancos para calcular saldos atuais
+    const bancosWhere: { ativo: boolean; userId: number; empresaId?: number } = { ativo: true, userId: user.id };
+    if (empresaId) bancosWhere.empresaId = empresaId;
+
+    const bancos = await prisma.banco.findMany({
+      where: bancosWhere,
+      orderBy: { nome: "asc" },
+    });
+
+    // Buscar TODAS as movimentações (sem filtro de período) para calcular saldo atual
+    const fluxoTotalWhere: { userId: number; empresaId?: number } = { userId: user.id };
+    if (empresaId) fluxoTotalWhere.empresaId = empresaId;
+
+    const fluxoCaixaTotal = await prisma.fluxoCaixa.findMany({
+      where: fluxoTotalWhere,
+    });
+
+    // Calcular saldo por banco (saldo inicial + todas as movimentações)
+    const saldosPorBanco: Record<number, number> = {};
+    for (const banco of bancos) {
+      const saldoInicial = Number(banco.saldoInicial) || 0;
+      const movimentacoesBanco = fluxoCaixaTotal.filter((item: typeof fluxoCaixaTotal[number]) => item.bancoId === banco.id);
+      const saldoMovimentacoes = movimentacoesBanco.reduce((total: number, item: typeof fluxoCaixaTotal[number]) => {
+        if (item.tipo === "entrada") {
+          return total + Number(item.valor);
+        } else {
+          return total - Number(item.valor);
+        }
+      }, 0);
+      saldosPorBanco[banco.id] = saldoInicial + saldoMovimentacoes;
+    }
+
+    // Calcular totais dos bancos
+    const saldoTotalBancos = Object.values(saldosPorBanco).reduce((acc, saldo) => acc + saldo, 0);
+    const totalInvestimentoLiquido = bancos.reduce((acc: number, banco: typeof bancos[number]) => acc + (Number(banco.saldoInvestimentoLiquido) || 0), 0);
+    const saldoLiquido = saldoTotalBancos + totalInvestimentoLiquido;
+
     // Formatação das datas para exibição
     const formatarData = (data: Date) => {
       return data.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
@@ -331,6 +394,11 @@ export async function GET(request: Request) {
         receitas: totalReceitas,
         despesas: totalDespesas,
         saldo: totalReceitas - totalDespesas,
+      },
+      saldos: {
+        contas: saldoTotalBancos,
+        investimentos: totalInvestimentoLiquido,
+        liquido: saldoLiquido,
       },
     });
   } catch (error) {

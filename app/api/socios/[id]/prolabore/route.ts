@@ -105,6 +105,35 @@ export async function GET(
     const descontosReais = contasValidas.reduce((acc: number, c: any) => acc + Number(c.valor), 0);
     const totalDescontos = descontosPrevistos + descontosReais;
 
+    // Montar detalhamento dos descontos previstos
+    const detalhamentoPrevistos = [
+      // Descontos recorrentes
+      ...descontosRecorrentes.map((d: any) => ({
+        id: `recorrente-${d.id}`,
+        descricao: d.nome,
+        valor: Number(d.valor),
+        tipo: 'recorrente' as const,
+      })),
+      // Contas pendentes do mês
+      ...contasValidasPendentes.map((c: any) => ({
+        id: `conta-${c.id}`,
+        descricao: c.descricao,
+        valor: Number(c.valor),
+        tipo: 'conta_pendente' as const,
+        vencimento: c.vencimento,
+      })),
+    ];
+
+    // Montar detalhamento dos descontos reais (contas pagas)
+    const detalhamentoReais = contasValidas.map((c: any) => ({
+      id: `pago-${c.id}`,
+      descricao: c.descricao,
+      valor: Number(c.valor),
+      tipo: 'conta_paga' as const,
+      dataPagamento: c.dataPagamento,
+      vencimento: c.vencimento,
+    }));
+
     // Retornar dados do mês atual
     const faturasPorMes = [{
       mes: hoje.getMonth() + 1,
@@ -117,6 +146,8 @@ export async function GET(
       faturaPaga: false,
       faturaId: null,
       dataVencimento: null,
+      detalhamentoPrevistos,
+      detalhamentoReais,
     }];
 
     return NextResponse.json({

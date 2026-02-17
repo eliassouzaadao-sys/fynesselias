@@ -5,6 +5,13 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { formatCurrency } from "@/lib/format"
 import { Plus, Briefcase, Wallet, TrendingDown, Building2, Loader2 } from "lucide-react"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { FuncionarioCard } from "../funcionarios/FuncionarioCard"
 import { NovoFuncionarioModal } from "../funcionarios/NovoFuncionarioModal"
 import { HistoricoFolhaModal } from "../funcionarios/HistoricoFolhaModal"
@@ -39,6 +46,9 @@ export function FuncionariosTab({ funcionarios: initialFuncionarios, onRefresh }
   const [showNovoModal, setShowNovoModal] = useState(false)
   const [funcionarioParaEditar, setFuncionarioParaEditar] = useState<any>(null)
   const [funcionarioParaHistorico, setFuncionarioParaHistorico] = useState<Funcionario | null>(null)
+
+  // Filtro por funcionário
+  const [filtroFuncionario, setFiltroFuncionario] = useState<string>("todos")
 
   // Atualizar lista quando props mudam
   useEffect(() => {
@@ -90,6 +100,12 @@ export function FuncionariosTab({ funcionarios: initialFuncionarios, onRefresh }
     setFuncionarioParaEditar(null)
   }
 
+  // Filtrar funcionários pelo dropdown
+  const funcionariosFiltrados = funcionarios.filter(f => {
+    if (filtroFuncionario !== "todos" && f.id.toString() !== filtroFuncionario) return false
+    return true
+  })
+
   // Filtrar apenas funcionários ativos para KPIs
   const funcionariosAtivos = funcionarios.filter(f => f.status === 'ativo')
 
@@ -113,6 +129,24 @@ export function FuncionariosTab({ funcionarios: initialFuncionarios, onRefresh }
           <Plus className="mr-2 h-4 w-4" />
           Novo Funcionário
         </Button>
+      </div>
+
+      {/* Filtro por funcionário */}
+      <div className="flex items-center gap-2">
+        <span className="text-sm text-muted-foreground">Funcionário:</span>
+        <Select value={filtroFuncionario} onValueChange={setFiltroFuncionario}>
+          <SelectTrigger className="w-[250px]">
+            <SelectValue placeholder="Selecione um funcionário" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todos">Todos</SelectItem>
+            {funcionarios.map((f) => (
+              <SelectItem key={f.id} value={f.id.toString()}>
+                {f.nome}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* KPIs da Tab */}
@@ -185,7 +219,7 @@ export function FuncionariosTab({ funcionarios: initialFuncionarios, onRefresh }
         </Card>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {funcionarios.map((funcionario) => (
+          {funcionariosFiltrados.map((funcionario) => (
             <FuncionarioCard
               key={funcionario.id}
               funcionario={funcionario}

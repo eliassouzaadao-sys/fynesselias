@@ -5,6 +5,13 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { formatCurrency } from "@/lib/format"
 import { Plus, Users, Wallet, TrendingDown, CreditCard, Loader2, History } from "lucide-react"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { SocioCard } from "../socios/SocioCard"
 import { NovoSocioModal } from "../socios/NovoSocioModal"
 import { ProLaboreModal } from "../socios/ProLaboreModal"
@@ -53,6 +60,9 @@ export function ProLaboreTab({ socios: initialSocios, onRefresh, dataInicio, dat
   const [socioParaEditar, setSocioParaEditar] = useState<Socio | null>(null)
   const [socioParaProLabore, setSocioParaProLabore] = useState<Socio | null>(null)
   const [showHistorico, setShowHistorico] = useState(false)
+
+  // Filtro por sócio
+  const [filtroSocio, setFiltroSocio] = useState<string>("todos")
 
   // Atualizar lista quando props mudam
   useEffect(() => {
@@ -107,6 +117,12 @@ export function ProLaboreTab({ socios: initialSocios, onRefresh, dataInicio, dat
     setSocioParaEditar(null)
   }
 
+  // Filtrar sócios pelo dropdown
+  const sociosFiltrados = socios.filter(s => {
+    if (filtroSocio !== "todos" && s.id.toString() !== filtroSocio) return false
+    return true
+  })
+
   // Calcular KPIs da tab
   const totalProLabore = socios.reduce((acc, s) => acc + s.proLaboreBase, 0)
   const totalDescontos = socios.reduce((acc, s) => acc + s.gastosCartao, 0)
@@ -137,6 +153,24 @@ export function ProLaboreTab({ socios: initialSocios, onRefresh, dataInicio, dat
             Novo Sócio
           </Button>
         </div>
+      </div>
+
+      {/* Filtro por sócio */}
+      <div className="flex items-center gap-2">
+        <span className="text-sm text-muted-foreground">Sócio:</span>
+        <Select value={filtroSocio} onValueChange={setFiltroSocio}>
+          <SelectTrigger className="w-[250px]">
+            <SelectValue placeholder="Selecione um sócio" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="todos">Todos</SelectItem>
+            {socios.map((s) => (
+              <SelectItem key={s.id} value={s.id.toString()}>
+                {s.nome}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* KPIs da Tab */}
@@ -209,7 +243,7 @@ export function ProLaboreTab({ socios: initialSocios, onRefresh, dataInicio, dat
         </Card>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {socios.map((socio) => (
+          {sociosFiltrados.map((socio) => (
             <SocioCard
               key={socio.id}
               socio={socio}

@@ -44,8 +44,20 @@ export async function GET(request: Request) {
       orderBy: { sigla: "asc" },
     });
 
+    // Descrições de operações financeiras que devem ser excluídas dos relatórios
+    const descricoesExcluidas = [
+      "Utilização Conta Garantida",
+      "Devolução Conta Garantida",
+      "Resgate de Investimento",
+      "Aplicação em Investimento",
+    ];
+
     // Buscar fluxo de caixa do período atual
-    const fluxoAtualWhere: { userId: number; dia: { gte: Date; lte: Date }; empresaId?: number } = {
+    const fluxoAtualWhere: {
+      userId: number;
+      dia: { gte: Date; lte: Date };
+      empresaId?: number;
+    } = {
       userId: user.id,
       dia: {
         gte: inicioMesAtual,
@@ -54,12 +66,26 @@ export async function GET(request: Request) {
     };
     if (empresaId) fluxoAtualWhere.empresaId = empresaId;
 
-    const fluxoAtual = await prisma.fluxoCaixa.findMany({
+    const fluxoAtualRaw = await prisma.fluxoCaixa.findMany({
       where: fluxoAtualWhere,
+      include: {
+        conta: {
+          select: { descricao: true },
+        },
+      },
     });
 
+    // Filtrar movimentações de Conta Garantida e Investimento (são operações financeiras, não receita/despesa)
+    const fluxoAtual = fluxoAtualRaw.filter(
+      (mov: typeof fluxoAtualRaw[number]) => !mov.descricao || !descricoesExcluidas.includes(mov.descricao)
+    );
+
     // Buscar fluxo de caixa do período anterior
-    const fluxoAnteriorWhere: { userId: number; dia: { gte: Date; lte: Date }; empresaId?: number } = {
+    const fluxoAnteriorWhere: {
+      userId: number;
+      dia: { gte: Date; lte: Date };
+      empresaId?: number;
+    } = {
       userId: user.id,
       dia: {
         gte: inicioMesAnterior,
@@ -68,9 +94,19 @@ export async function GET(request: Request) {
     };
     if (empresaId) fluxoAnteriorWhere.empresaId = empresaId;
 
-    const fluxoAnterior = await prisma.fluxoCaixa.findMany({
+    const fluxoAnteriorRaw = await prisma.fluxoCaixa.findMany({
       where: fluxoAnteriorWhere,
+      include: {
+        conta: {
+          select: { descricao: true },
+        },
+      },
     });
+
+    // Filtrar movimentações de Conta Garantida e Investimento
+    const fluxoAnterior = fluxoAnteriorRaw.filter(
+      (mov: typeof fluxoAnteriorRaw[number]) => !mov.descricao || !descricoesExcluidas.includes(mov.descricao)
+    );
 
     // Agrupar movimentações por centro de custo com detalhamento por conta
     function agruparPorCentroComDetalhe(fluxo: any[]) {
@@ -86,14 +122,18 @@ export async function GET(request: Request) {
           agrupado[sigla] = { entradas: 0, saidas: 0, contas: {} };
         }
 
+        // Garantir tratamento correto de null - usar descrição da conta vinculada como fallback
+        const fornecedor = mov.fornecedorCliente ?? "Outros";
+        const descricao = mov.descricao ?? mov.conta?.descricao ?? "";
+
         // Chave única para agrupar contas similares
-        const chaveConta = `${mov.fornecedorCliente || "Outros"}|${mov.descricao || ""}`;
+        const chaveConta = `${fornecedor}|${descricao}`;
 
         if (!agrupado[sigla].contas[chaveConta]) {
           agrupado[sigla].contas[chaveConta] = {
             valor: 0,
-            descricao: mov.descricao || "",
-            fornecedor: mov.fornecedorCliente || "Outros",
+            descricao: descricao,
+            fornecedor: fornecedor,
           };
         }
 
@@ -137,13 +177,15 @@ export async function GET(request: Request) {
       const todasChaves = new Set([...Object.keys(contasAtual), ...Object.keys(contasAnterior)]);
 
       return Array.from(todasChaves).map((chave) => {
-        const [fornecedor, descricao] = chave.split("|");
-        const valorAtual = contasAtual[chave]?.valor || 0;
-        const valorAnterior = contasAnterior[chave]?.valor || 0;
+        // Usar os dados do objeto diretamente (mais confiável que split da chave)
+        const contaAtual = contasAtual[chave];
+        const contaAnterior = contasAnterior[chave];
+        const valorAtual = contaAtual?.valor || 0;
+        const valorAnterior = contaAnterior?.valor || 0;
 
         return {
-          fornecedor,
-          descricao,
+          fornecedor: contaAtual?.fornecedor || contaAnterior?.fornecedor || "Outros",
+          descricao: contaAtual?.descricao || contaAnterior?.descricao || "",
           atual: tipo === "entrada" ? Math.abs(valorAtual) : valorAtual,
           anterior: tipo === "entrada" ? Math.abs(valorAnterior) : valorAnterior,
         };

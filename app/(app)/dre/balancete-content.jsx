@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/ui/page-header"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { formatCurrency } from "@/lib/format"
-import { Download, ChevronDown, ChevronRight, RefreshCw, Calendar } from "lucide-react"
+import { Download, ChevronDown, ChevronRight, RefreshCw, Calendar, Wallet, PiggyBank, Landmark } from "lucide-react"
 
 // Componente para exibir uma conta individual no balancete
 function ContaRow({ conta, isSubconta = false }) {
@@ -17,10 +17,9 @@ function ContaRow({ conta, isSubconta = false }) {
         <span className="text-muted-foreground font-mono text-xs w-12">{conta.codigo}</span>
         <span className="text-muted-foreground">-</span>
         <span className="truncate">
-          {conta.nome}
-          {conta.fornecedor && conta.fornecedor !== "Outros" && (
-            <span className="ml-1 text-muted-foreground">- {conta.fornecedor}</span>
-          )}
+          {conta.fornecedor && conta.fornecedor !== "Outros" ? conta.fornecedor : ""}
+          {conta.fornecedor && conta.fornecedor !== "Outros" && conta.nome && " - "}
+          {conta.nome && <span className="text-muted-foreground">{conta.nome}</span>}
         </span>
       </div>
       <span className="w-32 text-right font-medium shrink-0">
@@ -184,10 +183,55 @@ export function BalanceteContent() {
     )
   }
 
-  const { periodo, receitas, despesas, totais } = balanceteData
+  const { periodo, receitas, despesas, totais, saldos } = balanceteData
 
   return (
     <div className="space-y-4">
+      {/* Cards de Saldo Atual */}
+      {saldos && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="bg-card border border-border rounded-lg p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+                <Wallet className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Saldo Contas</p>
+                <p className={`text-lg font-bold ${saldos.contas >= 0 ? 'text-foreground' : 'text-red-600'}`}>
+                  {formatCurrency(saldos.contas)}
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="bg-card border border-border rounded-lg p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900/30">
+                <PiggyBank className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Investimentos</p>
+                <p className="text-lg font-bold text-purple-600">
+                  {formatCurrency(saldos.investimentos)}
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="bg-card border border-border rounded-lg p-4">
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-lg ${saldos.liquido >= 0 ? 'bg-emerald-100 dark:bg-emerald-900/30' : 'bg-red-100 dark:bg-red-900/30'}`}>
+                <Landmark className={`h-5 w-5 ${saldos.liquido >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`} />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Saldo Liquido</p>
+                <p className={`text-lg font-bold ${saldos.liquido >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                  {formatCurrency(saldos.liquido)}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Filtros de data */}
       <div className="flex items-center gap-3 flex-wrap">
         <Calendar className="h-4 w-4 text-muted-foreground" />

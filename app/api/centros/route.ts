@@ -48,20 +48,25 @@ export async function GET(request: Request) {
       const centrosPrincipais = centros.filter((c: any) => !c.parentId && !c.isSocio);
 
       for (const centro of centrosPrincipais) {
+        const hasSubcentros = centro.subcentros && centro.subcentros.length > 0;
         // Adiciona o centro principal
         centrosHierarquicos.push({
           ...centro,
           level: 0,
-          isParent: centro.subcentros && centro.subcentros.length > 0,
+          isParent: hasSubcentros,
+          hasSubcentros: hasSubcentros, // Flag para bloquear lançamentos
+          bloqueadoParaLancamento: hasSubcentros, // Centro com subcentros não pode receber lançamentos
         });
 
         // Adiciona subcentros (incluindo sócios se for PRO-LABORE)
-        if (centro.subcentros && centro.subcentros.length > 0) {
+        if (hasSubcentros) {
           for (const sub of centro.subcentros) {
             centrosHierarquicos.push({
               ...sub,
               level: 1,
               isParent: false,
+              hasSubcentros: false,
+              bloqueadoParaLancamento: false, // Subcentros podem receber lançamentos
               parentNome: centro.nome,
               parentSigla: centro.sigla,
             });

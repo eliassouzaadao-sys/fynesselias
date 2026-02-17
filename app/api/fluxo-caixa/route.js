@@ -4,6 +4,34 @@ import { getCurrentUser } from '@/lib/get-user';
 import { getEmpresaIdValidada } from '@/lib/get-empresa';
 import { atualizarContaProLabore } from '@/lib/prolabore';
 
+// Função auxiliar para verificar se um centro de custo tem subcentros (e deve bloquear lançamentos)
+async function verificarCentroComSubcentros(sigla, userId, empresaId = null) {
+  if (!sigla || !userId) return { hasSubcentros: false, centro: null };
+
+  try {
+    const where = { sigla, userId };
+    if (empresaId) where.empresaId = empresaId;
+
+    const centro = await prisma.centroCusto.findFirst({
+      where,
+      include: {
+        subcentros: {
+          where: { ativo: true },
+          select: { id: true }
+        }
+      }
+    });
+
+    if (!centro) return { hasSubcentros: false, centro: null };
+
+    const hasSubcentros = centro.subcentros && centro.subcentros.length > 0;
+    return { hasSubcentros, centro };
+  } catch (error) {
+    console.error('Erro ao verificar subcentros:', error);
+    return { hasSubcentros: false, centro: null };
+  }
+}
+
 // Função auxiliar para buscar socioResponsavelId pelo centro de custo
 async function getSocioIdByCentroCusto(sigla, userId, empresaId = null) {
   if (!sigla || !userId) return null;
@@ -145,6 +173,21 @@ export async function POST(request) {
     const empresaId = await getEmpresaIdValidada(user.id);
 
     const data = await request.json();
+
+    // VALIDAÇÃO: Bloquear lançamentos em centros que possuem subcentros
+    if (data.centroCustoSigla || data.codigoTipo) {
+      const siglaCentro = data.centroCustoSigla || data.codigoTipo;
+      const { hasSubcentros, centro } = await verificarCentroComSubcentros(siglaCentro, user.id, empresaId);
+      if (hasSubcentros) {
+        console.log(`🚫 Tentativa de lançamento bloqueada: Centro ${siglaCentro} possui subcentros`);
+        return NextResponse.json(
+          {
+            error: `Não é possível lançar diretamente no centro "${centro?.nome || siglaCentro}". Este centro possui subcentros - selecione um subcentro específico para garantir a correta categorização e cálculo do peso percentual.`
+          },
+          { status: 400 }
+        );
+      }
+    }
 
     // Buscar o último fluxo para calcular o novo saldo
     const whereUltimoFluxo = { userId: user.id };
@@ -323,6 +366,20 @@ export async function PUT(request) {
         { error: 'Movimentação não encontrada' },
         { status: 404 }
       );
+    }
+
+    // VALIDAÇÃO: Bloquear alteração para centros que possuem subcentros
+    if (data.codigoTipo !== undefined && data.codigoTipo) {
+      const { hasSubcentros, centro } = await verificarCentroComSubcentros(data.codigoTipo, user.id, empresaId);
+      if (hasSubcentros) {
+        console.log(`🚫 Tentativa de atualização bloqueada: Centro ${data.codigoTipo} possui subcentros`);
+        return NextResponse.json(
+          {
+            error: `Não é possível usar o centro "${centro?.nome || data.codigoTipo}". Este centro possui subcentros - selecione um subcentro específico.`
+          },
+          { status: 400 }
+        );
+      }
     }
 
     // Construir objeto de atualização

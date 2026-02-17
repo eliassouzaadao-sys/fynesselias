@@ -14,6 +14,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { Badge } from "@/components/ui/badge"
+import { Progress } from "@/components/ui/progress"
 import { NovoCartaoModal } from "@/app/(app)/cartoes/components/NovoCartaoModal"
 import { CartaoCard } from "@/app/(app)/cartoes/components/CartaoCard"
 import { FaturaModal } from "@/app/(app)/cartoes/components/FaturaModal"
@@ -1787,20 +1788,60 @@ export function FluxoCaixaContent() {
                           )}
                         </div>
 
-                        {/* Limites */}
+                        {/* Limites com barras de progresso */}
                         {(limiteGarantida > 0 || limiteCheque > 0) && (
-                          <div className="flex justify-between text-[9px] px-1 pt-1 border-t border-border">
+                          <div className="space-y-2 pt-1 border-t border-border">
                             {limiteGarantida > 0 && (
-                              <span className="text-amber-600">
-                                CG: {formatCurrency(disponivelGarantida)}
-                                {usadoGarantida > 0 && <span className="text-orange-500"> (-{formatCurrency(usadoGarantida)})</span>}
-                              </span>
+                              <div className="px-1">
+                                <div className="flex justify-between text-[9px] mb-0.5">
+                                  <span className="text-amber-700 font-medium">Conta Garantida</span>
+                                  <span className="text-muted-foreground">
+                                    {formatCurrency(usadoGarantida)} / {formatCurrency(limiteGarantida)}
+                                  </span>
+                                </div>
+                                <div className="relative">
+                                  <Progress
+                                    value={(usadoGarantida / limiteGarantida) * 100}
+                                    className="h-1.5 bg-amber-100"
+                                  />
+                                  <div
+                                    className="absolute inset-0 h-1.5 rounded-full overflow-hidden"
+                                    style={{ width: `${(usadoGarantida / limiteGarantida) * 100}%` }}
+                                  >
+                                    <div className={`h-full ${usadoGarantida / limiteGarantida > 0.8 ? 'bg-red-500' : usadoGarantida / limiteGarantida > 0.5 ? 'bg-amber-500' : 'bg-amber-400'}`} />
+                                  </div>
+                                </div>
+                                <div className="flex justify-between text-[8px] mt-0.5">
+                                  <span className="text-emerald-600">Disp: {formatCurrency(disponivelGarantida)}</span>
+                                  <span className="text-muted-foreground">{Math.round((usadoGarantida / limiteGarantida) * 100)}% usado</span>
+                                </div>
+                              </div>
                             )}
                             {limiteCheque > 0 && (
-                              <span className="text-amber-600">
-                                CE: {formatCurrency(disponivelCheque)}
-                                {usadoCheque > 0 && <span className="text-orange-500"> (-{formatCurrency(usadoCheque)})</span>}
-                              </span>
+                              <div className="px-1">
+                                <div className="flex justify-between text-[9px] mb-0.5">
+                                  <span className="text-orange-700 font-medium">Cheque Especial</span>
+                                  <span className="text-muted-foreground">
+                                    {formatCurrency(usadoCheque)} / {formatCurrency(limiteCheque)}
+                                  </span>
+                                </div>
+                                <div className="relative">
+                                  <Progress
+                                    value={(usadoCheque / limiteCheque) * 100}
+                                    className="h-1.5 bg-orange-100"
+                                  />
+                                  <div
+                                    className="absolute inset-0 h-1.5 rounded-full overflow-hidden"
+                                    style={{ width: `${(usadoCheque / limiteCheque) * 100}%` }}
+                                  >
+                                    <div className={`h-full ${usadoCheque / limiteCheque > 0.8 ? 'bg-red-500' : usadoCheque / limiteCheque > 0.5 ? 'bg-orange-500' : 'bg-orange-400'}`} />
+                                  </div>
+                                </div>
+                                <div className="flex justify-between text-[8px] mt-0.5">
+                                  <span className="text-emerald-600">Disp: {formatCurrency(disponivelCheque)}</span>
+                                  <span className="text-muted-foreground">{Math.round((usadoCheque / limiteCheque) * 100)}% usado</span>
+                                </div>
+                              </div>
                             )}
                           </div>
                         )}
@@ -3338,8 +3379,9 @@ export function FluxoCaixaContent() {
                       key={centro.id}
                       value={centro.sigla}
                       className={centro.level === 1 ? "pl-4" : "font-medium"}
+                      disabled={centro.bloqueadoParaLancamento}
                     >
-                      {centro.level === 1 ? "  └ " : ""}{centro.sigla} - {centro.nome}{centro.isSocio ? " (Sócio)" : centro.level === 1 ? " (Sub)" : ""}
+                      {centro.level === 1 ? "  └ " : ""}{centro.sigla} - {centro.nome}{centro.isSocio ? " (Sócio)" : centro.level === 1 ? " (Sub)" : centro.bloqueadoParaLancamento ? " ⚠ Use subcentro" : ""}
                     </option>
                   ))}
                 </select>
@@ -3799,8 +3841,8 @@ function EditFluxoModal({ fluxo, onClose, onSuccess }) {
               >
                 <option value="">{loadingCentros ? 'Carregando...' : 'Selecione...'}</option>
                 {centros.map((centro) => (
-                  <option key={centro.id} value={centro.sigla}>
-                    {centro.level === 1 ? "  └ " : ""}{centro.sigla} - {centro.nome}{centro.isSocio ? " (Sócio)" : centro.level === 1 ? " (Sub)" : ""}
+                  <option key={centro.id} value={centro.sigla} disabled={centro.bloqueadoParaLancamento}>
+                    {centro.level === 1 ? "  └ " : ""}{centro.sigla} - {centro.nome}{centro.isSocio ? " (Sócio)" : centro.level === 1 ? " (Sub)" : centro.bloqueadoParaLancamento ? " ⚠ Use subcentro" : ""}
                   </option>
                 ))}
               </select>
